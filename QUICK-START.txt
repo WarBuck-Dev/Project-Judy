@@ -1,0 +1,121 @@
+================================================================================
+AIC SIMULATOR - QUICK START GUIDE
+================================================================================
+
+IMPORTANT: You encountered a CORS error because browsers don't allow loading
+JavaScript files directly from the file system for security reasons.
+
+================================================================================
+SOLUTION: Run a Local Web Server
+================================================================================
+
+METHOD 1 - EASIEST (Using the included batch file):
+----------------------------------------------------
+1. Double-click "start-server.bat" in this folder
+2. The simulator will automatically open in your browser
+3. That's it! Start using the simulator
+
+Requirements: Python 3 OR Node.js must be installed
+- Get Python: https://www.python.org/downloads/
+- Get Node.js: https://nodejs.org/
+
+METHOD 2 - MANUAL (If you have Python):
+----------------------------------------
+1. Open Command Prompt in this folder
+   (Shift + Right-click → "Open PowerShell window here" or "Open command window here")
+
+2. Type: python -m http.server 8000
+
+3. Open Chrome or Edge browser
+
+4. Go to: http://localhost:8000
+
+5. Press Ctrl+C in the command prompt when done
+
+METHOD 3 - MANUAL (If you have Node.js):
+-----------------------------------------
+1. Open Command Prompt in this folder
+
+2. Type: npx http-server -p 8000
+
+3. Open Chrome or Edge browser
+
+4. Go to: http://localhost:8000
+
+5. Press Ctrl+C in the command prompt when done
+
+================================================================================
+FIRST STEPS IN THE SIMULATOR
+================================================================================
+
+Once the simulator loads:
+
+1. CREATE YOUR FIRST ASSET
+   - Click the "+ ADD ASSET" button in the right panel
+   - Fill in: Name (e.g., "F-16A"), Type (Friendly), Speed (450), Altitude (25000)
+   - Click "ADD"
+
+2. GIVE IT MOVEMENT
+   - Select the asset you just created
+   - In "SELECTED ASSET" panel, enter Speed: 450
+   - Press Enter
+   - Enter Heading: 90 (East)
+   - Press Enter
+
+3. START THE SIMULATION
+   - Click the "PLAY" button in the PLAYBACK section
+   - Watch your asset move!
+
+4. ADD A WAYPOINT
+   - Make sure your asset is selected
+   - Right-click anywhere on the map
+   - Choose "Go to"
+   - Your asset will turn toward that point
+
+5. CREATE AN INTERCEPT SCENARIO
+   - Add another asset (click "+ ADD ASSET")
+   - Set it as Hostile type
+   - Give it different position/heading/speed
+   - Click PLAY and practice vectoring!
+
+================================================================================
+COMMON CONTROLS
+================================================================================
+
+MOUSE:
+- Left-click asset: Select it
+- Left-click map: Place reference mark
+- Right-click: Context menu (add assets, waypoints)
+- Mouse wheel: Zoom in/out
+- Click + drag: Pan the map
+
+KEYBOARD:
+- ESC: Pause menu
+- Enter: Apply value (after typing heading/speed/altitude)
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Problem: "start-server.bat says Python or Node.js not found"
+Solution: Install Python from python.org or Node.js from nodejs.org
+
+Problem: "The simulator won't load / blank screen"
+Solution: Make sure you're accessing http://localhost:8000 (not opening index.html directly)
+
+Problem: "Assets aren't moving"
+Solution: Make sure simulation is in PLAY mode and asset has speed > 0
+
+Problem: "Can't find start-server.bat"
+Solution: It's in the same folder as this file. Look for "start-server.bat"
+
+================================================================================
+NEED MORE HELP?
+================================================================================
+
+See README.md for complete user guide
+See AIC-SIMULATOR-DOCUMENTATION.md for full technical documentation
+
+================================================================================
+Good hunting, Controllers!
+================================================================================
