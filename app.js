@@ -1206,6 +1206,7 @@ function AICSimulator() {
                 setShowSaveDialog={setShowSaveDialog}
                 setShowLoadDialog={setShowLoadDialog}
                 setShowPauseMenu={setShowPauseMenu}
+                setMapCenter={setMapCenter}
             />
 
             {/* Context Menu */}
@@ -1288,7 +1289,7 @@ function AICSimulator() {
 function ControlPanel({
     isRunning, setIsRunning, assets, selectedAsset, setSelectedAssetId,
     updateAsset, deleteAsset, reportTrack, setShowAddAssetDialog,
-    setShowSaveDialog, setShowLoadDialog, setShowPauseMenu
+    setShowSaveDialog, setShowLoadDialog, setShowPauseMenu, setMapCenter
 }) {
     const [editValues, setEditValues] = useState({});
     const selectedAssetIdRef = useRef(null);
@@ -1334,6 +1335,12 @@ function ControlPanel({
         console.log(`Setting ${targetField} to ${value} for asset ${selectedAsset.id}`);
     };
 
+    const handleAssetSelect = (asset) => {
+        setSelectedAssetId(asset.id);
+        // Center map on selected asset
+        setMapCenter({ lat: asset.lat, lon: asset.lon });
+    };
+
     return (
         <div className="control-panel">
             <h1>AIC SIMULATOR</h1>
@@ -1375,7 +1382,7 @@ function ControlPanel({
                             <div
                                 key={asset.id}
                                 className={`asset-item ${selectedAsset?.id === asset.id ? 'selected' : ''}`}
-                                onClick={() => setSelectedAssetId(asset.id)}
+                                onClick={() => handleAssetSelect(asset)}
                             >
                                 <div className="asset-name" style={{ color: ASSET_TYPES[asset.type].color }}>
                                     {asset.name}
