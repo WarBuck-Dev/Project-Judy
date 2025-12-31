@@ -185,6 +185,9 @@ body {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    position: relative;
+    z-index: 100;
+    pointer-events: auto;
 }
 
 .control-panel h1 {
@@ -205,6 +208,8 @@ body {
     border-radius: 4px;
     background-color: rgba(0, 20, 0, 0.3);
     box-shadow: 0 0 10px rgba(0, 255, 0, 0.2), inset 0 0 10px rgba(0, 255, 0, 0.05);
+    pointer-events: auto;
+    position: relative;
 }
 
 .section-header {
@@ -278,6 +283,7 @@ body {
     padding: 8px;
     background-color: rgba(0, 0, 0, 0.4);
     border-radius: 4px;
+    pointer-events: auto;
 }
 
 .asset-item {
@@ -289,6 +295,14 @@ body {
     transition: all 0.3s;
     border-radius: 3px;
     background-color: rgba(0, 0, 0, 0.5);
+    pointer-events: auto;
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    text-align: left;
+    font-family: 'Orbitron', monospace;
+    color: inherit;
+    display: block;
 }
 
 .asset-item:hover {
@@ -309,12 +323,14 @@ body {
     font-size: 10px;
     letter-spacing: 1px;
     text-shadow: 0 0 5px currentColor;
+    pointer-events: none;
 }
 
 .asset-details {
     font-size: 8px;
     opacity: 0.9;
     letter-spacing: 0.5px;
+    pointer-events: none;
 }
 
 /* Input Fields */

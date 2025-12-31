@@ -292,6 +292,13 @@ function AICSimulator() {
         }
     }, [selectedAssetId]);
 
+    const centerMapOnAsset = useCallback((assetId) => {
+        const asset = assets.find(a => a.id === assetId);
+        if (asset) {
+            setMapCenter({ lat: asset.lat, lon: asset.lon });
+        }
+    }, [assets]);
+
     const updateAsset = useCallback((assetId, updates) => {
         setAssets(prev => prev.map(a =>
             a.id === assetId ? { ...a, ...updates } : a
@@ -1206,7 +1213,7 @@ function AICSimulator() {
                 setShowSaveDialog={setShowSaveDialog}
                 setShowLoadDialog={setShowLoadDialog}
                 setShowPauseMenu={setShowPauseMenu}
-                setMapCenter={setMapCenter}
+                centerMapOnAsset={centerMapOnAsset}
             />
 
             {/* Context Menu */}
@@ -1289,7 +1296,7 @@ function AICSimulator() {
 function ControlPanel({
     isRunning, setIsRunning, assets, selectedAsset, setSelectedAssetId,
     updateAsset, deleteAsset, reportTrack, setShowAddAssetDialog,
-    setShowSaveDialog, setShowLoadDialog, setShowPauseMenu, setMapCenter
+    setShowSaveDialog, setShowLoadDialog, setShowPauseMenu, centerMapOnAsset
 }) {
     const [editValues, setEditValues] = useState({});
     const selectedAssetIdRef = useRef(null);
@@ -1335,12 +1342,6 @@ function ControlPanel({
         console.log(`Setting ${targetField} to ${value} for asset ${selectedAsset.id}`);
     };
 
-    const handleAssetSelect = (asset) => {
-        setSelectedAssetId(asset.id);
-        // Center map on selected asset
-        setMapCenter({ lat: asset.lat, lon: asset.lon });
-    };
-
     return (
         <div className="control-panel">
             <h1>AIC SIMULATOR</h1>
@@ -1379,10 +1380,14 @@ function ControlPanel({
                         <div className="empty-state">No assets created</div>
                     ) : (
                         assets.map(asset => (
-                            <div
+                            <button
                                 key={asset.id}
                                 className={`asset-item ${selectedAsset?.id === asset.id ? 'selected' : ''}`}
-                                onClick={() => handleAssetSelect(asset)}
+                                onClick={() => {
+                                    setSelectedAssetId(asset.id);
+                                    centerMapOnAsset(asset.id);
+                                }}
+                                type="button"
                             >
                                 <div className="asset-name" style={{ color: ASSET_TYPES[asset.type].color }}>
                                     {asset.name}
@@ -1393,7 +1398,7 @@ function ControlPanel({
                                     {Math.round(asset.speed)} KTAS |
                                     FL{Math.round(asset.altitude/100)}
                                 </div>
-                            </div>
+                            </button>
                         ))
                     )}
                 </div>
