@@ -315,7 +315,7 @@ function AICSimulator() {
 
     // Radar return generation - create returns when sweep passes over assets
     useEffect(() => {
-        if (isRunning) {
+        if (isRunning && radarEnabled) {
             const ownship = assets.find(a => a.type === 'ownship');
             if (!ownship) return;
 
@@ -348,7 +348,7 @@ function AICSimulator() {
                 }
             });
         }
-    }, [isRunning, radarSweepAngle, assets, missionTime]);
+    }, [isRunning, radarEnabled, radarSweepAngle, assets, missionTime]);
 
     // Clean up old radar returns based on decay setting
     useEffect(() => {
@@ -1281,8 +1281,6 @@ function AICSimulator() {
     };
 
     const renderRadarReturns = (width, height) => {
-        if (!radarEnabled) return null;
-
         return (
             <g>
                 {radarReturns.map(ret => {
@@ -1812,6 +1810,17 @@ function ControlPanel({
                 </div>
             </div>
 
+            {/* Systems Controls */}
+            <div className="control-section">
+                <div className="section-header">SYSTEMS</div>
+                <button
+                    className="control-btn full-width"
+                    onClick={() => setRadarControlsSelected(true)}
+                >
+                    RADAR
+                </button>
+            </div>
+
             {/* File Management - Only show before simulation has started */}
             {!hasStarted && (
                 <div className="control-section">
@@ -1855,7 +1864,7 @@ function ControlPanel({
                     {/* Radar ON/OFF Button */}
                     <div className="playback-controls" style={{ marginBottom: '15px' }}>
                         <button
-                            className={`control-btn ${radarEnabled ? 'primary' : ''}`}
+                            className={`control-btn ${radarEnabled ? 'primary' : 'danger'}`}
                             onClick={() => setRadarEnabled(!radarEnabled)}
                             style={{ width: '100%' }}
                         >
@@ -1938,12 +1947,6 @@ function ControlPanel({
                         style={{ marginTop: '10px' }}
                     >
                         + ADD ASSET
-                    </button>
-                    <button
-                        className="control-btn full-width"
-                        onClick={() => setRadarControlsSelected(true)}
-                    >
-                        RADAR
                     </button>
                 </div>
             )}
