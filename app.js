@@ -17,7 +17,8 @@ const ASSET_TYPES = {
     hostile: { color: '#FF0000', badge: 'HST', shape: 'diamond' },
     neutral: { color: '#00FF00', badge: 'NEU', shape: 'square' },
     unknown: { color: '#FFFF00', badge: 'UNK', shape: 'square' },
-    unknownUnevaluated: { color: '#FFA500', badge: 'UNU', shape: 'square' }
+    unknownUnevaluated: { color: '#FFA500', badge: 'UNU', shape: 'square' },
+    ownship: { color: '#808080', badge: 'OWN', shape: 'ownship' }
 };
 
 // Turn/climb/speed rates
@@ -125,7 +126,23 @@ function screenToLatLon(x, y, centerLat, centerLon, scale, width, height) {
 
 function AICSimulator() {
     // State management
-    const [assets, setAssets] = useState([]);
+    const [assets, setAssets] = useState([
+        {
+            id: 0,
+            name: 'OWNSHIP',
+            type: 'ownship',
+            lat: BULLSEYE.lat - (50 / 60), // 50 NM south of bullseye
+            lon: BULLSEYE.lon,
+            heading: 0,
+            speed: 150,
+            altitude: 15000,
+            targetHeading: null,
+            targetSpeed: null,
+            targetAltitude: null,
+            waypoints: [],
+            trackNumber: null
+        }
+    ]);
     const [selectedAssetId, setSelectedAssetId] = useState(null);
     const [isRunning, setIsRunning] = useState(false);
     const [scale, setScale] = useState(INITIAL_SCALE);
@@ -151,7 +168,12 @@ function AICSimulator() {
     const [missionTime, setMissionTime] = useState(0);
     const [bullseyeName, setBullseyeName] = useState('');
     const [bullseyeSelected, setBullseyeSelected] = useState(false);
+    const [radarControlsSelected, setRadarControlsSelected] = useState(false);
     const [radarReturns, setRadarReturns] = useState([]);
+    const [radarSweepAngle, setRadarSweepAngle] = useState(0); // Current radar sweep angle in degrees
+    const [radarEnabled, setRadarEnabled] = useState(true); // Radar ON/OFF state
+    const [radarSweepOpacity, setRadarSweepOpacity] = useState(0.5); // Radar sweep opacity (0-1)
+    const [radarReturnDecay, setRadarReturnDecay] = useState(30); // Radar return decay time in seconds
 
     // Refs
     const svgRef = useRef(null);
@@ -160,7 +182,6 @@ function AICSimulator() {
     const mediaRecorderRef = useRef(null);
     const recordedChunksRef = useRef([]);
     const missionTimeIntervalRef = useRef(null);
-    const radarReturnIntervalRef = useRef(null);
 
     // Get selected asset
     const selectedAsset = useMemo(() =>
@@ -254,7 +275,12 @@ function AICSimulator() {
     useEffect(() => {
         if (isRunning) {
             setHasStarted(true);
-            physicsIntervalRef.current = setInterval(updatePhysics, PHYSICS_UPDATE_RATE);
+            physicsIntervalRef.current = setInterval(() => {
+                updatePhysics();
+                // Update radar sweep angle - 360 degrees in 10 seconds = 36 deg/sec
+                // At 60Hz: 36/60 = 0.6 degrees per frame
+                setRadarSweepAngle(prev => (prev + 0.6) % 360);
+            }, PHYSICS_UPDATE_RATE);
         } else {
             if (physicsIntervalRef.current) {
                 clearInterval(physicsIntervalRef.current);
@@ -287,56 +313,64 @@ function AICSimulator() {
         };
     }, [isRunning]);
 
-    // Radar return generation - create returns every 10 seconds, fade over 30 seconds
+    // Radar return generation - create returns when sweep passes over assets
     useEffect(() => {
         if (isRunning) {
-            // Create initial radar returns immediately when starting
-            const createRadarReturns = () => {
-                setAssets(currentAssets => {
-                    setMissionTime(currentMissionTime => {
-                        const newReturns = currentAssets.map(asset => ({
-                            assetId: asset.id,
-                            lat: asset.lat,
-                            lon: asset.lon,
-                            missionTime: currentMissionTime,
-                            id: `${asset.id}-${currentMissionTime}`
-                        }));
-                        setRadarReturns(prev => [...prev, ...newReturns]);
-                        return currentMissionTime;
-                    });
-                    return currentAssets;
-                });
-            };
+            const ownship = assets.find(a => a.type === 'ownship');
+            if (!ownship) return;
 
-            createRadarReturns();
+            // Check each asset to see if the sweep just passed over it
+            assets.forEach(asset => {
+                // Skip ownship itself
+                if (asset.type === 'ownship') return;
 
-            // Create radar returns every 10 seconds
-            radarReturnIntervalRef.current = setInterval(createRadarReturns, 10000);
-        } else {
-            if (radarReturnIntervalRef.current) {
-                clearInterval(radarReturnIntervalRef.current);
-            }
+                // Calculate bearing from ownship to asset
+                const bearing = calculateBearing(ownship.lat, ownship.lon, asset.lat, asset.lon);
+                const distance = calculateDistance(ownship.lat, ownship.lon, asset.lat, asset.lon);
+
+                // Skip if asset is beyond 320 NM range
+                if (distance > 320) return;
+
+                // Check if sweep angle just passed over this bearing (within 0.6 degrees)
+                // We use a tolerance of 1 degree to account for timing
+                const angleDiff = Math.abs(((bearing - radarSweepAngle + 540) % 360) - 180);
+
+                if (angleDiff < 1) {
+                    // Create radar return for this asset
+                    const newReturn = {
+                        assetId: asset.id,
+                        lat: asset.lat,
+                        lon: asset.lon,
+                        missionTime: missionTime,
+                        id: `${asset.id}-${missionTime}-${Math.random()}`
+                    };
+                    setRadarReturns(prev => [...prev, newReturn]);
+                }
+            });
         }
+    }, [isRunning, radarSweepAngle, assets, missionTime]);
 
-        return () => {
-            if (radarReturnIntervalRef.current) {
-                clearInterval(radarReturnIntervalRef.current);
-            }
-        };
-    }, [isRunning]);
-
-    // Clean up old radar returns (older than 30 seconds of mission time)
+    // Clean up old radar returns based on decay setting
     useEffect(() => {
         if (isRunning) {
-            setRadarReturns(prev => prev.filter(ret => missionTime - ret.missionTime < 30));
+            setRadarReturns(prev => prev.filter(ret => missionTime - ret.missionTime < radarReturnDecay));
         }
-    }, [missionTime, isRunning]);
+    }, [missionTime, isRunning, radarReturnDecay]);
 
     // ========================================================================
     // ASSET MANAGEMENT
     // ========================================================================
 
     const addAsset = useCallback((assetData) => {
+        // Apply ownship limits if creating ownship
+        let speed = assetData.speed !== undefined ? assetData.speed : 350;
+        let altitude = assetData.altitude !== undefined ? assetData.altitude : 25000;
+
+        if (assetData.type === 'ownship') {
+            speed = Math.min(220, speed);
+            altitude = Math.min(27000, altitude);
+        }
+
         const newAsset = {
             id: nextAssetId,
             name: assetData.name || `Asset ${nextAssetId}`,
@@ -344,8 +378,8 @@ function AICSimulator() {
             lat: assetData.lat || BULLSEYE.lat,
             lon: assetData.lon || BULLSEYE.lon,
             heading: assetData.heading || 0,
-            speed: assetData.speed !== undefined ? assetData.speed : 350,
-            altitude: assetData.altitude !== undefined ? assetData.altitude : 25000,
+            speed: speed,
+            altitude: altitude,
             targetHeading: null,
             targetSpeed: null,
             targetAltitude: null,
@@ -359,11 +393,18 @@ function AICSimulator() {
     }, [nextAssetId]);
 
     const deleteAsset = useCallback((assetId) => {
+        // Prevent deletion of ownship
+        const asset = assets.find(a => a.id === assetId);
+        if (asset && asset.type === 'ownship') {
+            alert('Ownship cannot be deleted');
+            return;
+        }
+
         setAssets(prev => prev.filter(a => a.id !== assetId));
         if (selectedAssetId === assetId) {
             setSelectedAssetId(null);
         }
-    }, [selectedAssetId]);
+    }, [selectedAssetId, assets]);
 
     const centerMapOnAsset = useCallback((assetId) => {
         const asset = assets.find(a => a.id === assetId);
@@ -373,9 +414,38 @@ function AICSimulator() {
     }, [assets]);
 
     const updateAsset = useCallback((assetId, updates) => {
-        setAssets(prev => prev.map(a =>
-            a.id === assetId ? { ...a, ...updates } : a
-        ));
+        setAssets(prev => prev.map(a => {
+            if (a.id !== assetId) return a;
+
+            // Prevent changing type to or from ownship
+            if (updates.type !== undefined) {
+                if (a.type === 'ownship' || updates.type === 'ownship') {
+                    alert('Ownship type cannot be changed');
+                    return a;
+                }
+            }
+
+            const updatedAsset = { ...a, ...updates };
+
+            // Apply ownship limits
+            if (updatedAsset.type === 'ownship') {
+                if (updates.targetSpeed !== undefined) {
+                    updatedAsset.targetSpeed = Math.min(220, updates.targetSpeed);
+                }
+                if (updates.targetAltitude !== undefined) {
+                    updatedAsset.targetAltitude = Math.min(27000, updates.targetAltitude);
+                }
+                // Also limit current values if they exceed limits
+                if (updatedAsset.speed > 220) {
+                    updatedAsset.speed = 220;
+                }
+                if (updatedAsset.altitude > 27000) {
+                    updatedAsset.altitude = 27000;
+                }
+            }
+
+            return updatedAsset;
+        }));
     }, []);
 
     const reportTrack = useCallback((assetId) => {
@@ -634,7 +704,34 @@ function AICSimulator() {
         const data = localStorage.getItem(`aic-scenario-${name}`);
         if (data) {
             const saveData = JSON.parse(data);
-            setAssets(saveData.assets || []);
+
+            // Ensure ownship is always present
+            let loadedAssets = saveData.assets || [];
+            const ownshipIndex = loadedAssets.findIndex(a => a.id === 0 || a.type === 'ownship');
+
+            if (ownshipIndex === -1) {
+                // No ownship found, add default ownship 50 NM south of bullseye
+                loadedAssets = [{
+                    id: 0,
+                    name: 'OWNSHIP',
+                    type: 'ownship',
+                    lat: BULLSEYE.lat - (50 / 60),
+                    lon: BULLSEYE.lon,
+                    heading: 0,
+                    speed: 150,
+                    altitude: 15000,
+                    targetHeading: null,
+                    targetSpeed: null,
+                    targetAltitude: null,
+                    waypoints: [],
+                    trackNumber: null
+                }, ...loadedAssets];
+            } else if (loadedAssets[ownshipIndex].id !== 0) {
+                // Ownship exists but has wrong ID, fix it
+                loadedAssets[ownshipIndex].id = 0;
+            }
+
+            setAssets(loadedAssets);
             setScale(saveData.scale || INITIAL_SCALE);
             setMapCenter(saveData.mapCenter || BULLSEYE);
             setTempMark(saveData.tempMark || null);
@@ -646,12 +743,12 @@ function AICSimulator() {
             setBullseyeName(saveData.bullseyeName || '');
 
             // Find max asset ID
-            const maxId = saveData.assets.reduce((max, a) => Math.max(max, a.id), 0);
+            const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
             setNextAssetId(maxId + 1);
 
             // Save as initial scenario for restart
             setInitialScenario({
-                assets: JSON.parse(JSON.stringify(saveData.assets || [])),
+                assets: JSON.parse(JSON.stringify(loadedAssets)),
                 scale: saveData.scale || INITIAL_SCALE,
                 mapCenter: saveData.mapCenter || BULLSEYE,
                 tempMark: saveData.tempMark || null,
@@ -668,7 +765,34 @@ function AICSimulator() {
             reader.onload = (e) => {
                 try {
                     const saveData = JSON.parse(e.target.result);
-                    setAssets(saveData.assets || []);
+
+                    // Ensure ownship is always present
+                    let loadedAssets = saveData.assets || [];
+                    const ownshipIndex = loadedAssets.findIndex(a => a.id === 0 || a.type === 'ownship');
+
+                    if (ownshipIndex === -1) {
+                        // No ownship found, add default ownship 50 NM south of bullseye
+                        loadedAssets = [{
+                            id: 0,
+                            name: 'OWNSHIP',
+                            type: 'ownship',
+                            lat: BULLSEYE.lat - (50 / 60),
+                            lon: BULLSEYE.lon,
+                            heading: 0,
+                            speed: 150,
+                            altitude: 15000,
+                            targetHeading: null,
+                            targetSpeed: null,
+                            targetAltitude: null,
+                            waypoints: [],
+                            trackNumber: null
+                        }, ...loadedAssets];
+                    } else if (loadedAssets[ownshipIndex].id !== 0) {
+                        // Ownship exists but has wrong ID, fix it
+                        loadedAssets[ownshipIndex].id = 0;
+                    }
+
+                    setAssets(loadedAssets);
                     setScale(saveData.scale || INITIAL_SCALE);
                     setMapCenter(saveData.mapCenter || BULLSEYE);
                     setTempMark(saveData.tempMark || null);
@@ -679,12 +803,12 @@ function AICSimulator() {
                     setMissionTime(saveData.missionTime || 0);
                     setBullseyeName(saveData.bullseyeName || '');
 
-                    const maxId = saveData.assets.reduce((max, a) => Math.max(max, a.id), 0);
+                    const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
                     setNextAssetId(maxId + 1);
 
                     // Save as initial scenario for restart
                     setInitialScenario({
-                        assets: JSON.parse(JSON.stringify(saveData.assets || [])),
+                        assets: JSON.parse(JSON.stringify(loadedAssets)),
                         scale: saveData.scale || INITIAL_SCALE,
                         mapCenter: saveData.mapCenter || BULLSEYE,
                         tempMark: saveData.tempMark || null,
@@ -718,6 +842,7 @@ function AICSimulator() {
             setIsRunning(false);
             setMissionTime(0);
             setRadarReturns([]);
+            setRadarSweepAngle(0);
         } else {
             // No scenario loaded, do a full page reload
             window.location.reload();
@@ -774,6 +899,7 @@ function AICSimulator() {
         if (clickedAsset) {
             setSelectedAssetId(clickedAsset.id);
             setBullseyeSelected(false);
+            setRadarControlsSelected(false);
             setTempMark(null);
         } else {
             // Place temporary mark
@@ -781,6 +907,7 @@ function AICSimulator() {
             setTempMark(latLon);
             setSelectedAssetId(null);
             setBullseyeSelected(false);
+            setRadarControlsSelected(false);
         }
     }, [assets, contextMenu, mapCenter, scale]);
 
@@ -894,6 +1021,7 @@ function AICSimulator() {
         if (bullseyeDist < 15) {
             setBullseyeSelected(true);
             setSelectedAssetId(null);
+            setRadarControlsSelected(false);
             setTempMark(null);
             return;
         }
@@ -1153,11 +1281,13 @@ function AICSimulator() {
     };
 
     const renderRadarReturns = (width, height) => {
+        if (!radarEnabled) return null;
+
         return (
             <g>
                 {radarReturns.map(ret => {
                     const age = missionTime - ret.missionTime; // Age in seconds
-                    const opacity = Math.max(0, 1 - (age / 30)); // Fade from 1 to 0 over 30 seconds
+                    const opacity = Math.max(0, 1 - (age / radarReturnDecay)); // Fade based on decay setting
                     const pos = latLonToScreen(ret.lat, ret.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
 
                     return (
@@ -1171,6 +1301,81 @@ function AICSimulator() {
                         />
                     );
                 })}
+            </g>
+        );
+    };
+
+    const renderRadarSweep = (width, height) => {
+        const ownship = assets.find(a => a.type === 'ownship');
+        // Don't show radar sweep until user has started simulation at least once, or if radar is disabled
+        if (!ownship || !hasStarted || !radarEnabled) return null;
+
+        const ownshipPos = latLonToScreen(ownship.lat, ownship.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+
+        // Calculate the 320 NM range in screen pixels
+        const rangeInPixels = (320 / scale) * Math.min(width, height);
+
+        // Create multiple wedges with decreasing opacity to simulate angular gradient
+        const wedges = [];
+        const numWedges = 60; // Number of segments to create ultra-smooth fade
+        const totalSpan = 40; // Total degrees of sweep trail
+        const segmentSize = totalSpan / numWedges; // Size of each segment
+
+        // Create wedges from trailing edge to leading edge
+        for (let i = 0; i < numWedges; i++) {
+            const startAngle = radarSweepAngle - totalSpan + (i * segmentSize);
+            const endAngle = startAngle + segmentSize;
+
+            // Calculate opacity - increases towards leading edge, scaled by user setting
+            const opacity = (i / numWedges) * radarSweepOpacity;
+
+            // Convert to radians for drawing (0° is north, clockwise)
+            const startRad = (startAngle - 90) * Math.PI / 180;
+            const endRad = (endAngle - 90) * Math.PI / 180;
+
+            // Create points for the wedge path
+            const startX = ownshipPos.x + rangeInPixels * Math.cos(startRad);
+            const startY = ownshipPos.y + rangeInPixels * Math.sin(startRad);
+            const endX = ownshipPos.x + rangeInPixels * Math.cos(endRad);
+            const endY = ownshipPos.y + rangeInPixels * Math.sin(endRad);
+
+            // Create the path for this segment
+            const pathData = `
+                M ${ownshipPos.x},${ownshipPos.y}
+                L ${startX},${startY}
+                A ${rangeInPixels},${rangeInPixels} 0 0 1 ${endX},${endY}
+                Z
+            `;
+
+            wedges.push(
+                <path
+                    key={i}
+                    d={pathData}
+                    fill="#FFFFFF"
+                    opacity={opacity}
+                />
+            );
+        }
+
+        // Calculate leading edge line endpoint
+        const leadingRad = (radarSweepAngle - 90) * Math.PI / 180;
+        const leadingX = ownshipPos.x + rangeInPixels * Math.cos(leadingRad);
+        const leadingY = ownshipPos.y + rangeInPixels * Math.sin(leadingRad);
+
+        return (
+            <g>
+                {/* Render all wedge segments */}
+                {wedges}
+                {/* Leading edge line - bright white */}
+                <line
+                    x1={ownshipPos.x}
+                    y1={ownshipPos.y}
+                    x2={leadingX}
+                    y2={leadingY}
+                    stroke="#FFFFFF"
+                    strokeWidth={1}
+                    opacity={0.9}
+                />
             </g>
         );
     };
@@ -1258,6 +1463,34 @@ function AICSimulator() {
                         stroke={config.color}
                         strokeWidth={strokeWidth}
                     />
+                ) : config.shape === 'ownship' ? (
+                    // Ownship: Circle with crosshair
+                    <g>
+                        <circle
+                            cx={pos.x}
+                            cy={pos.y}
+                            r={size}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                        <line
+                            x1={pos.x - size}
+                            y1={pos.y}
+                            x2={pos.x + size}
+                            y2={pos.y}
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                        <line
+                            x1={pos.x}
+                            y1={pos.y - size}
+                            x2={pos.x}
+                            y2={pos.y + size}
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    </g>
                 ) : (
                     // Neutral/Unknown/Unknown Unevaluated: Top half of square
                     <path
@@ -1365,6 +1598,7 @@ function AICSimulator() {
                             {renderCompass(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderBullseye(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderTempMark(svgRef.current.clientWidth, svgRef.current.clientHeight)}
+                            {renderRadarSweep(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarReturns(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {assets.map(asset => renderAsset(asset, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                         </>
@@ -1421,6 +1655,14 @@ function AICSimulator() {
                 bullseyeSelected={bullseyeSelected}
                 bullseyeName={bullseyeName}
                 setBullseyeName={setBullseyeName}
+                radarControlsSelected={radarControlsSelected}
+                setRadarControlsSelected={setRadarControlsSelected}
+                radarEnabled={radarEnabled}
+                setRadarEnabled={setRadarEnabled}
+                radarSweepOpacity={radarSweepOpacity}
+                setRadarSweepOpacity={setRadarSweepOpacity}
+                radarReturnDecay={radarReturnDecay}
+                setRadarReturnDecay={setRadarReturnDecay}
             />
 
             {/* Context Menu */}
@@ -1504,7 +1746,10 @@ function ControlPanel({
     isRunning, setIsRunning, assets, selectedAsset, setSelectedAssetId,
     updateAsset, deleteAsset, reportTrack, setShowAddAssetDialog,
     setShowSaveDialog, setShowLoadDialog, setShowPauseMenu, centerMapOnAsset,
-    restartSimulation, hasStarted, bullseyeSelected, bullseyeName, setBullseyeName
+    restartSimulation, hasStarted, bullseyeSelected, bullseyeName, setBullseyeName,
+    radarControlsSelected, setRadarControlsSelected,
+    radarEnabled, setRadarEnabled, radarSweepOpacity, setRadarSweepOpacity,
+    radarReturnDecay, setRadarReturnDecay
 }) {
     const [editValues, setEditValues] = useState({});
     const selectedAssetIdRef = useRef(null);
@@ -1602,8 +1847,62 @@ function ControlPanel({
                 </div>
             )}
 
-            {/* Asset List - Only show when no asset is selected and bullseye is not selected */}
-            {!selectedAsset && !bullseyeSelected && (
+            {/* Radar Controls - Only show when radar controls are selected */}
+            {radarControlsSelected && (
+                <div className="control-section">
+                    <div className="section-header">RADAR</div>
+
+                    {/* Radar ON/OFF Button */}
+                    <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                        <button
+                            className={`control-btn ${radarEnabled ? 'primary' : ''}`}
+                            onClick={() => setRadarEnabled(!radarEnabled)}
+                            style={{ width: '100%' }}
+                        >
+                            {radarEnabled ? 'ON' : 'OFF'}
+                        </button>
+                    </div>
+
+                    {/* Sweep Opacity Slider */}
+                    <div className="input-group">
+                        <label className="input-label">Sweep Opacity</label>
+                        <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={radarSweepOpacity}
+                            onChange={(e) => setRadarSweepOpacity(parseFloat(e.target.value))}
+                            className="slider"
+                            style={{ width: '100%' }}
+                        />
+                        <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '5px' }}>
+                            {Math.round(radarSweepOpacity * 100)}%
+                        </div>
+                    </div>
+
+                    {/* Radar Return Decay Slider */}
+                    <div className="input-group" style={{ marginTop: '15px' }}>
+                        <label className="input-label">Return Decay Time</label>
+                        <input
+                            type="range"
+                            min="10"
+                            max="60"
+                            step="1"
+                            value={radarReturnDecay}
+                            onChange={(e) => setRadarReturnDecay(parseInt(e.target.value))}
+                            className="slider"
+                            style={{ width: '100%' }}
+                        />
+                        <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '5px' }}>
+                            {radarReturnDecay} seconds
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Asset List - Only show when no asset is selected, bullseye is not selected, and radar controls are not selected */}
+            {!selectedAsset && !bullseyeSelected && !radarControlsSelected && (
                 <div className="control-section">
                     <div className="section-header">ASSETS ({assets.length})</div>
                     <div className="asset-list">
@@ -1640,6 +1939,12 @@ function ControlPanel({
                     >
                         + ADD ASSET
                     </button>
+                    <button
+                        className="control-btn full-width"
+                        onClick={() => setRadarControlsSelected(true)}
+                    >
+                        RADAR
+                    </button>
                 </div>
             )}
 
@@ -1664,7 +1969,9 @@ function ControlPanel({
                             className="input-field"
                             value={selectedAsset.type}
                             onChange={(e) => updateAsset(selectedAsset.id, { type: e.target.value })}
+                            disabled={selectedAsset.type === 'ownship'}
                         >
+                            {selectedAsset.type === 'ownship' && <option value="ownship">Ownship</option>}
                             <option value="friendly">Friendly</option>
                             <option value="hostile">Hostile</option>
                             <option value="neutral">Neutral</option>
@@ -1768,9 +2075,11 @@ function ControlPanel({
                         <button className="control-btn" onClick={() => reportTrack(selectedAsset.id)}>
                             REPORT TRACK
                         </button>
-                        <button className="control-btn danger" onClick={() => deleteAsset(selectedAsset.id)}>
-                            DELETE
-                        </button>
+                        {selectedAsset.type !== 'ownship' && (
+                            <button className="control-btn danger" onClick={() => deleteAsset(selectedAsset.id)}>
+                                DELETE
+                            </button>
+                        )}
                     </div>
                 </div>
             )}

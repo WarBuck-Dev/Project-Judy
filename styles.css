@@ -637,3 +637,58 @@ select.input-field {
 .full-width {
     width: 100%;
 }
+
+/* Slider Styles */
+.slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(0, 255, 0, 0.2);
+    outline: none;
+    transition: background 0.3s ease;
+}
+
+.slider:hover {
+    background: rgba(0, 255, 0, 0.3);
+}
+
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #00FF00;
+    cursor: pointer;
+    box-shadow: 0 0 10px rgba(0, 255, 0, 0.7),
+                0 0 20px rgba(0, 255, 0, 0.5);
+    transition: all 0.3s ease;
+}
+
+.slider::-webkit-slider-thumb:hover {
+    background: #00FF00;
+    box-shadow: 0 0 15px rgba(0, 255, 0, 0.9),
+                0 0 30px rgba(0, 255, 0, 0.7);
+    transform: scale(1.1);
+}
+
+.slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #00FF00;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 0 10px rgba(0, 255, 0, 0.7),
+                0 0 20px rgba(0, 255, 0, 0.5);
+    transition: all 0.3s ease;
+}
+
+.slider::-moz-range-thumb:hover {
+    background: #00FF00;
+    box-shadow: 0 0 15px rgba(0, 255, 0, 0.9),
+                0 0 30px rgba(0, 255, 0, 0.7);
+    transform: scale(1.1);
+}

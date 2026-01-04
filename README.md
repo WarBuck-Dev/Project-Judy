@@ -253,19 +253,36 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 ## Recent Updates (v2.0)
 
 ### New Features
+- **Ownship Asset**: Dedicated ownship aircraft (gray circle with crosshair symbol)
+  - Spawns 50 NM south of bullseye on initial load
+  - Maximum speed: 220 knots, Maximum altitude: 27,000 feet
+  - Cannot be deleted or created by user (always present)
+  - Full waypoint and control support like other assets
+- **Radar Sweep System**: Realistic rotating radar sweep from ownship
+  - 360° rotation every 10 seconds
+  - 320 NM maximum range
+  - 40-degree sweep trail with 60-segment smooth gradient
+  - Sweep-based radar return generation
+- **Radar Controls Panel**: Adjustable radar settings
+  - ON/OFF toggle for radar system
+  - Sweep opacity control (0-100% in 1% increments)
+  - Return decay time (10-60 seconds in 1-second increments)
+  - Access via RADAR button in asset list
 - **Bullseye Customization**: Click bullseye to set custom name (e.g., "VEGAS")
-- **Radar Returns**: Simulated radar returns appear every 10 seconds, fade over 30 seconds
+- **Radar Returns**: Simulated radar returns synchronized with sweep rotation
 - **Mission Time Clock**: HH:MM:SS display shows elapsed mission time
 - **MIL-STD-2525 Symbology**: Aircraft symbols now use military standard (top-half only)
 - **Improved Asset Dragging**: Drag selected assets to reposition on map
 - **Selection Indicators**: Visual feedback when bullseye or assets are selected
 
 ### UI Improvements
+- RADAR control panel integrates with existing UI pattern
 - Fixed mission time box width to prevent layout shifts
 - Removed green glow from map background for cleaner display
 - Temp mark now clears when selecting assets or bullseye
 - Identity field (formerly "Type") for clearer terminology
 - File management only visible before simulation starts
+- Custom slider styling with green glow effects
 
 ---
 

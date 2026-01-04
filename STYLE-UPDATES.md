@@ -10,8 +10,10 @@ Updated the simulator's visual design to match a premium military-grade radar in
 - ✅ Solid black background (#000000) for better contrast
 - ✅ Fixed mission time box width (210px) to prevent layout shifts
 - ✅ Added visual selection indicators (dashed rings) for bullseye and assets
-- ✅ White radar return dots (4px, 70% opacity) with 30-second fade
+- ✅ White radar return dots (4px, 70% opacity) with adjustable decay
 - ✅ MIL-STD-2525 symbology (top-half air tracks)
+- ✅ Ownship asset with gray circle + crosshair symbol
+- ✅ Rotating radar sweep (40° trail, 60-segment gradient)
 
 ## Key Visual Improvements
 
@@ -20,8 +22,15 @@ Updated the simulator's visual design to match a premium military-grade radar in
 - 🌟 Applied glow filter to SVG elements
 - 📐 Reduced grid opacity to 8% for more subtle appearance
 - 📏 Increased grid spacing from 50px to 60px
-- ✨ White fading radar returns beneath tracks
+- ✨ White fading radar returns beneath tracks (sweep-based generation)
 - 🎯 Dashed selection rings for selected objects
+- ⚡ Rotating radar sweep emanating from ownship
+  - 10-second full rotation (36°/second)
+  - 320 NM maximum range
+  - 40-degree sweep trail
+  - 60-segment ultra-smooth gradient fade
+  - 1px leading edge indicator line
+  - User-adjustable opacity (0-100%)
 
 ### 2. **Glowing Effects**
 All UI elements now feature layered glow effects:
