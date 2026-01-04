@@ -417,6 +417,23 @@ select.input-field {
     transform: translateX(3px);
 }
 
+.context-menu-parent {
+    position: relative;
+}
+
+.context-menu-submenu {
+    position: absolute;
+    left: 100%;
+    top: 0;
+    background-color: rgba(0, 0, 0, 0.98);
+    border: 2px solid #00FF00;
+    padding: 8px;
+    min-width: 180px;
+    border-radius: 4px;
+    box-shadow: 0 0 20px rgba(0, 255, 0, 0.5), inset 0 0 15px rgba(0, 255, 0, 0.1);
+    margin-left: 5px;
+}
+
 /* Modal/Dialog */
 .modal-overlay {
     position: fixed;

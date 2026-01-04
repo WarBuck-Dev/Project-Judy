@@ -21,6 +21,14 @@ const ASSET_TYPES = {
     ownship: { color: '#808080', badge: 'OWN', shape: 'ownship' }
 };
 
+// Geo-point type configurations
+const GEOPOINT_TYPES = {
+    capStation: { label: 'CAP Station', icon: 'crosshair' },
+    airfield: { label: 'Airfield', icon: 'airfield' },
+    samSite: { label: 'SAM Site', icon: 'samsite' },
+    mark: { label: 'Mark', icon: 'mark' }
+};
+
 // Turn/climb/speed rates
 const TURN_RATE = 15; // degrees per second
 const SPEED_RATE = 10; // knots per second
@@ -174,6 +182,10 @@ function AICSimulator() {
     const [radarEnabled, setRadarEnabled] = useState(true); // Radar ON/OFF state
     const [radarSweepOpacity, setRadarSweepOpacity] = useState(0.5); // Radar sweep opacity (0-1)
     const [radarReturnDecay, setRadarReturnDecay] = useState(30); // Radar return decay time in seconds
+    const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
+    const [nextGeoPointId, setNextGeoPointId] = useState(1);
+    const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
+    const [draggedGeoPointId, setDraggedGeoPointId] = useState(null);
 
     // Refs
     const svgRef = useRef(null);
@@ -515,6 +527,42 @@ function AICSimulator() {
     }, []);
 
     // ========================================================================
+    // GEO-POINT MANAGEMENT
+    // ========================================================================
+
+    const addGeoPoint = useCallback((lat, lon, geoPointType) => {
+        const newGeoPoint = {
+            id: nextGeoPointId,
+            name: '', // Blank name by default
+            type: geoPointType,
+            lat: lat,
+            lon: lon,
+            identity: 'unknown' // Default identity
+        };
+
+        setGeoPoints(prev => [...prev, newGeoPoint]);
+        setNextGeoPointId(prev => prev + 1);
+        setSelectedGeoPointId(newGeoPoint.id);
+        setSelectedAssetId(null);
+        setBullseyeSelected(false);
+        setRadarControlsSelected(false);
+    }, [nextGeoPointId]);
+
+    const deleteGeoPoint = useCallback((geoPointId) => {
+        setGeoPoints(prev => prev.filter(gp => gp.id !== geoPointId));
+        if (selectedGeoPointId === geoPointId) {
+            setSelectedGeoPointId(null);
+        }
+    }, [selectedGeoPointId]);
+
+    const updateGeoPoint = useCallback((geoPointId, updates) => {
+        setGeoPoints(prev => prev.map(gp => {
+            if (gp.id !== geoPointId) return gp;
+            return { ...gp, ...updates };
+        }));
+    }, []);
+
+    // ========================================================================
     // RECORDING FUNCTIONALITY
     // ========================================================================
 
@@ -670,12 +718,14 @@ function AICSimulator() {
             mapCenter,
             tempMark,
             nextTrackNumber,
-            missionTime
+            missionTime,
+            geoPoints,
+            nextGeoPointId
         };
 
         localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
         alert(`Scenario saved to application: ${name}`);
-    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime]);
+    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId]);
 
     const saveToFile = useCallback((name) => {
         const saveData = {
@@ -688,7 +738,9 @@ function AICSimulator() {
             mapCenter,
             tempMark,
             nextTrackNumber,
-            missionTime
+            missionTime,
+            geoPoints,
+            nextGeoPointId
         };
 
         const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' });
@@ -698,7 +750,7 @@ function AICSimulator() {
         a.download = `${name}-${new Date().toISOString().split('T')[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
-    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime]);
+    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId]);
 
     const loadFromLocalStorage = useCallback((name) => {
         const data = localStorage.getItem(`aic-scenario-${name}`);
@@ -738,9 +790,12 @@ function AICSimulator() {
             setNextTrackNumber(saveData.nextTrackNumber || 6000);
             setSelectedAssetId(null);
             setBullseyeSelected(false);
+            setSelectedGeoPointId(null);
             setHasStarted(true);
             setMissionTime(saveData.missionTime || 0);
             setBullseyeName(saveData.bullseyeName || '');
+            setGeoPoints(saveData.geoPoints || []);
+            setNextGeoPointId(saveData.nextGeoPointId || 1);
 
             // Find max asset ID
             const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
@@ -753,7 +808,9 @@ function AICSimulator() {
                 mapCenter: saveData.mapCenter || BULLSEYE,
                 tempMark: saveData.tempMark || null,
                 nextTrackNumber: saveData.nextTrackNumber || 6000,
-                nextAssetId: maxId + 1
+                nextAssetId: maxId + 1,
+                geoPoints: JSON.parse(JSON.stringify(saveData.geoPoints || [])),
+                nextGeoPointId: saveData.nextGeoPointId || 1
             });
         }
     }, []);
@@ -799,9 +856,12 @@ function AICSimulator() {
                     setNextTrackNumber(saveData.nextTrackNumber || 6000);
                     setSelectedAssetId(null);
                     setBullseyeSelected(false);
+                    setSelectedGeoPointId(null);
                     setHasStarted(true);
                     setMissionTime(saveData.missionTime || 0);
                     setBullseyeName(saveData.bullseyeName || '');
+                    setGeoPoints(saveData.geoPoints || []);
+                    setNextGeoPointId(saveData.nextGeoPointId || 1);
 
                     const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
                     setNextAssetId(maxId + 1);
@@ -813,7 +873,9 @@ function AICSimulator() {
                         mapCenter: saveData.mapCenter || BULLSEYE,
                         tempMark: saveData.tempMark || null,
                         nextTrackNumber: saveData.nextTrackNumber || 6000,
-                        nextAssetId: maxId + 1
+                        nextAssetId: maxId + 1,
+                        geoPoints: JSON.parse(JSON.stringify(saveData.geoPoints || [])),
+                        nextGeoPointId: saveData.nextGeoPointId || 1
                     });
 
                     alert('Scenario loaded successfully!');
@@ -838,7 +900,10 @@ function AICSimulator() {
             setTempMark(initialScenario.tempMark);
             setNextTrackNumber(initialScenario.nextTrackNumber);
             setNextAssetId(initialScenario.nextAssetId);
+            setGeoPoints(JSON.parse(JSON.stringify(initialScenario.geoPoints || [])));
+            setNextGeoPointId(initialScenario.nextGeoPointId || 1);
             setSelectedAssetId(null);
+            setSelectedGeoPointId(null);
             setIsRunning(false);
             setMissionTime(0);
             setRadarReturns([]);
@@ -885,6 +950,17 @@ function AICSimulator() {
             return;
         }
 
+        // Check if clicking on a geo-point
+        let clickedGeoPoint = null;
+        for (const geoPoint of geoPoints) {
+            const gpPos = latLonToScreen(geoPoint.lat, geoPoint.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+            const dist = Math.sqrt((x - gpPos.x) ** 2 + (y - gpPos.y) ** 2);
+            if (dist < 15) {
+                clickedGeoPoint = geoPoint;
+                break;
+            }
+        }
+
         // Check if clicking on an asset
         let clickedAsset = null;
         for (const asset of assets) {
@@ -896,9 +972,13 @@ function AICSimulator() {
             }
         }
 
-        if (clickedAsset) {
+        if (clickedGeoPoint) {
+            // Geo-point clicked (already handled in handleMouseDown)
+            return;
+        } else if (clickedAsset) {
             setSelectedAssetId(clickedAsset.id);
             setBullseyeSelected(false);
+            setSelectedGeoPointId(null);
             setRadarControlsSelected(false);
             setTempMark(null);
         } else {
@@ -907,9 +987,10 @@ function AICSimulator() {
             setTempMark(latLon);
             setSelectedAssetId(null);
             setBullseyeSelected(false);
+            setSelectedGeoPointId(null);
             setRadarControlsSelected(false);
         }
-    }, [assets, contextMenu, mapCenter, scale]);
+    }, [assets, geoPoints, contextMenu, mapCenter, scale]);
 
     const handleSVGRightClick = useCallback((e) => {
         e.preventDefault();
@@ -920,6 +1001,22 @@ function AICSimulator() {
         const y = e.clientY - rect.top;
 
         const latLon = screenToLatLon(x, y, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+
+        // Check if clicking on a geo-point
+        for (const geoPoint of geoPoints) {
+            const gpPos = latLonToScreen(geoPoint.lat, geoPoint.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+            const dist = Math.sqrt((x - gpPos.x) ** 2 + (y - gpPos.y) ** 2);
+
+            if (dist < 15) {
+                setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    type: 'geopoint',
+                    geoPointId: geoPoint.id
+                });
+                return;
+            }
+        }
 
         // Check if clicking on a waypoint from ANY asset
         for (const asset of assets) {
@@ -949,7 +1046,7 @@ function AICSimulator() {
             lat: latLon.lat,
             lon: latLon.lon
         });
-    }, [selectedAsset, assets, mapCenter, scale]);
+    }, [selectedAsset, assets, geoPoints, mapCenter, scale]);
 
     const handleMouseMove = useCallback((e) => {
         const svg = svgRef.current;
@@ -961,6 +1058,12 @@ function AICSimulator() {
 
         const latLon = screenToLatLon(x, y, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
         setCursorPos(latLon);
+
+        // Handle geo-point dragging
+        if (draggedGeoPointId !== null) {
+            updateGeoPoint(draggedGeoPointId, { lat: latLon.lat, lon: latLon.lon });
+            return;
+        }
 
         // Handle asset dragging
         if (draggedAssetId !== null) {
@@ -1005,7 +1108,7 @@ function AICSimulator() {
         if (draggedWaypoint !== null) {
             moveWaypoint(draggedWaypoint.assetId, draggedWaypoint.wpIndex, latLon.lat, latLon.lon);
         }
-    }, [mapCenter, scale, isDragging, dragStart, draggedWaypoint, draggedAssetId, assets, moveWaypoint, updateAsset]);
+    }, [mapCenter, scale, isDragging, dragStart, draggedWaypoint, draggedAssetId, draggedGeoPointId, assets, moveWaypoint, updateAsset, updateGeoPoint]);
 
     const handleMouseDown = useCallback((e) => {
         if (e.button !== 0) return; // Only left click
@@ -1021,9 +1124,29 @@ function AICSimulator() {
         if (bullseyeDist < 15) {
             setBullseyeSelected(true);
             setSelectedAssetId(null);
+            setSelectedGeoPointId(null);
             setRadarControlsSelected(false);
             setTempMark(null);
             return;
+        }
+
+        // Check if clicking on a geo-point
+        for (const geoPoint of geoPoints) {
+            const gpPos = latLonToScreen(geoPoint.lat, geoPoint.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+            const dist = Math.sqrt((x - gpPos.x) ** 2 + (y - gpPos.y) ** 2);
+
+            if (dist < 15) {
+                setSelectedGeoPointId(geoPoint.id);
+                setSelectedAssetId(null);
+                setBullseyeSelected(false);
+                setRadarControlsSelected(false);
+                setTempMark(null);
+                // Check if this is the already-selected geo-point (enable dragging)
+                if (selectedGeoPointId === geoPoint.id) {
+                    setDraggedGeoPointId(geoPoint.id);
+                }
+                return;
+            }
         }
 
         // Check if clicking on a waypoint from ANY asset
@@ -1038,6 +1161,7 @@ function AICSimulator() {
                     setDraggedWaypoint({ assetId: asset.id, wpIndex: i });
                     setSelectedAssetId(asset.id); // Auto-select the asset
                     setBullseyeSelected(false);
+                    setSelectedGeoPointId(null);
                     return;
                 }
             }
@@ -1061,6 +1185,7 @@ function AICSimulator() {
             if (dist < 15) {
                 clickedAsset = true;
                 setBullseyeSelected(false);
+                setSelectedGeoPointId(null);
                 break;
             }
         }
@@ -1074,13 +1199,14 @@ function AICSimulator() {
                 centerLon: mapCenter.lon
             });
         }
-    }, [assets, selectedAsset, mapCenter, scale]);
+    }, [assets, geoPoints, selectedAsset, selectedGeoPointId, mapCenter, scale]);
 
     const handleMouseUp = useCallback(() => {
         setIsDragging(false);
         setDragStart(null);
         setDraggedWaypoint(null);
         setDraggedAssetId(null);
+        setDraggedGeoPointId(null);
     }, []);
 
     const handleWheel = useCallback((e) => {
@@ -1547,6 +1673,205 @@ function AICSimulator() {
         );
     };
 
+    const renderGeoPoint = (geoPoint, width, height) => {
+        const pos = latLonToScreen(geoPoint.lat, geoPoint.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+        const isSelected = geoPoint.id === selectedGeoPointId;
+        const config = GEOPOINT_TYPES[geoPoint.type];
+        const identityColor = ASSET_TYPES[geoPoint.identity]?.color || '#FFFF00';
+
+        return (
+            <g key={geoPoint.id}>
+                {/* Selection ring for selected geo-point */}
+                {isSelected && (
+                    <>
+                        <circle
+                            cx={pos.x}
+                            cy={pos.y}
+                            r={18}
+                            fill="none"
+                            stroke={identityColor}
+                            strokeWidth="1.5"
+                            opacity="0.4"
+                        />
+                        <circle
+                            cx={pos.x}
+                            cy={pos.y}
+                            r={16}
+                            fill="none"
+                            stroke={identityColor}
+                            strokeWidth="2"
+                            strokeDasharray="4,3"
+                            opacity="0.9"
+                        >
+                            <animateTransform
+                                attributeName="transform"
+                                type="rotate"
+                                from={`0 ${pos.x} ${pos.y}`}
+                                to={`360 ${pos.x} ${pos.y}`}
+                                dur="4s"
+                                repeatCount="indefinite"
+                            />
+                        </circle>
+                    </>
+                )}
+
+                {/* Geo-point icon */}
+                {config.icon === 'crosshair' ? (
+                    // CAP Station: Crosshair symbol (circle with cross)
+                    <g>
+                        <circle
+                            cx={pos.x}
+                            cy={pos.y}
+                            r={8}
+                            fill="none"
+                            stroke={identityColor}
+                            strokeWidth="2"
+                        />
+                        <line
+                            x1={pos.x - 12}
+                            y1={pos.y}
+                            x2={pos.x + 12}
+                            y2={pos.y}
+                            stroke={identityColor}
+                            strokeWidth="2"
+                        />
+                        <line
+                            x1={pos.x}
+                            y1={pos.y - 12}
+                            x2={pos.x}
+                            y2={pos.y + 12}
+                            stroke={identityColor}
+                            strokeWidth="2"
+                        />
+                    </g>
+                ) : config.icon === 'airfield' ? (
+                    // Airfield: Two parallel diagonal lines with horizontal line
+                    <g>
+                        <line
+                            x1={pos.x - 10}
+                            y1={pos.y + 8}
+                            x2={pos.x + 2}
+                            y2={pos.y - 8}
+                            stroke={identityColor}
+                            strokeWidth="2"
+                        />
+                        <line
+                            x1={pos.x - 2}
+                            y1={pos.y + 8}
+                            x2={pos.x + 10}
+                            y2={pos.y - 8}
+                            stroke={identityColor}
+                            strokeWidth="2"
+                        />
+                        <line
+                            x1={pos.x - 10}
+                            y1={pos.y}
+                            x2={pos.x + 10}
+                            y2={pos.y}
+                            stroke={identityColor}
+                            strokeWidth="2"
+                        />
+                    </g>
+                ) : config.icon === 'samsite' ? (
+                    // SAM Site: Right triangle (7 shape)
+                    <g>
+                        <line
+                            x1={pos.x - 10}
+                            y1={pos.y + 8}
+                            x2={pos.x}
+                            y2={pos.y - 8}
+                            stroke={identityColor}
+                            strokeWidth="2"
+                        />
+                        <line
+                            x1={pos.x - 10}
+                            y1={pos.y + 8}
+                            x2={pos.x + 8}
+                            y2={pos.y + 8}
+                            stroke={identityColor}
+                            strokeWidth="2"
+                        />
+                    </g>
+                ) : config.icon === 'mark' ? (
+                    // Mark: Rectangle with dot in center
+                    <g>
+                        <rect
+                            x={pos.x - 10}
+                            y={pos.y - 6}
+                            width="20"
+                            height="12"
+                            fill="none"
+                            stroke={identityColor}
+                            strokeWidth="2"
+                        />
+                        <circle
+                            cx={pos.x}
+                            cy={pos.y}
+                            r={2}
+                            fill={identityColor}
+                        />
+                        <line
+                            x1={pos.x - 10}
+                            y1={pos.y - 6}
+                            x2={pos.x - 10}
+                            y2={pos.y - 10}
+                            stroke={identityColor}
+                            strokeWidth="2"
+                        />
+                        <line
+                            x1={pos.x + 10}
+                            y1={pos.y - 6}
+                            x2={pos.x + 10}
+                            y2={pos.y - 10}
+                            stroke={identityColor}
+                            strokeWidth="2"
+                        />
+                        <line
+                            x1={pos.x - 10}
+                            y1={pos.y + 6}
+                            x2={pos.x - 10}
+                            y2={pos.y + 10}
+                            stroke={identityColor}
+                            strokeWidth="2"
+                        />
+                        <line
+                            x1={pos.x + 10}
+                            y1={pos.y + 6}
+                            x2={pos.x + 10}
+                            y2={pos.y + 10}
+                            stroke={identityColor}
+                            strokeWidth="2"
+                        />
+                    </g>
+                ) : (
+                    // Fallback: Text icon (shouldn't happen)
+                    <text
+                        x={pos.x}
+                        y={pos.y + 5}
+                        fill={identityColor}
+                        fontSize="16"
+                        textAnchor="middle"
+                        fontWeight="700"
+                    >
+                        {config.icon}
+                    </text>
+                )}
+
+                {/* Name label below */}
+                <text
+                    x={pos.x}
+                    y={pos.y + 25}
+                    fill={identityColor}
+                    fontSize="10"
+                    textAnchor="middle"
+                    fontWeight="700"
+                >
+                    {geoPoint.name}
+                </text>
+            </g>
+        );
+    };
+
     // ========================================================================
     // COMPONENT RENDER
     // ========================================================================
@@ -1598,6 +1923,7 @@ function AICSimulator() {
                             {renderTempMark(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarSweep(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarReturns(svgRef.current.clientWidth, svgRef.current.clientHeight)}
+                            {geoPoints.map(gp => renderGeoPoint(gp, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                             {assets.map(asset => renderAsset(asset, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                         </>
                     )}
@@ -1614,21 +1940,28 @@ function AICSimulator() {
                             </div>
                         </div>
 
-                        {(tempMark || selectedAsset) && (
-                            <div className="position-box secondary">
-                                <div className="position-label">
-                                    {selectedAsset ?
-                                        (selectedAsset.name && selectedAsset.name.trim() ? `FROM ${selectedAsset.name.toUpperCase()}` : 'FROM SELECTION')
-                                        : 'FROM MARK'}
+                        {(tempMark || selectedAsset || selectedGeoPointId) && (() => {
+                            const selectedGeoPoint = geoPoints.find(gp => gp.id === selectedGeoPointId);
+                            return (
+                                <div className="position-box secondary">
+                                    <div className="position-label">
+                                        {selectedGeoPoint ?
+                                            (selectedGeoPoint.name && selectedGeoPoint.name.trim() ? `FROM ${selectedGeoPoint.name.toUpperCase()}` : 'FROM GEO-POINT')
+                                            : selectedAsset ?
+                                                (selectedAsset.name && selectedAsset.name.trim() ? `FROM ${selectedAsset.name.toUpperCase()}` : 'FROM SELECTION')
+                                                : 'FROM MARK'}
+                                    </div>
+                                    <div className="position-value">
+                                        {selectedGeoPoint ?
+                                            `${Math.round(calculateBearing(selectedGeoPoint.lat, selectedGeoPoint.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${Math.round(calculateDistance(selectedGeoPoint.lat, selectedGeoPoint.lon, cursorPos.lat, cursorPos.lon))}` :
+                                            selectedAsset ?
+                                                `${Math.round(calculateBearing(selectedAsset.lat, selectedAsset.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${Math.round(calculateDistance(selectedAsset.lat, selectedAsset.lon, cursorPos.lat, cursorPos.lon))}` :
+                                                `${Math.round(calculateBearing(tempMark.lat, tempMark.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${Math.round(calculateDistance(tempMark.lat, tempMark.lon, cursorPos.lat, cursorPos.lon))}`
+                                        }
+                                    </div>
                                 </div>
-                                <div className="position-value">
-                                    {selectedAsset ?
-                                        `${Math.round(calculateBearing(selectedAsset.lat, selectedAsset.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${Math.round(calculateDistance(selectedAsset.lat, selectedAsset.lon, cursorPos.lat, cursorPos.lon))}` :
-                                        `${Math.round(calculateBearing(tempMark.lat, tempMark.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${Math.round(calculateDistance(tempMark.lat, tempMark.lon, cursorPos.lat, cursorPos.lon))}`
-                                    }
-                                </div>
-                            </div>
-                        )}
+                            );
+                        })()}
                     </div>
                 )}
             </div>
@@ -1661,6 +1994,10 @@ function AICSimulator() {
                 setRadarSweepOpacity={setRadarSweepOpacity}
                 radarReturnDecay={radarReturnDecay}
                 setRadarReturnDecay={setRadarReturnDecay}
+                geoPoints={geoPoints}
+                selectedGeoPointId={selectedGeoPointId}
+                updateGeoPoint={updateGeoPoint}
+                deleteGeoPoint={deleteGeoPoint}
             />
 
             {/* Context Menu */}
@@ -1672,6 +2009,8 @@ function AICSimulator() {
                     addAsset={addAsset}
                     addWaypoint={addWaypoint}
                     deleteWaypoint={deleteWaypoint}
+                    addGeoPoint={addGeoPoint}
+                    deleteGeoPoint={deleteGeoPoint}
                 />
             )}
 
@@ -1747,10 +2086,13 @@ function ControlPanel({
     restartSimulation, hasStarted, bullseyeSelected, bullseyeName, setBullseyeName,
     radarControlsSelected, setRadarControlsSelected,
     radarEnabled, setRadarEnabled, radarSweepOpacity, setRadarSweepOpacity,
-    radarReturnDecay, setRadarReturnDecay
+    radarReturnDecay, setRadarReturnDecay,
+    geoPoints, selectedGeoPointId, updateGeoPoint, deleteGeoPoint
 }) {
     const [editValues, setEditValues] = useState({});
+    const [geoPointEditValues, setGeoPointEditValues] = useState({});
     const selectedAssetIdRef = useRef(null);
+    const selectedGeoPointIdRef = useRef(null);
 
     // Only update edit values when asset is first selected or when switching assets
     useEffect(() => {
@@ -1764,6 +2106,18 @@ function ControlPanel({
             });
         }
     }, [selectedAsset?.id]); // Only depend on ID, not the whole asset object
+
+    // Update geo-point edit values when geo-point is first selected or when switching geo-points
+    useEffect(() => {
+        const selectedGeoPoint = geoPoints.find(gp => gp.id === selectedGeoPointId);
+        if (selectedGeoPoint && selectedGeoPoint.id !== selectedGeoPointIdRef.current) {
+            selectedGeoPointIdRef.current = selectedGeoPoint.id;
+            setGeoPointEditValues({
+                lat: selectedGeoPoint.lat.toFixed(4),
+                lon: selectedGeoPoint.lon.toFixed(4)
+            });
+        }
+    }, [selectedGeoPointId, geoPoints]);
 
     const handleUpdate = (field, value) => {
         if (field === 'name') {
@@ -1793,6 +2147,19 @@ function ControlPanel({
         console.log(`Setting ${targetField} to ${value} for asset ${selectedAsset.id}`);
     };
 
+    const applyGeoPointCoordinate = (field) => {
+        const value = parseFloat(geoPointEditValues[field]);
+
+        // Validate the value
+        if (isNaN(value)) {
+            alert(`Invalid ${field} value`);
+            return;
+        }
+
+        // Apply the coordinate change
+        updateGeoPoint(selectedGeoPointId, { [field]: value });
+    };
+
     return (
         <div className="control-panel">
             <h1>AIC SIMULATOR</h1>
@@ -1810,16 +2177,18 @@ function ControlPanel({
                 </div>
             </div>
 
-            {/* Systems Controls */}
-            <div className="control-section">
-                <div className="section-header">SYSTEMS</div>
-                <button
-                    className="control-btn full-width"
-                    onClick={() => setRadarControlsSelected(true)}
-                >
-                    RADAR
-                </button>
-            </div>
+            {/* Systems Controls - Hide when asset or geo-point is selected */}
+            {!selectedAsset && !selectedGeoPointId && (
+                <div className="control-section">
+                    <div className="section-header">SYSTEMS</div>
+                    <button
+                        className="control-btn full-width"
+                        onClick={() => setRadarControlsSelected(true)}
+                    >
+                        RADAR
+                    </button>
+                </div>
+            )}
 
             {/* File Management - Only show before simulation has started */}
             {!hasStarted && (
@@ -1855,6 +2224,98 @@ function ControlPanel({
                     </div>
                 </div>
             )}
+
+            {/* Geo-Point Editor - Only show when geo-point is selected */}
+            {(() => {
+                const selectedGeoPoint = geoPoints.find(gp => gp.id === selectedGeoPointId);
+                if (!selectedGeoPoint) return null;
+
+                return (
+                    <div className="control-section">
+                        <div className="section-header">GEO-POINT</div>
+
+                        <div className="input-group">
+                            <label className="input-label">Name</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                value={selectedGeoPoint.name}
+                                onChange={(e) => updateGeoPoint(selectedGeoPoint.id, { name: e.target.value })}
+                            />
+                        </div>
+
+                        <div className="input-group">
+                            <label className="input-label">Type</label>
+                            <select
+                                className="input-field"
+                                value={selectedGeoPoint.type}
+                                onChange={(e) => updateGeoPoint(selectedGeoPoint.id, { type: e.target.value })}
+                            >
+                                {Object.entries(GEOPOINT_TYPES).map(([key, config]) => (
+                                    <option key={key} value={key}>
+                                        {config.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="input-group">
+                            <label className="input-label">Identity</label>
+                            <select
+                                className="input-field"
+                                value={selectedGeoPoint.identity}
+                                onChange={(e) => updateGeoPoint(selectedGeoPoint.id, { identity: e.target.value })}
+                            >
+                                <option value="friendly">Friendly</option>
+                                <option value="hostile">Hostile</option>
+                                <option value="neutral">Neutral</option>
+                                <option value="unknown">Unknown</option>
+                                <option value="unknownUnevaluated">Unknown Unevaluated</option>
+                            </select>
+                        </div>
+
+                        <div className="input-group">
+                            <label className="input-label">Latitude</label>
+                            <input
+                                type="number"
+                                step="0.0001"
+                                className="input-field"
+                                value={geoPointEditValues.lat || ''}
+                                onChange={(e) => setGeoPointEditValues(prev => ({ ...prev, lat: e.target.value }))}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        applyGeoPointCoordinate('lat');
+                                    }
+                                }}
+                            />
+                        </div>
+
+                        <div className="input-group">
+                            <label className="input-label">Longitude</label>
+                            <input
+                                type="number"
+                                step="0.0001"
+                                className="input-field"
+                                value={geoPointEditValues.lon || ''}
+                                onChange={(e) => setGeoPointEditValues(prev => ({ ...prev, lon: e.target.value }))}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        applyGeoPointCoordinate('lon');
+                                    }
+                                }}
+                            />
+                        </div>
+
+                        <button
+                            className="control-btn danger full-width"
+                            onClick={() => deleteGeoPoint(selectedGeoPoint.id)}
+                            style={{ marginTop: '15px' }}
+                        >
+                            DELETE GEO-POINT
+                        </button>
+                    </div>
+                );
+            })()}
 
             {/* Radar Controls - Only show when radar controls are selected */}
             {radarControlsSelected && (
@@ -1910,8 +2371,8 @@ function ControlPanel({
                 </div>
             )}
 
-            {/* Asset List - Only show when no asset is selected, bullseye is not selected, and radar controls are not selected */}
-            {!selectedAsset && !bullseyeSelected && !radarControlsSelected && (
+            {/* Asset List - Only show when no asset is selected, bullseye is not selected, geo-point is not selected, and radar controls are not selected */}
+            {!selectedAsset && !bullseyeSelected && !selectedGeoPointId && !radarControlsSelected && (
                 <div className="control-section">
                     <div className="section-header">ASSETS ({assets.length})</div>
                     <div className="asset-list">
@@ -2094,10 +2555,12 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint }) {
+    const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
+
     if (!contextMenu) return null;
 
-    const handleClick = (action) => {
+    const handleClick = (action, geoPointType = null) => {
         switch (action) {
             case 'addAsset':
                 addAsset({ lat: contextMenu.lat, lon: contextMenu.lon });
@@ -2111,8 +2574,15 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             case 'deleteWaypoint':
                 deleteWaypoint(contextMenu.assetId, contextMenu.waypointIndex);
                 break;
+            case 'createGeoPoint':
+                addGeoPoint(contextMenu.lat, contextMenu.lon, geoPointType);
+                break;
+            case 'deleteGeoPoint':
+                deleteGeoPoint(contextMenu.geoPointId);
+                break;
         }
         setContextMenu(null);
+        setShowGeoPointSubmenu(false);
     };
 
     return (
@@ -2122,9 +2592,31 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             onClick={(e) => e.stopPropagation()}
         >
             {contextMenu.type === 'empty' && (
-                <div className="context-menu-item" onClick={() => handleClick('addAsset')}>
-                    Add Asset Here
-                </div>
+                <>
+                    <div className="context-menu-item" onClick={() => handleClick('addAsset')}>
+                        Add Asset Here
+                    </div>
+                    <div
+                        className="context-menu-item context-menu-parent"
+                        onMouseEnter={() => setShowGeoPointSubmenu(true)}
+                        onMouseLeave={() => setShowGeoPointSubmenu(false)}
+                    >
+                        Create Geo-Point ›
+                        {showGeoPointSubmenu && (
+                            <div className="context-menu-submenu">
+                                {Object.entries(GEOPOINT_TYPES).map(([key, config]) => (
+                                    <div
+                                        key={key}
+                                        className="context-menu-item"
+                                        onClick={() => handleClick('createGeoPoint', key)}
+                                    >
+                                        {config.label}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </>
             )}
 
             {contextMenu.type === 'asset' && !selectedAsset?.waypoints.length && (
@@ -2142,6 +2634,12 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             {contextMenu.type === 'waypoint' && (
                 <div className="context-menu-item" onClick={() => handleClick('deleteWaypoint')}>
                     Delete Waypoint
+                </div>
+            )}
+
+            {contextMenu.type === 'geopoint' && (
+                <div className="context-menu-item" onClick={() => handleClick('deleteGeoPoint')}>
+                    Delete Geo-Point
                 </div>
             )}
         </div>
