@@ -31,11 +31,13 @@ Modern browsers block loading local JavaScript files for security reasons (CORS 
 
 ### Mouse Controls
 - **Left-click on asset**: Select asset to view/edit details
+- **Left-click on bullseye**: Select bullseye to customize name
 - **Left-click on empty space**: Place yellow reference mark
 - **Right-click**: Open context menu (add assets, waypoints, etc.)
 - **Click + Drag**: Pan the map view
 - **Mouse Wheel**: Zoom in/out (10-360 NM scale)
 - **Drag waypoint markers**: Reposition waypoints
+- **Drag assets**: Reposition selected asset on map
 
 ### Keyboard Controls
 - **ESC**: Open pause menu
@@ -57,11 +59,12 @@ Modern browsers block loading local JavaScript files for security reasons (CORS 
 - Asset appears at clicked location
 
 ### Asset Types
-- **Friendly** (Light Blue): Allied forces
-- **Hostile** (Red): Enemy forces
-- **Neutral** (Green): Non-combatants
-- **Unknown** (Yellow): Unidentified, evaluated
-- **Unknown Unevaluated** (Orange): Unidentified, not evaluated
+Assets use MIL-STD-2525 symbology (top-half only):
+- **Friendly** (Light Blue, semicircle): Allied forces
+- **Hostile** (Red, triangle): Enemy forces
+- **Neutral** (Green, square top): Non-combatants
+- **Unknown** (Yellow, square top): Unidentified, evaluated
+- **Unknown Unevaluated** (Orange, square top): Unidentified, not evaluated
 
 ### Edit Asset
 1. Select asset by clicking on it
@@ -100,8 +103,10 @@ Modern browsers block loading local JavaScript files for security reasons (CORS 
 
 ### Bullseye Reference Point
 - Location: 26.5°N, 54.0°E (Central Persian Gulf)
-- Marked with green crosshair symbol
+- Marked with green crosshair symbol (labeled "BE" or custom name)
 - All positions referenced from this point
+- Click bullseye to customize its name (e.g., "VEGAS", "ALPHA")
+- Custom name appears in position displays and on map
 
 ## Save and Load Scenarios
 
@@ -147,6 +152,12 @@ Modern browsers block loading local JavaScript files for security reasons (CORS 
 - Haversine formula for accurate lat/lon calculations
 - Automatic waypoint arrival detection
 - Maintains fractional precision for smooth transitions
+
+### Radar Returns
+- White dots appear under each asset every 10 seconds while running
+- Fade over 30 seconds with realistic decay
+- Pausing simulation freezes radar returns
+- Shows historical track trail for situational awareness
 
 ## Typical Training Scenarios
 
@@ -235,9 +246,26 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 1.0
-**Last Updated**: December 30, 2025
+**Version**: 2.0
+**Last Updated**: January 3, 2026
 **Status**: Production Ready
+
+## Recent Updates (v2.0)
+
+### New Features
+- **Bullseye Customization**: Click bullseye to set custom name (e.g., "VEGAS")
+- **Radar Returns**: Simulated radar returns appear every 10 seconds, fade over 30 seconds
+- **Mission Time Clock**: HH:MM:SS display shows elapsed mission time
+- **MIL-STD-2525 Symbology**: Aircraft symbols now use military standard (top-half only)
+- **Improved Asset Dragging**: Drag selected assets to reposition on map
+- **Selection Indicators**: Visual feedback when bullseye or assets are selected
+
+### UI Improvements
+- Fixed mission time box width to prevent layout shifts
+- Removed green glow from map background for cleaner display
+- Temp mark now clears when selecting assets or bullseye
+- Identity field (formerly "Type") for clearer terminology
+- File management only visible before simulation starts
 
 ---
 

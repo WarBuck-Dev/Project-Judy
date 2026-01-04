@@ -1,15 +1,27 @@
 # AIC Simulator - Visual Style Updates
 
 ## Overview
-Updated the simulator's visual design to match a premium military-grade radar interface aesthetic with enhanced glowing effects, refined typography, and polished UI elements.
+Updated the simulator's visual design to match a premium military-grade radar interface aesthetic with clean tactical display, refined typography, and polished UI elements.
+
+## Version 2.0 Updates (January 2026)
+
+### Major Visual Changes
+- ❌ Removed radial gradient background for cleaner display
+- ✅ Solid black background (#000000) for better contrast
+- ✅ Fixed mission time box width (210px) to prevent layout shifts
+- ✅ Added visual selection indicators (dashed rings) for bullseye and assets
+- ✅ White radar return dots (4px, 70% opacity) with 30-second fade
+- ✅ MIL-STD-2525 symbology (top-half air tracks)
 
 ## Key Visual Improvements
 
 ### 1. **Radar Display**
-- ✨ Added radial gradient background (subtle green tint from center)
+- ✅ Solid black background for optimal contrast
 - 🌟 Applied glow filter to SVG elements
 - 📐 Reduced grid opacity to 8% for more subtle appearance
 - 📏 Increased grid spacing from 50px to 60px
+- ✨ White fading radar returns beneath tracks
+- 🎯 Dashed selection rings for selected objects
 
 ### 2. **Glowing Effects**
 All UI elements now feature layered glow effects:
@@ -41,6 +53,7 @@ All UI elements now feature layered glow effects:
 - 🔤 Larger value font (14px, bold, letter-spaced)
 - ✨ Text shadow on values for glow effect
 - 📏 Increased padding for breathing room
+- 🎯 Dynamic labels showing custom bullseye names
 
 ### 6. **Status Indicators**
 - 🎯 Rounded corners (4px)
@@ -49,6 +62,7 @@ All UI elements now feature layered glow effects:
   - Paused: Yellow glow
 - 🔤 Increased letter spacing (2px)
 - 📦 Enhanced box shadows
+- ⏱️ Fixed-width mission time display (210px) prevents layout shifts
 
 ### 7. **Asset List**
 - 🎨 Semi-transparent black background

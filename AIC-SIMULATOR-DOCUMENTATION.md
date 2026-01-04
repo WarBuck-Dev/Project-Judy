@@ -1,8 +1,8 @@
 # AIC Simulator - Requirements & Features Documentation
 
-**Air Intercept Control Simulator**  
-Version 1.0  
-Last Updated: December 30, 2025
+**Air Intercept Control Simulator**
+Version 2.0
+Last Updated: January 3, 2026
 
 ---
 
@@ -92,6 +92,8 @@ The AIC Simulator is a web-based tactical air intercept control training applica
 - ✅ Gradual parameter changes (heading, speed, altitude)
 - ✅ Automatic waypoint navigation
 - ✅ Collision-free operation
+- ✅ Simulated radar returns (10-second interval, 30-second fade)
+- ✅ Mission time tracking (HH:MM:SS format)
 
 ### 2. Multi-Asset Management
 - ✅ Unlimited number of assets
@@ -101,11 +103,13 @@ The AIC Simulator is a web-based tactical air intercept control training applica
 - ✅ Asset creation at any map location
 
 ### 3. Tactical Display
-- ✅ Radar scope interface with green phosphor aesthetic
-- ✅ MIL-STD-2525 compliant symbology
+- ✅ Radar scope interface with clean black background
+- ✅ MIL-STD-2525 compliant symbology (top-half air tracks)
 - ✅ Bearing/Range (BRG/RNG) position format
-- ✅ Bullseye reference system
+- ✅ Bullseye reference system with custom naming
 - ✅ Persian Gulf geographic region
+- ✅ Visual selection indicators for assets and bullseye
+- ✅ Fading white radar return trails
 
 ### 4. Navigation Control
 - ✅ Waypoint-based navigation
@@ -719,14 +723,81 @@ Examples:
 
 ---
 
+## Version 2.0 Updates
+
+### New Features (January 2026)
+
+#### Bullseye Customization
+- Click bullseye symbol to select and edit
+- Custom name field in control panel
+- Name appears on map label (e.g., "VEGAS" instead of "BE")
+- Name appears in position displays ("FROM VEGAS" instead of "FROM BULLSEYE")
+- Visual selection ring when bullseye is selected
+- Persists in save/load scenarios
+
+#### Radar Return System
+- Simulated radar returns appear every 10 seconds
+- White circular dots (4px radius, 70% opacity)
+- Fade linearly over 30 seconds
+- Positioned beneath asset symbols
+- Pause-aware: returns freeze when simulation paused
+- Show historical track trail for situational awareness
+- Based on mission time, not real-world time
+
+#### Mission Time Display
+- HH:MM:SS format in top status bar
+- Counts up while simulation running
+- Fixed-width display prevents layout shifts
+- Resets with RESTART button
+- Persists in save/load scenarios
+- Pauses when simulation paused
+
+#### MIL-STD-2525 Symbology
+- Aircraft symbols now use military standard (top-half only)
+- Friendly: semicircle (top half of circle)
+- Hostile: triangle (top half of diamond)
+- Neutral/Unknown: square top (top half of square)
+- Maintains color coding for quick identification
+
+### UI/UX Improvements
+
+#### Visual Enhancements
+- Removed green radial gradient from map background
+- Clean solid black background for better contrast
+- Selection ring indicators for bullseye and assets
+- Temp mark clears automatically when selecting objects
+- Identity field label (changed from "Type")
+
+#### Control Panel Updates
+- File management (SAVE/LOAD) only visible before starting
+- Bullseye editor panel when bullseye selected
+- Asset list hidden when asset or bullseye selected
+- Improved panel state management
+- Better visual hierarchy
+
+#### Interaction Improvements
+- Drag selected assets to reposition on map
+- Click detection improved for bullseye selection
+- Prevent accidental temp mark placement on selections
+- Smoother asset selection workflow
+
+### Technical Improvements
+- Mission time uses 1-second interval for accuracy
+- Radar returns use mission time for pause compatibility
+- Fixed dependency arrays to prevent interval recreation
+- Optimized state updates for radar return cleanup
+- Improved save/load data structure
+
+---
+
 ## Document Metadata
 
-**Document Version**: 1.0  
-**Application Version**: 1.0  
-**Created**: December 30, 2025  
-**Last Updated**: December 30, 2025  
-**Author**: AIC Simulator Development Team  
-**Status**: Production  
+**Document Version**: 2.0
+**Application Version**: 2.0
+**Created**: December 30, 2025
+**Last Updated**: January 3, 2026
+**Author**: AIC Simulator Development Team
+**Status**: Production
 
 ---
 
