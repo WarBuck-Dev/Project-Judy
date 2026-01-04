@@ -264,10 +264,12 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - 40-degree sweep trail with 60-segment smooth gradient
   - Sweep-based radar return generation
 - **Radar Controls Panel**: Adjustable radar settings
-  - ON/OFF toggle for radar system
+  - ON/OFF toggle for radar system (red when disabled)
   - Sweep opacity control (0-100% in 1% increments)
   - Return decay time (10-60 seconds in 1-second increments)
-  - Access via RADAR button in asset list
+  - Access via RADAR button in SYSTEMS section
+  - Radar returns decay naturally when radar is turned off
+  - New returns only generate when radar is enabled
 - **Bullseye Customization**: Click bullseye to set custom name (e.g., "VEGAS")
 - **Radar Returns**: Simulated radar returns synchronized with sweep rotation
 - **Mission Time Clock**: HH:MM:SS display shows elapsed mission time
@@ -276,6 +278,7 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 - **Selection Indicators**: Visual feedback when bullseye or assets are selected
 
 ### UI Improvements
+- SYSTEMS section added under PLAYBACK controls
 - RADAR control panel integrates with existing UI pattern
 - Fixed mission time box width to prevent layout shifts
 - Removed green glow from map background for cleaner display

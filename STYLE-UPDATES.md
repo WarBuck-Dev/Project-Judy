@@ -46,6 +46,7 @@ All UI elements now feature layered glow effects:
 - ✨ Background tint for depth (rgba green overlay)
 - 🔤 Increased title size to 26px with intense glow
 - 📏 Increased width from 320px to 380px
+- 🔧 SYSTEMS section added under PLAYBACK controls for organized access
 
 ### 4. **Buttons & Controls**
 - 🎯 All buttons now have rounded corners (4px)
@@ -54,6 +55,7 @@ All UI elements now feature layered glow effects:
 - 📈 Subtle lift animation on hover (translateY -2px)
 - 🔤 Increased letter spacing for military aesthetic
 - 📦 Inner and outer box shadows
+- 🔴 Radar OFF button turns red when disabled for clear status indication
 
 ### 5. **Position Display Boxes**
 - 📐 Increased from 120px to 140px min-width
