@@ -40,7 +40,7 @@ body {
 .radar-container {
     flex: 1;
     position: relative;
-    background: radial-gradient(ellipse at center, #001a00 0%, #000000 70%);
+    background: #000000;
     overflow: hidden;
 }
 
@@ -118,6 +118,9 @@ body {
     letter-spacing: 2px;
     border-radius: 4px;
     box-shadow: 0 0 10px rgba(0, 255, 0, 0.3), inset 0 0 8px rgba(0, 255, 0, 0.05);
+    width: 210px;
+    text-align: center;
+    flex-shrink: 0;
 }
 
 .status-indicator.running {

@@ -151,6 +151,7 @@ function AICSimulator() {
     const [missionTime, setMissionTime] = useState(0);
     const [bullseyeName, setBullseyeName] = useState('');
     const [bullseyeSelected, setBullseyeSelected] = useState(false);
+    const [radarReturns, setRadarReturns] = useState([]);
 
     // Refs
     const svgRef = useRef(null);
@@ -159,6 +160,7 @@ function AICSimulator() {
     const mediaRecorderRef = useRef(null);
     const recordedChunksRef = useRef([]);
     const missionTimeIntervalRef = useRef(null);
+    const radarReturnIntervalRef = useRef(null);
 
     // Get selected asset
     const selectedAsset = useMemo(() =>
@@ -284,6 +286,51 @@ function AICSimulator() {
             }
         };
     }, [isRunning]);
+
+    // Radar return generation - create returns every 10 seconds, fade over 30 seconds
+    useEffect(() => {
+        if (isRunning) {
+            // Create initial radar returns immediately when starting
+            const createRadarReturns = () => {
+                setAssets(currentAssets => {
+                    setMissionTime(currentMissionTime => {
+                        const newReturns = currentAssets.map(asset => ({
+                            assetId: asset.id,
+                            lat: asset.lat,
+                            lon: asset.lon,
+                            missionTime: currentMissionTime,
+                            id: `${asset.id}-${currentMissionTime}`
+                        }));
+                        setRadarReturns(prev => [...prev, ...newReturns]);
+                        return currentMissionTime;
+                    });
+                    return currentAssets;
+                });
+            };
+
+            createRadarReturns();
+
+            // Create radar returns every 10 seconds
+            radarReturnIntervalRef.current = setInterval(createRadarReturns, 10000);
+        } else {
+            if (radarReturnIntervalRef.current) {
+                clearInterval(radarReturnIntervalRef.current);
+            }
+        }
+
+        return () => {
+            if (radarReturnIntervalRef.current) {
+                clearInterval(radarReturnIntervalRef.current);
+            }
+        };
+    }, [isRunning]);
+
+    // Clean up old radar returns (older than 30 seconds of mission time)
+    useEffect(() => {
+        if (isRunning) {
+            setRadarReturns(prev => prev.filter(ret => missionTime - ret.missionTime < 30));
+        }
+    }, [missionTime, isRunning]);
 
     // ========================================================================
     // ASSET MANAGEMENT
@@ -670,6 +717,7 @@ function AICSimulator() {
             setSelectedAssetId(null);
             setIsRunning(false);
             setMissionTime(0);
+            setRadarReturns([]);
         } else {
             // No scenario loaded, do a full page reload
             window.location.reload();
@@ -726,6 +774,7 @@ function AICSimulator() {
         if (clickedAsset) {
             setSelectedAssetId(clickedAsset.id);
             setBullseyeSelected(false);
+            setTempMark(null);
         } else {
             // Place temporary mark
             const latLon = screenToLatLon(x, y, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
@@ -845,6 +894,7 @@ function AICSimulator() {
         if (bullseyeDist < 15) {
             setBullseyeSelected(true);
             setSelectedAssetId(null);
+            setTempMark(null);
             return;
         }
 
@@ -1102,6 +1152,29 @@ function AICSimulator() {
         );
     };
 
+    const renderRadarReturns = (width, height) => {
+        return (
+            <g>
+                {radarReturns.map(ret => {
+                    const age = missionTime - ret.missionTime; // Age in seconds
+                    const opacity = Math.max(0, 1 - (age / 30)); // Fade from 1 to 0 over 30 seconds
+                    const pos = latLonToScreen(ret.lat, ret.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+
+                    return (
+                        <circle
+                            key={ret.id}
+                            cx={pos.x}
+                            cy={pos.y}
+                            r={4}
+                            fill="#FFFFFF"
+                            opacity={opacity * 0.7}
+                        />
+                    );
+                })}
+            </g>
+        );
+    };
+
     const renderAsset = (asset, width, height) => {
         const config = ASSET_TYPES[asset.type];
         const pos = latLonToScreen(asset.lat, asset.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
@@ -1292,6 +1365,7 @@ function AICSimulator() {
                             {renderCompass(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderBullseye(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderTempMark(svgRef.current.clientWidth, svgRef.current.clientHeight)}
+                            {renderRadarReturns(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {assets.map(asset => renderAsset(asset, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                         </>
                     )}
