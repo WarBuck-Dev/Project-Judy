@@ -31,17 +31,19 @@ Modern browsers block loading local JavaScript files for security reasons (CORS 
 
 ### Mouse Controls
 - **Left-click on asset**: Select asset to view/edit details
+- **Left-click on geo-point**: Select geo-point to view/edit details
 - **Left-click on bullseye**: Select bullseye to customize name
 - **Left-click on empty space**: Place yellow reference mark
-- **Right-click**: Open context menu (add assets, waypoints, etc.)
+- **Right-click**: Open context menu (add assets, geo-points, waypoints, etc.)
 - **Click + Drag**: Pan the map view
 - **Mouse Wheel**: Zoom in/out (10-360 NM scale)
 - **Drag waypoint markers**: Reposition waypoints
 - **Drag assets**: Reposition selected asset on map
+- **Drag geo-points**: Reposition selected geo-point on map
 
 ### Keyboard Controls
 - **ESC**: Open pause menu
-- **Enter**: Apply value changes (heading, speed, altitude)
+- **Enter**: Apply value changes (heading, speed, altitude, geo-point coordinates)
 
 ### Playback Controls
 - **PLAY/PAUSE**: Toggle simulation running state
@@ -94,12 +96,60 @@ Assets use MIL-STD-2525 symbology (top-half only):
 - Right-click on waypoint marker
 - Select "Delete Waypoint"
 
+## Geo-Points
+
+Geo-points are fixed reference locations on the map used for navigation, threat tracking, and operational planning.
+
+### Create Geo-Point
+1. Right-click on desired map location
+2. Hover over "Create Geo-Point"
+3. Select geo-point type from submenu:
+   - **CAP Station**: Combat Air Patrol station (crosshair symbol)
+   - **Airfield**: Airport or airbase (parallel lines symbol)
+   - **SAM Site**: Surface-to-Air Missile site (triangle symbol)
+   - **Mark**: General reference point (rectangle with bracket symbol)
+
+### Geo-Point Properties
+Each geo-point has customizable attributes:
+- **Name**: Custom label (blank by default)
+- **Type**: CAP Station, Airfield, SAM Site, or Mark
+- **Identity**: Friendly, Hostile, Neutral, Unknown, or Unknown Unevaluated
+- **Coordinates**: Latitude and Longitude (editable)
+
+### Edit Geo-Point
+1. Click on geo-point to select it
+2. Modify properties in "GEO-POINT" panel:
+   - Enter custom name
+   - Change type from dropdown
+   - Change identity (affects color)
+   - Edit coordinates (press Enter to apply changes)
+3. Drag geo-point to reposition on map
+
+### Geo-Point Identity Colors
+Geo-points use the same color coding as assets:
+- **Friendly** (Light Blue): Allied locations
+- **Hostile** (Red): Enemy locations
+- **Neutral** (Green): Non-combatant locations
+- **Unknown** (Yellow): Identified, under evaluation
+- **Unknown Unevaluated** (Orange): Not yet evaluated
+
+### Delete Geo-Point
+**Method 1**: Right-click on geo-point and select "Delete Geo-Point"
+**Method 2**: Select geo-point and click "DELETE GEO-POINT" button in control panel
+
+### Geo-Point Uses
+- **CAP Stations**: Define patrol areas for fighters
+- **Airfields**: Mark friendly/hostile airbases
+- **SAM Sites**: Track surface threats
+- **Marks**: General reference points for navigation
+
 ## Position Information
 
 ### Cursor Display (Bottom Left)
 - **Green Box**: Bearing/Range from Bullseye
-- **Yellow Box**: Bearing/Range from Mark or Selected Asset
+- **Yellow Box**: Bearing/Range from Mark, Selected Asset, or Selected Geo-Point
 - Format: BRG/RNG (e.g., "304/52" = 304° at 52 NM)
+- When geo-point is selected, displays "FROM GEO-POINT" or geo-point name
 
 ### Bullseye Reference Point
 - Location: 26.5°N, 54.0°E (Central Persian Gulf)
@@ -246,13 +296,26 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 2.0
-**Last Updated**: January 3, 2026
+**Version**: 2.1
+**Last Updated**: January 4, 2026
 **Status**: Production Ready
 
-## Recent Updates (v2.0)
+## Recent Updates
 
-### New Features
+### Version 2.1 (January 2026)
+- **Geo-Points System**: Fixed reference locations for tactical planning
+  - Four geo-point types: CAP Station, Airfield, SAM Site, Mark
+  - Custom SVG symbols for each type (crosshair, parallel lines, triangle, rectangle)
+  - Fully editable properties: name, type, identity, coordinates
+  - Right-click context menu with type submenu
+  - Drag-and-drop repositioning
+  - Identity-based color coding (friendly/hostile/neutral/unknown)
+  - Integrated with save/load system
+  - Cursor position display shows bearing/range from selected geo-point
+  - Coordinates editable with Enter key confirmation
+  - SYSTEMS section auto-hides when geo-point or asset selected for cleaner UI
+
+### Version 2.0 (January 2026)
 - **Ownship Asset**: Dedicated ownship aircraft (gray circle with crosshair symbol)
   - Spawns 50 NM south of bullseye on initial load
   - Maximum speed: 220 knots, Maximum altitude: 27,000 feet
