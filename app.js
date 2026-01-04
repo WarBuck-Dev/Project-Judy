@@ -15,9 +15,9 @@ const WAYPOINT_ARRIVAL_THRESHOLD = 0.5; // nautical miles
 const ASSET_TYPES = {
     friendly: { color: '#00BFFF', badge: 'FRD', shape: 'circle' },
     hostile: { color: '#FF0000', badge: 'HST', shape: 'diamond' },
-    neutral: { color: '#00FF00', badge: 'NEU', shape: 'circle' },
-    unknown: { color: '#FFFF00', badge: 'UNK', shape: 'circle' },
-    unknownUnevaluated: { color: '#FFA500', badge: 'UNU', shape: 'circle' }
+    neutral: { color: '#00FF00', badge: 'NEU', shape: 'square' },
+    unknown: { color: '#FFFF00', badge: 'UNK', shape: 'square' },
+    unknownUnevaluated: { color: '#FFA500', badge: 'UNU', shape: 'square' }
 };
 
 // Turn/climb/speed rates
@@ -146,6 +146,11 @@ function AICSimulator() {
     const [dragStart, setDragStart] = useState(null);
     const [draggedWaypoint, setDraggedWaypoint] = useState(null);
     const [draggedAssetId, setDraggedAssetId] = useState(null);
+    const [initialScenario, setInitialScenario] = useState(null);
+    const [hasStarted, setHasStarted] = useState(false);
+    const [missionTime, setMissionTime] = useState(0);
+    const [bullseyeName, setBullseyeName] = useState('');
+    const [bullseyeSelected, setBullseyeSelected] = useState(false);
 
     // Refs
     const svgRef = useRef(null);
@@ -153,6 +158,7 @@ function AICSimulator() {
     const recordingStartTimeRef = useRef(null);
     const mediaRecorderRef = useRef(null);
     const recordedChunksRef = useRef([]);
+    const missionTimeIntervalRef = useRef(null);
 
     // Get selected asset
     const selectedAsset = useMemo(() =>
@@ -245,6 +251,7 @@ function AICSimulator() {
     // Start/stop physics engine
     useEffect(() => {
         if (isRunning) {
+            setHasStarted(true);
             physicsIntervalRef.current = setInterval(updatePhysics, PHYSICS_UPDATE_RATE);
         } else {
             if (physicsIntervalRef.current) {
@@ -258,6 +265,25 @@ function AICSimulator() {
             }
         };
     }, [isRunning, updatePhysics]);
+
+    // Mission time clock
+    useEffect(() => {
+        if (isRunning) {
+            missionTimeIntervalRef.current = setInterval(() => {
+                setMissionTime(prev => prev + 1);
+            }, 1000);
+        } else {
+            if (missionTimeIntervalRef.current) {
+                clearInterval(missionTimeIntervalRef.current);
+            }
+        }
+
+        return () => {
+            if (missionTimeIntervalRef.current) {
+                clearInterval(missionTimeIntervalRef.current);
+            }
+        };
+    }, [isRunning]);
 
     // ========================================================================
     // ASSET MANAGEMENT
@@ -306,9 +332,13 @@ function AICSimulator() {
     }, []);
 
     const reportTrack = useCallback((assetId) => {
-        updateAsset(assetId, { trackNumber: nextTrackNumber });
-        setNextTrackNumber(prev => prev + 1);
-    }, [nextTrackNumber, updateAsset]);
+        const asset = assets.find(a => a.id === assetId);
+        // Only assign a track number if the asset doesn't already have one
+        if (asset && asset.trackNumber === null) {
+            updateAsset(assetId, { trackNumber: nextTrackNumber });
+            setNextTrackNumber(prev => prev + 1);
+        }
+    }, [nextTrackNumber, updateAsset, assets]);
 
     // ========================================================================
     // WAYPOINT MANAGEMENT
@@ -518,15 +548,17 @@ function AICSimulator() {
             timestamp: new Date().toISOString(),
             assets,
             bullseye: BULLSEYE,
+            bullseyeName,
             scale,
             mapCenter,
             tempMark,
-            nextTrackNumber
+            nextTrackNumber,
+            missionTime
         };
 
         localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
         alert(`Scenario saved to application: ${name}`);
-    }, [assets, scale, mapCenter, tempMark, nextTrackNumber]);
+    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime]);
 
     const saveToFile = useCallback((name) => {
         const saveData = {
@@ -534,10 +566,12 @@ function AICSimulator() {
             timestamp: new Date().toISOString(),
             assets,
             bullseye: BULLSEYE,
+            bullseyeName,
             scale,
             mapCenter,
             tempMark,
-            nextTrackNumber
+            nextTrackNumber,
+            missionTime
         };
 
         const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' });
@@ -547,7 +581,7 @@ function AICSimulator() {
         a.download = `${name}-${new Date().toISOString().split('T')[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
-    }, [assets, scale, mapCenter, tempMark, nextTrackNumber]);
+    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime]);
 
     const loadFromLocalStorage = useCallback((name) => {
         const data = localStorage.getItem(`aic-scenario-${name}`);
@@ -559,10 +593,24 @@ function AICSimulator() {
             setTempMark(saveData.tempMark || null);
             setNextTrackNumber(saveData.nextTrackNumber || 6000);
             setSelectedAssetId(null);
+            setBullseyeSelected(false);
+            setHasStarted(true);
+            setMissionTime(saveData.missionTime || 0);
+            setBullseyeName(saveData.bullseyeName || '');
 
             // Find max asset ID
             const maxId = saveData.assets.reduce((max, a) => Math.max(max, a.id), 0);
             setNextAssetId(maxId + 1);
+
+            // Save as initial scenario for restart
+            setInitialScenario({
+                assets: JSON.parse(JSON.stringify(saveData.assets || [])),
+                scale: saveData.scale || INITIAL_SCALE,
+                mapCenter: saveData.mapCenter || BULLSEYE,
+                tempMark: saveData.tempMark || null,
+                nextTrackNumber: saveData.nextTrackNumber || 6000,
+                nextAssetId: maxId + 1
+            });
         }
     }, []);
 
@@ -579,9 +627,23 @@ function AICSimulator() {
                     setTempMark(saveData.tempMark || null);
                     setNextTrackNumber(saveData.nextTrackNumber || 6000);
                     setSelectedAssetId(null);
+                    setBullseyeSelected(false);
+                    setHasStarted(true);
+                    setMissionTime(saveData.missionTime || 0);
+                    setBullseyeName(saveData.bullseyeName || '');
 
                     const maxId = saveData.assets.reduce((max, a) => Math.max(max, a.id), 0);
                     setNextAssetId(maxId + 1);
+
+                    // Save as initial scenario for restart
+                    setInitialScenario({
+                        assets: JSON.parse(JSON.stringify(saveData.assets || [])),
+                        scale: saveData.scale || INITIAL_SCALE,
+                        mapCenter: saveData.mapCenter || BULLSEYE,
+                        tempMark: saveData.tempMark || null,
+                        nextTrackNumber: saveData.nextTrackNumber || 6000,
+                        nextAssetId: maxId + 1
+                    });
 
                     alert('Scenario loaded successfully!');
                 } catch (error) {
@@ -595,6 +657,24 @@ function AICSimulator() {
     const deleteFromLocalStorage = useCallback((name) => {
         localStorage.removeItem(`aic-scenario-${name}`);
     }, []);
+
+    const restartSimulation = useCallback(() => {
+        if (initialScenario) {
+            // Restart to loaded scenario
+            setAssets(JSON.parse(JSON.stringify(initialScenario.assets)));
+            setScale(initialScenario.scale);
+            setMapCenter(initialScenario.mapCenter);
+            setTempMark(initialScenario.tempMark);
+            setNextTrackNumber(initialScenario.nextTrackNumber);
+            setNextAssetId(initialScenario.nextAssetId);
+            setSelectedAssetId(null);
+            setIsRunning(false);
+            setMissionTime(0);
+        } else {
+            // No scenario loaded, do a full page reload
+            window.location.reload();
+        }
+    }, [initialScenario]);
 
     const getSavedScenarios = useCallback(() => {
         const scenarios = [];
@@ -624,6 +704,14 @@ function AICSimulator() {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
+        // Check if clicking on the bullseye
+        const bullseyePos = latLonToScreen(BULLSEYE.lat, BULLSEYE.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+        const bullseyeDist = Math.sqrt((x - bullseyePos.x) ** 2 + (y - bullseyePos.y) ** 2);
+        if (bullseyeDist < 15) {
+            // Already handled in handleMouseDown, don't do anything
+            return;
+        }
+
         // Check if clicking on an asset
         let clickedAsset = null;
         for (const asset of assets) {
@@ -637,11 +725,13 @@ function AICSimulator() {
 
         if (clickedAsset) {
             setSelectedAssetId(clickedAsset.id);
+            setBullseyeSelected(false);
         } else {
             // Place temporary mark
             const latLon = screenToLatLon(x, y, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
             setTempMark(latLon);
             setSelectedAssetId(null);
+            setBullseyeSelected(false);
         }
     }, [assets, contextMenu, mapCenter, scale]);
 
@@ -749,6 +839,15 @@ function AICSimulator() {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
+        // Check if clicking on the bullseye
+        const bullseyePos = latLonToScreen(BULLSEYE.lat, BULLSEYE.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+        const bullseyeDist = Math.sqrt((x - bullseyePos.x) ** 2 + (y - bullseyePos.y) ** 2);
+        if (bullseyeDist < 15) {
+            setBullseyeSelected(true);
+            setSelectedAssetId(null);
+            return;
+        }
+
         // Check if clicking on a waypoint from ANY asset
         for (const asset of assets) {
             for (let i = 0; i < asset.waypoints.length; i++) {
@@ -760,6 +859,7 @@ function AICSimulator() {
                     // Store both waypoint index and asset id
                     setDraggedWaypoint({ assetId: asset.id, wpIndex: i });
                     setSelectedAssetId(asset.id); // Auto-select the asset
+                    setBullseyeSelected(false);
                     return;
                 }
             }
@@ -782,6 +882,7 @@ function AICSimulator() {
             const dist = Math.sqrt((x - pos.x) ** 2 + (y - pos.y) ** 2);
             if (dist < 15) {
                 clickedAsset = true;
+                setBullseyeSelected(false);
                 break;
             }
         }
@@ -962,13 +1063,27 @@ function AICSimulator() {
 
     const renderBullseye = (width, height) => {
         const pos = latLonToScreen(BULLSEYE.lat, BULLSEYE.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+        const displayName = bullseyeName && bullseyeName.trim() ? bullseyeName.toUpperCase() : 'BE';
 
         return (
             <g>
+                {/* Selection ring when bullseye is selected */}
+                {bullseyeSelected && (
+                    <circle
+                        cx={pos.x}
+                        cy={pos.y}
+                        r={18}
+                        fill="none"
+                        stroke="#00FF00"
+                        strokeWidth="2"
+                        opacity="0.6"
+                        strokeDasharray="4,4"
+                    />
+                )}
                 <circle cx={pos.x} cy={pos.y} r={8} fill="none" stroke="#00FF00" strokeWidth="2" />
                 <line x1={pos.x-12} y1={pos.y} x2={pos.x+12} y2={pos.y} stroke="#00FF00" strokeWidth="2" />
                 <line x1={pos.x} y1={pos.y-12} x2={pos.x} y2={pos.y+12} stroke="#00FF00" strokeWidth="2" />
-                <text x={pos.x} y={pos.y-15} fill="#00FF00" fontSize="10" textAnchor="middle" fontWeight="700">BE</text>
+                <text x={pos.x} y={pos.y-15} fill="#00FF00" fontSize="10" textAnchor="middle" fontWeight="700">{displayName}</text>
             </g>
         );
     };
@@ -1053,21 +1168,31 @@ function AICSimulator() {
                 <line x1={pos.x} y1={pos.y} x2={headingX} y2={headingY}
                       stroke={config.color} strokeWidth="2" />
 
-                {/* Asset symbol */}
+                {/* Asset symbol - MIL-STD-2525 air track (top half only) */}
                 {config.shape === 'circle' ? (
-                    <circle cx={pos.x} cy={pos.y} r={size}
-                            fill="none" stroke={config.color} strokeWidth={strokeWidth} />
+                    // Friendly: Top half of circle (arc)
+                    <path
+                        d={`M ${pos.x - size} ${pos.y} A ${size} ${size} 0 0 1 ${pos.x + size} ${pos.y}`}
+                        fill="none"
+                        stroke={config.color}
+                        strokeWidth={strokeWidth}
+                    />
+                ) : config.shape === 'diamond' ? (
+                    // Hostile: Top half of diamond (triangle without bottom line)
+                    <path
+                        d={`M ${pos.x - size} ${pos.y} L ${pos.x} ${pos.y - size} L ${pos.x + size} ${pos.y}`}
+                        fill="none"
+                        stroke={config.color}
+                        strokeWidth={strokeWidth}
+                    />
                 ) : (
-                    <g>
-                        <line x1={pos.x} y1={pos.y-size} x2={pos.x+size} y2={pos.y}
-                              stroke={config.color} strokeWidth={strokeWidth} />
-                        <line x1={pos.x+size} y1={pos.y} x2={pos.x} y2={pos.y+size}
-                              stroke={config.color} strokeWidth={strokeWidth} />
-                        <line x1={pos.x} y1={pos.y+size} x2={pos.x-size} y2={pos.y}
-                              stroke={config.color} strokeWidth={strokeWidth} />
-                        <line x1={pos.x-size} y1={pos.y} x2={pos.x} y2={pos.y-size}
-                              stroke={config.color} strokeWidth={strokeWidth} />
-                    </g>
+                    // Neutral/Unknown/Unknown Unevaluated: Top half of square
+                    <path
+                        d={`M ${pos.x - size} ${pos.y} L ${pos.x - size} ${pos.y - size} L ${pos.x + size} ${pos.y - size} L ${pos.x + size} ${pos.y}`}
+                        fill="none"
+                        stroke={config.color}
+                        strokeWidth={strokeWidth}
+                    />
                 )}
 
                 {/* Name label above */}
@@ -1142,6 +1267,9 @@ function AICSimulator() {
                         <div className="status-indicator">
                             SCALE: {scale} NM
                         </div>
+                        <div className="status-indicator">
+                            MISSION TIME: {Math.floor(missionTime / 3600).toString().padStart(2, '0')}:{Math.floor((missionTime % 3600) / 60).toString().padStart(2, '0')}:{(missionTime % 60).toString().padStart(2, '0')}
+                        </div>
                     </div>
                 </div>
 
@@ -1173,7 +1301,7 @@ function AICSimulator() {
                 {cursorPos && (
                     <div className="cursor-info">
                         <div className="position-box">
-                            <div className="position-label">FROM BULLSEYE</div>
+                            <div className="position-label">FROM {bullseyeName && bullseyeName.trim() ? bullseyeName.toUpperCase() : 'BULLSEYE'}</div>
                             <div className="position-value">
                                 {Math.round(calculateBearing(BULLSEYE.lat, BULLSEYE.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/
                                 {Math.round(calculateDistance(BULLSEYE.lat, BULLSEYE.lon, cursorPos.lat, cursorPos.lon))}
@@ -1214,6 +1342,11 @@ function AICSimulator() {
                 setShowLoadDialog={setShowLoadDialog}
                 setShowPauseMenu={setShowPauseMenu}
                 centerMapOnAsset={centerMapOnAsset}
+                restartSimulation={restartSimulation}
+                hasStarted={hasStarted}
+                bullseyeSelected={bullseyeSelected}
+                bullseyeName={bullseyeName}
+                setBullseyeName={setBullseyeName}
             />
 
             {/* Context Menu */}
@@ -1296,7 +1429,8 @@ function AICSimulator() {
 function ControlPanel({
     isRunning, setIsRunning, assets, selectedAsset, setSelectedAssetId,
     updateAsset, deleteAsset, reportTrack, setShowAddAssetDialog,
-    setShowSaveDialog, setShowLoadDialog, setShowPauseMenu, centerMapOnAsset
+    setShowSaveDialog, setShowLoadDialog, setShowPauseMenu, centerMapOnAsset,
+    restartSimulation, hasStarted, bullseyeSelected, bullseyeName, setBullseyeName
 }) {
     const [editValues, setEditValues] = useState({});
     const selectedAssetIdRef = useRef(null);
@@ -1353,63 +1487,87 @@ function ControlPanel({
                     <button className="control-btn primary" onClick={() => setIsRunning(!isRunning)}>
                         {isRunning ? 'PAUSE' : 'PLAY'}
                     </button>
-                    <button className="control-btn" onClick={() => window.location.reload()}>
+                    <button className="control-btn" onClick={restartSimulation}>
                         RESTART
                     </button>
                 </div>
             </div>
 
-            {/* File Management */}
-            <div className="control-section">
-                <div className="section-header">FILE</div>
-                <div className="playback-controls">
-                    <button className="control-btn" onClick={() => setShowSaveDialog(true)}>
-                        SAVE
-                    </button>
-                    <button className="control-btn" onClick={() => setShowLoadDialog(true)}>
-                        LOAD
-                    </button>
+            {/* File Management - Only show before simulation has started */}
+            {!hasStarted && (
+                <div className="control-section">
+                    <div className="section-header">FILE</div>
+                    <div className="playback-controls">
+                        <button className="control-btn" onClick={() => setShowSaveDialog(true)}>
+                            SAVE
+                        </button>
+                        <button className="control-btn" onClick={() => setShowLoadDialog(true)}>
+                            LOAD
+                        </button>
+                    </div>
                 </div>
-            </div>
+            )}
 
-            {/* Asset List */}
-            <div className="control-section">
-                <div className="section-header">ASSETS ({assets.length})</div>
-                <div className="asset-list">
-                    {assets.length === 0 ? (
-                        <div className="empty-state">No assets created</div>
-                    ) : (
-                        assets.map(asset => (
-                            <button
-                                key={asset.id}
-                                className={`asset-item ${selectedAsset?.id === asset.id ? 'selected' : ''}`}
-                                onClick={() => {
-                                    setSelectedAssetId(asset.id);
-                                    centerMapOnAsset(asset.id);
-                                }}
-                                type="button"
-                            >
-                                <div className="asset-name" style={{ color: ASSET_TYPES[asset.type].color }}>
-                                    {asset.name}
-                                </div>
-                                <div className="asset-details">
-                                    {ASSET_TYPES[asset.type].badge} |
-                                    HDG {Math.round(asset.heading)}° |
-                                    {Math.round(asset.speed)} KTAS |
-                                    FL{Math.round(asset.altitude/100)}
-                                </div>
-                            </button>
-                        ))
-                    )}
+            {/* Bullseye Editor - Only show when bullseye is selected */}
+            {bullseyeSelected && (
+                <div className="control-section">
+                    <div className="section-header">BULLSEYE</div>
+                    <div className="input-group">
+                        <label className="input-label">Name</label>
+                        <input
+                            className="input-field"
+                            type="text"
+                            value={bullseyeName}
+                            onChange={(e) => setBullseyeName(e.target.value)}
+                            placeholder="BULLSEYE"
+                        />
+                    </div>
+                    <div className="input-group" style={{ marginTop: '10px', fontSize: '9px', opacity: 0.7 }}>
+                        Reference point for all position calls. Enter a custom name or leave blank for default "BULLSEYE".
+                    </div>
                 </div>
-                <button
-                    className="control-btn primary full-width mb-10"
-                    onClick={() => setShowAddAssetDialog({ lat: BULLSEYE.lat, lon: BULLSEYE.lon })}
-                    style={{ marginTop: '10px' }}
-                >
-                    + ADD ASSET
-                </button>
-            </div>
+            )}
+
+            {/* Asset List - Only show when no asset is selected and bullseye is not selected */}
+            {!selectedAsset && !bullseyeSelected && (
+                <div className="control-section">
+                    <div className="section-header">ASSETS ({assets.length})</div>
+                    <div className="asset-list">
+                        {assets.length === 0 ? (
+                            <div className="empty-state">No assets created</div>
+                        ) : (
+                            assets.map(asset => (
+                                <button
+                                    key={asset.id}
+                                    className={`asset-item ${selectedAsset?.id === asset.id ? 'selected' : ''}`}
+                                    onClick={() => {
+                                        setSelectedAssetId(asset.id);
+                                        centerMapOnAsset(asset.id);
+                                    }}
+                                    type="button"
+                                >
+                                    <div className="asset-name" style={{ color: ASSET_TYPES[asset.type].color }}>
+                                        {asset.name}
+                                    </div>
+                                    <div className="asset-details">
+                                        {ASSET_TYPES[asset.type].badge} |
+                                        HDG {Math.round(asset.heading)}° |
+                                        {Math.round(asset.speed)} KTAS |
+                                        FL{Math.round(asset.altitude/100)}
+                                    </div>
+                                </button>
+                            ))
+                        )}
+                    </div>
+                    <button
+                        className="control-btn primary full-width mb-10"
+                        onClick={() => setShowAddAssetDialog({ lat: BULLSEYE.lat, lon: BULLSEYE.lon })}
+                        style={{ marginTop: '10px' }}
+                    >
+                        + ADD ASSET
+                    </button>
+                </div>
+            )}
 
             {/* Selected Asset */}
             {selectedAsset && (
@@ -1427,7 +1585,7 @@ function ControlPanel({
                     </div>
 
                     <div className="input-group">
-                        <label className="input-label">Type</label>
+                        <label className="input-label">Identity</label>
                         <select
                             className="input-field"
                             value={selectedAsset.type}
