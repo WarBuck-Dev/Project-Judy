@@ -384,6 +384,12 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 ## Recent Updates
 
 ### Version 2.2 (January 2026)
+- **High-Resolution Map**: Enhanced Persian Gulf cartography with detailed coastlines and islands
+  - Imported high-resolution coastline data from KML source
+  - Added 10 major islands including Bahrain, Qeshm, Abu Musa, and smaller islands
+  - Outline-only rendering style for islands matching coastline appearance
+  - Hundreds of precise coordinate points for accurate geographic representation
+  - Improved tactical situational awareness with realistic geography
 - **Shapes System**: Tactical drawing tools for mission planning and threat depiction
   - Two shape types: Line Segment (multi-point paths) and Circle (range rings)
   - Multi-point line segment creation with interactive Apply/Cancel workflow

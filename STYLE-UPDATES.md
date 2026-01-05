@@ -31,6 +31,12 @@ Updated the simulator's visual design to match a premium military-grade radar in
   - 60-segment ultra-smooth gradient fade
   - 1px leading edge indicator line
   - User-adjustable opacity (0-100%)
+- 🗺️ High-resolution Persian Gulf map
+  - Detailed coastline with hundreds of coordinate points from KML source
+  - 10 major islands rendered (Bahrain, Qeshm, Abu Musa, and more)
+  - Outline-only rendering (#808080, 1.5px stroke, 50% opacity)
+  - Matches coastline style for visual consistency
+  - Accurate geographic representation for tactical training
 
 ### 2. **Glowing Effects**
 All UI elements now feature layered glow effects:
