@@ -1655,10 +1655,10 @@ function AICSimulator() {
                         <polygon
                             key={idx}
                             points={points}
-                            fill="#404040"
+                            fill="none"
                             stroke="#808080"
-                            strokeWidth="1"
-                            opacity="0.6"
+                            strokeWidth="1.5"
+                            opacity="0.5"
                         />
                     );
                 })}
