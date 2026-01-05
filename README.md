@@ -32,18 +32,21 @@ Modern browsers block loading local JavaScript files for security reasons (CORS 
 ### Mouse Controls
 - **Left-click on asset**: Select asset to view/edit details
 - **Left-click on geo-point**: Select geo-point to view/edit details
+- **Left-click on shape**: Select shape to view/edit details
 - **Left-click on bullseye**: Select bullseye to customize name
 - **Left-click on empty space**: Place yellow reference mark
-- **Right-click**: Open context menu (add assets, geo-points, waypoints, etc.)
+- **Right-click**: Open context menu (add assets, geo-points, shapes, waypoints, etc.)
 - **Click + Drag**: Pan the map view
 - **Mouse Wheel**: Zoom in/out (10-360 NM scale)
 - **Drag waypoint markers**: Reposition waypoints
 - **Drag assets**: Reposition selected asset on map
 - **Drag geo-points**: Reposition selected geo-point on map
+- **Drag shape points**: Reposition individual line segment points
+- **Drag shapes**: Reposition entire shape on map
 
 ### Keyboard Controls
 - **ESC**: Open pause menu
-- **Enter**: Apply value changes (heading, speed, altitude, geo-point coordinates)
+- **Enter**: Apply value changes (heading, speed, altitude, geo-point coordinates, shape point coordinates)
 
 ### Playback Controls
 - **PLAY/PAUSE**: Toggle simulation running state
@@ -142,6 +145,84 @@ Geo-points use the same color coding as assets:
 - **Airfields**: Mark friendly/hostile airbases
 - **SAM Sites**: Track surface threats
 - **Marks**: General reference points for navigation
+
+## Shapes
+
+Shapes are tactical drawing tools that allow you to create visual representations on the map for mission planning, threat zones, and operational boundaries.
+
+### Create Shape
+
+1. Right-click on desired map location
+2. Hover over "Create Shape"
+3. Select shape type from submenu:
+   - **Line Segment**: Multi-point connected lines
+   - **Circle**: Circular area with customizable radius
+
+### Shape Types
+
+**Line Segment**
+- Create by clicking multiple points on the map
+- Press "APPLY" when finished (minimum 2 points required)
+- Each point can have a custom name (optional)
+- Names display above points on the map
+- Perfect for: flight paths, boundaries, threat corridors
+
+**Circle**
+- Created instantly at clicked location
+- Default radius: 10 NM
+- Radius adjustable in control panel
+- Perfect for: engagement zones, no-fly areas, CAP stations
+
+### Shape Properties
+
+All shapes have customizable attributes:
+- **Identity**: Friendly, Hostile, Neutral, Unknown, or Unknown Unevaluated
+- **Color**: Matches identity (same as assets and geo-points)
+- **No Name**: Shapes themselves don't have names (line segment points can be named)
+
+### Edit Shape - Line Segments
+
+1. Click on line segment to select it
+2. Modify properties in "SHAPE" panel:
+   - Change identity (affects color)
+   - Edit individual point names
+   - Edit point coordinates (press Enter to apply)
+   - Add new points with "+ ADD POINT" button
+3. Drag individual points to reposition on map
+4. Drag anywhere on the line to move entire shape
+
+### Edit Shape - Circles
+
+1. Click on circle edge to select it
+2. Modify properties in "SHAPE" panel:
+   - Change identity (affects color)
+   - Edit center coordinates
+   - Adjust radius (in nautical miles)
+3. Drag circle (by edge) to reposition on map
+
+### Shape Interaction
+
+- **Select**: Click on shape edge (circles) or points (line segments)
+- **Drag Points**: Click and drag individual line segment points
+- **Drag Shape**: Click and drag to move entire shape
+- **Delete**: Right-click on shape and select "Delete Shape", or use DELETE SHAPE button
+
+### Shape Identity Colors
+
+Shapes use the same color coding as assets and geo-points:
+- **Friendly** (Light Blue): Allied areas
+- **Hostile** (Red): Enemy areas/threats
+- **Neutral** (Green): Non-combatant zones
+- **Unknown** (Yellow): Unidentified areas
+- **Unknown Unevaluated** (Orange): Not yet evaluated
+
+### Shape Uses
+
+- **Line Segments**: Flight corridors, threat axes, patrol routes, boundaries
+- **Circles**: Engagement zones, CAP stations, SAM ranges, no-fly zones
+- **Mission Planning**: Pre-brief tactical overlays
+- **Threat Depiction**: Show enemy SAM ranges, fighter CAPs
+- **Friendly Boundaries**: Delineate operational areas
 
 ## Position Information
 
@@ -296,11 +377,28 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 2.1
+**Version**: 2.2
 **Last Updated**: January 4, 2026
 **Status**: Production Ready
 
 ## Recent Updates
+
+### Version 2.2 (January 2026)
+- **Shapes System**: Tactical drawing tools for mission planning and threat depiction
+  - Two shape types: Line Segment (multi-point paths) and Circle (range rings)
+  - Multi-point line segment creation with interactive Apply/Cancel workflow
+  - Individual point naming for line segments (optional, blank by default)
+  - Point names display above points on the map
+  - Drag individual line segment points to reposition
+  - Drag entire shapes to relocate
+  - Circle selection by edge (no center dot for cleaner appearance)
+  - "+ ADD POINT" button to extend line segments
+  - Editable coordinates with Enter-to-apply (consistent with geo-points)
+  - Fully editable properties: identity, coordinates, radius (circles)
+  - Identity-based color coding matching assets and geo-points
+  - Integrated with save/load system
+  - Right-click context menu with Create Shape submenu
+  - SHAPE editor panel with scrollable point list
 
 ### Version 2.1 (January 2026)
 - **Geo-Points System**: Fixed reference locations for tactical planning
@@ -313,7 +411,7 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - Integrated with save/load system
   - Cursor position display shows bearing/range from selected geo-point
   - Coordinates editable with Enter key confirmation
-  - SYSTEMS section auto-hides when geo-point or asset selected for cleaner UI
+  - SYSTEMS section auto-hides when geo-point or shape selected for cleaner UI
 
 ### Version 2.0 (January 2026)
 - **Ownship Asset**: Dedicated ownship aircraft (gray circle with crosshair symbol)

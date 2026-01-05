@@ -29,6 +29,12 @@ const GEOPOINT_TYPES = {
     mark: { label: 'Mark', icon: 'mark' }
 };
 
+// Shape type configurations
+const SHAPE_TYPES = {
+    lineSegment: { label: 'Line Segment' },
+    circle: { label: 'Circle' }
+};
+
 // Turn/climb/speed rates
 const TURN_RATE = 15; // degrees per second
 const SPEED_RATE = 10; // knots per second
@@ -186,6 +192,12 @@ function AICSimulator() {
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
     const [draggedGeoPointId, setDraggedGeoPointId] = useState(null);
+    const [shapes, setShapes] = useState([]); // Shapes on the map
+    const [nextShapeId, setNextShapeId] = useState(1);
+    const [selectedShapeId, setSelectedShapeId] = useState(null);
+    const [draggedShapeId, setDraggedShapeId] = useState(null);
+    const [draggedShapePointIndex, setDraggedShapePointIndex] = useState(null); // For dragging individual line segment points
+    const [creatingShape, setCreatingShape] = useState(null); // { type: 'lineSegment' | 'circle', points: [] }
 
     // Refs
     const svgRef = useRef(null);
@@ -563,6 +575,87 @@ function AICSimulator() {
     }, []);
 
     // ========================================================================
+    // SHAPE MANAGEMENT
+    // ========================================================================
+
+    const startCreatingShape = useCallback((shapeType, lat, lon) => {
+        if (shapeType === 'lineSegment') {
+            // Start line segment with first point (with blank name)
+            setCreatingShape({
+                type: 'lineSegment',
+                points: [{ lat, lon, name: '' }]
+            });
+        } else if (shapeType === 'circle') {
+            // Create circle immediately at clicked location with default radius
+            const newShape = {
+                id: nextShapeId,
+                type: 'circle',
+                centerLat: lat,
+                centerLon: lon,
+                radius: 10, // Default 10 NM radius
+                identity: 'unknown'
+            };
+            setShapes(prev => [...prev, newShape]);
+            setNextShapeId(prev => prev + 1);
+            setSelectedShapeId(newShape.id);
+            setSelectedAssetId(null);
+            setSelectedGeoPointId(null);
+            setBullseyeSelected(false);
+            setRadarControlsSelected(false);
+        }
+        setContextMenu(null);
+    }, [nextShapeId]);
+
+    const addLineSegmentPoint = useCallback((lat, lon) => {
+        if (!creatingShape || creatingShape.type !== 'lineSegment') return;
+
+        setCreatingShape(prev => ({
+            ...prev,
+            points: [...prev.points, { lat, lon, name: '' }]
+        }));
+    }, [creatingShape]);
+
+    const finishLineSegment = useCallback(() => {
+        if (!creatingShape || creatingShape.type !== 'lineSegment' || creatingShape.points.length < 2) {
+            setCreatingShape(null);
+            return;
+        }
+
+        const newShape = {
+            id: nextShapeId,
+            type: 'lineSegment',
+            points: creatingShape.points,
+            identity: 'unknown'
+        };
+        setShapes(prev => [...prev, newShape]);
+        setNextShapeId(prev => prev + 1);
+        setSelectedShapeId(newShape.id);
+        setCreatingShape(null);
+        setSelectedAssetId(null);
+        setSelectedGeoPointId(null);
+        setBullseyeSelected(false);
+        setRadarControlsSelected(false);
+    }, [creatingShape, nextShapeId]);
+
+    const cancelShapeCreation = useCallback(() => {
+        setCreatingShape(null);
+    }, []);
+
+    const deleteShape = useCallback((shapeId) => {
+        setShapes(prev => prev.filter(s => s.id !== shapeId));
+        if (selectedShapeId === shapeId) {
+            setSelectedShapeId(null);
+        }
+    }, [selectedShapeId]);
+
+    const updateShape = useCallback((shapeId, updates) => {
+        setShapes(prev => prev.map(s => {
+            if (s.id !== shapeId) return s;
+            return { ...s, ...updates };
+        }));
+    }, []);
+
+    // ========================================================================
     // RECORDING FUNCTIONALITY
     // ========================================================================
 
@@ -720,12 +813,14 @@ function AICSimulator() {
             nextTrackNumber,
             missionTime,
             geoPoints,
-            nextGeoPointId
+            nextGeoPointId,
+            shapes,
+            nextShapeId
         };
 
         localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
         alert(`Scenario saved to application: ${name}`);
-    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId]);
+    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId]);
 
     const saveToFile = useCallback((name) => {
         const saveData = {
@@ -740,7 +835,9 @@ function AICSimulator() {
             nextTrackNumber,
             missionTime,
             geoPoints,
-            nextGeoPointId
+            nextGeoPointId,
+            shapes,
+            nextShapeId
         };
 
         const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' });
@@ -750,7 +847,7 @@ function AICSimulator() {
         a.download = `${name}-${new Date().toISOString().split('T')[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
-    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId]);
+    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId]);
 
     const loadFromLocalStorage = useCallback((name) => {
         const data = localStorage.getItem(`aic-scenario-${name}`);
@@ -791,11 +888,14 @@ function AICSimulator() {
             setSelectedAssetId(null);
             setBullseyeSelected(false);
             setSelectedGeoPointId(null);
+            setSelectedShapeId(null);
             setHasStarted(true);
             setMissionTime(saveData.missionTime || 0);
             setBullseyeName(saveData.bullseyeName || '');
             setGeoPoints(saveData.geoPoints || []);
             setNextGeoPointId(saveData.nextGeoPointId || 1);
+            setShapes(saveData.shapes || []);
+            setNextShapeId(saveData.nextShapeId || 1);
 
             // Find max asset ID
             const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
@@ -810,7 +910,9 @@ function AICSimulator() {
                 nextTrackNumber: saveData.nextTrackNumber || 6000,
                 nextAssetId: maxId + 1,
                 geoPoints: JSON.parse(JSON.stringify(saveData.geoPoints || [])),
-                nextGeoPointId: saveData.nextGeoPointId || 1
+                nextGeoPointId: saveData.nextGeoPointId || 1,
+                shapes: JSON.parse(JSON.stringify(saveData.shapes || [])),
+                nextShapeId: saveData.nextShapeId || 1
             });
         }
     }, []);
@@ -857,11 +959,14 @@ function AICSimulator() {
                     setSelectedAssetId(null);
                     setBullseyeSelected(false);
                     setSelectedGeoPointId(null);
+                    setSelectedShapeId(null);
                     setHasStarted(true);
                     setMissionTime(saveData.missionTime || 0);
                     setBullseyeName(saveData.bullseyeName || '');
                     setGeoPoints(saveData.geoPoints || []);
                     setNextGeoPointId(saveData.nextGeoPointId || 1);
+                    setShapes(saveData.shapes || []);
+                    setNextShapeId(saveData.nextShapeId || 1);
 
                     const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
                     setNextAssetId(maxId + 1);
@@ -875,7 +980,9 @@ function AICSimulator() {
                         nextTrackNumber: saveData.nextTrackNumber || 6000,
                         nextAssetId: maxId + 1,
                         geoPoints: JSON.parse(JSON.stringify(saveData.geoPoints || [])),
-                        nextGeoPointId: saveData.nextGeoPointId || 1
+                        nextGeoPointId: saveData.nextGeoPointId || 1,
+                        shapes: JSON.parse(JSON.stringify(saveData.shapes || [])),
+                        nextShapeId: saveData.nextShapeId || 1
                     });
 
                     alert('Scenario loaded successfully!');
@@ -902,8 +1009,11 @@ function AICSimulator() {
             setNextAssetId(initialScenario.nextAssetId);
             setGeoPoints(JSON.parse(JSON.stringify(initialScenario.geoPoints || [])));
             setNextGeoPointId(initialScenario.nextGeoPointId || 1);
+            setShapes(JSON.parse(JSON.stringify(initialScenario.shapes || [])));
+            setNextShapeId(initialScenario.nextShapeId || 1);
             setSelectedAssetId(null);
             setSelectedGeoPointId(null);
+            setSelectedShapeId(null);
             setIsRunning(false);
             setMissionTime(0);
             setRadarReturns([]);
@@ -942,6 +1052,13 @@ function AICSimulator() {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
+        // If creating a line segment, add point on click
+        if (creatingShape && creatingShape.type === 'lineSegment') {
+            const latLon = screenToLatLon(x, y, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+            addLineSegmentPoint(latLon.lat, latLon.lon);
+            return;
+        }
+
         // Check if clicking on the bullseye
         const bullseyePos = latLonToScreen(BULLSEYE.lat, BULLSEYE.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
         const bullseyeDist = Math.sqrt((x - bullseyePos.x) ** 2 + (y - bullseyePos.y) ** 2);
@@ -972,13 +1089,47 @@ function AICSimulator() {
             }
         }
 
+        // Check if clicking on a shape
+        let clickedShape = null;
+        for (const shape of shapes) {
+            if (shape.type === 'circle') {
+                const centerPos = latLonToScreen(shape.centerLat, shape.centerLon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                const radiusInPixels = (shape.radius / scale) * Math.min(rect.width, rect.height);
+                const dist = Math.sqrt((x - centerPos.x) ** 2 + (y - centerPos.y) ** 2);
+                // Check if clicking near the edge of the circle (within 10 pixels of the circumference)
+                if (Math.abs(dist - radiusInPixels) < 10) {
+                    clickedShape = shape;
+                    break;
+                }
+            } else if (shape.type === 'lineSegment') {
+                // Check if clicking near any point in the line segment
+                for (const point of shape.points) {
+                    const pointPos = latLonToScreen(point.lat, point.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                    const dist = Math.sqrt((x - pointPos.x) ** 2 + (y - pointPos.y) ** 2);
+                    if (dist < 10) {
+                        clickedShape = shape;
+                        break;
+                    }
+                }
+            }
+            if (clickedShape) break;
+        }
+
         if (clickedGeoPoint) {
             // Geo-point clicked (already handled in handleMouseDown)
             return;
+        } else if (clickedShape) {
+            setSelectedShapeId(clickedShape.id);
+            setSelectedAssetId(null);
+            setBullseyeSelected(false);
+            setSelectedGeoPointId(null);
+            setRadarControlsSelected(false);
+            setTempMark(null);
         } else if (clickedAsset) {
             setSelectedAssetId(clickedAsset.id);
             setBullseyeSelected(false);
             setSelectedGeoPointId(null);
+            setSelectedShapeId(null);
             setRadarControlsSelected(false);
             setTempMark(null);
         } else {
@@ -988,9 +1139,10 @@ function AICSimulator() {
             setSelectedAssetId(null);
             setBullseyeSelected(false);
             setSelectedGeoPointId(null);
+            setSelectedShapeId(null);
             setRadarControlsSelected(false);
         }
-    }, [assets, geoPoints, contextMenu, mapCenter, scale]);
+    }, [assets, geoPoints, shapes, contextMenu, mapCenter, scale, creatingShape, addLineSegmentPoint]);
 
     const handleSVGRightClick = useCallback((e) => {
         e.preventDefault();
@@ -1001,6 +1153,39 @@ function AICSimulator() {
         const y = e.clientY - rect.top;
 
         const latLon = screenToLatLon(x, y, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+
+        // Check if clicking on a shape
+        for (const shape of shapes) {
+            if (shape.type === 'circle') {
+                const centerPos = latLonToScreen(shape.centerLat, shape.centerLon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                const radiusInPixels = (shape.radius / scale) * Math.min(rect.width, rect.height);
+                const dist = Math.sqrt((x - centerPos.x) ** 2 + (y - centerPos.y) ** 2);
+                // Check if clicking near the edge of the circle (within 10 pixels of the circumference)
+                if (Math.abs(dist - radiusInPixels) < 10) {
+                    setContextMenu({
+                        x: e.clientX,
+                        y: e.clientY,
+                        type: 'shape',
+                        shapeId: shape.id
+                    });
+                    return;
+                }
+            } else if (shape.type === 'lineSegment') {
+                for (const point of shape.points) {
+                    const pointPos = latLonToScreen(point.lat, point.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                    const dist = Math.sqrt((x - pointPos.x) ** 2 + (y - pointPos.y) ** 2);
+                    if (dist < 10) {
+                        setContextMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            type: 'shape',
+                            shapeId: shape.id
+                        });
+                        return;
+                    }
+                }
+            }
+        }
 
         // Check if clicking on a geo-point
         for (const geoPoint of geoPoints) {
@@ -1046,7 +1231,7 @@ function AICSimulator() {
             lat: latLon.lat,
             lon: latLon.lon
         });
-    }, [selectedAsset, assets, geoPoints, mapCenter, scale]);
+    }, [selectedAsset, assets, geoPoints, shapes, mapCenter, scale]);
 
     const handleMouseMove = useCallback((e) => {
         const svg = svgRef.current;
@@ -1058,6 +1243,44 @@ function AICSimulator() {
 
         const latLon = screenToLatLon(x, y, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
         setCursorPos(latLon);
+
+        // Handle shape point dragging (individual line segment points)
+        if (draggedShapeId !== null && draggedShapePointIndex !== null) {
+            const draggedShape = shapes.find(s => s.id === draggedShapeId);
+            if (draggedShape && draggedShape.type === 'lineSegment') {
+                const newPoints = [...draggedShape.points];
+                newPoints[draggedShapePointIndex] = {
+                    lat: latLon.lat,
+                    lon: latLon.lon,
+                    name: newPoints[draggedShapePointIndex].name || ''
+                };
+                updateShape(draggedShapeId, { points: newPoints });
+            }
+            return;
+        }
+
+        // Handle shape dragging (entire shape)
+        if (draggedShapeId !== null) {
+            const draggedShape = shapes.find(s => s.id === draggedShapeId);
+            if (draggedShape) {
+                if (draggedShape.type === 'circle') {
+                    updateShape(draggedShapeId, { centerLat: latLon.lat, centerLon: latLon.lon });
+                } else if (draggedShape.type === 'lineSegment') {
+                    // Calculate offset from first point
+                    const firstPoint = draggedShape.points[0];
+                    const offsetLat = latLon.lat - firstPoint.lat;
+                    const offsetLon = latLon.lon - firstPoint.lon;
+                    // Move all points by the offset while preserving names
+                    const newPoints = draggedShape.points.map(p => ({
+                        lat: p.lat + offsetLat,
+                        lon: p.lon + offsetLon,
+                        name: p.name || ''
+                    }));
+                    updateShape(draggedShapeId, { points: newPoints });
+                }
+            }
+            return;
+        }
 
         // Handle geo-point dragging
         if (draggedGeoPointId !== null) {
@@ -1108,7 +1331,7 @@ function AICSimulator() {
         if (draggedWaypoint !== null) {
             moveWaypoint(draggedWaypoint.assetId, draggedWaypoint.wpIndex, latLon.lat, latLon.lon);
         }
-    }, [mapCenter, scale, isDragging, dragStart, draggedWaypoint, draggedAssetId, draggedGeoPointId, assets, moveWaypoint, updateAsset, updateGeoPoint]);
+    }, [mapCenter, scale, isDragging, dragStart, draggedWaypoint, draggedAssetId, draggedGeoPointId, draggedShapeId, draggedShapePointIndex, assets, shapes, moveWaypoint, updateAsset, updateGeoPoint, updateShape]);
 
     const handleMouseDown = useCallback((e) => {
         if (e.button !== 0) return; // Only left click
@@ -1130,6 +1353,49 @@ function AICSimulator() {
             return;
         }
 
+        // Check if clicking on a shape
+        for (const shape of shapes) {
+            if (shape.type === 'circle') {
+                const centerPos = latLonToScreen(shape.centerLat, shape.centerLon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                const radiusInPixels = (shape.radius / scale) * Math.min(rect.width, rect.height);
+                const dist = Math.sqrt((x - centerPos.x) ** 2 + (y - centerPos.y) ** 2);
+                // Check if clicking near the edge of the circle (within 10 pixels of the circumference)
+                if (Math.abs(dist - radiusInPixels) < 10) {
+                    setSelectedShapeId(shape.id);
+                    setSelectedAssetId(null);
+                    setSelectedGeoPointId(null);
+                    setBullseyeSelected(false);
+                    setRadarControlsSelected(false);
+                    setTempMark(null);
+                    // Check if this is the already-selected shape (enable dragging)
+                    if (selectedShapeId === shape.id) {
+                        setDraggedShapeId(shape.id);
+                    }
+                    return;
+                }
+            } else if (shape.type === 'lineSegment') {
+                for (let i = 0; i < shape.points.length; i++) {
+                    const point = shape.points[i];
+                    const pointPos = latLonToScreen(point.lat, point.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                    const dist = Math.sqrt((x - pointPos.x) ** 2 + (y - pointPos.y) ** 2);
+                    if (dist < 10) {
+                        setSelectedShapeId(shape.id);
+                        setSelectedAssetId(null);
+                        setSelectedGeoPointId(null);
+                        setBullseyeSelected(false);
+                        setRadarControlsSelected(false);
+                        setTempMark(null);
+                        // Check if this is the already-selected shape (enable dragging of this specific point)
+                        if (selectedShapeId === shape.id) {
+                            setDraggedShapeId(shape.id);
+                            setDraggedShapePointIndex(i);
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+
         // Check if clicking on a geo-point
         for (const geoPoint of geoPoints) {
             const gpPos = latLonToScreen(geoPoint.lat, geoPoint.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
@@ -1138,6 +1404,7 @@ function AICSimulator() {
             if (dist < 15) {
                 setSelectedGeoPointId(geoPoint.id);
                 setSelectedAssetId(null);
+                setSelectedShapeId(null);
                 setBullseyeSelected(false);
                 setRadarControlsSelected(false);
                 setTempMark(null);
@@ -1199,7 +1466,7 @@ function AICSimulator() {
                 centerLon: mapCenter.lon
             });
         }
-    }, [assets, geoPoints, selectedAsset, selectedGeoPointId, mapCenter, scale]);
+    }, [assets, geoPoints, shapes, selectedAsset, selectedGeoPointId, selectedShapeId, mapCenter, scale]);
 
     const handleMouseUp = useCallback(() => {
         setIsDragging(false);
@@ -1207,6 +1474,8 @@ function AICSimulator() {
         setDraggedWaypoint(null);
         setDraggedAssetId(null);
         setDraggedGeoPointId(null);
+        setDraggedShapeId(null);
+        setDraggedShapePointIndex(null);
     }, []);
 
     const handleWheel = useCallback((e) => {
@@ -1872,6 +2141,117 @@ function AICSimulator() {
         );
     };
 
+    const renderShape = (shape, width, height) => {
+        const identityColor = ASSET_TYPES[shape.identity]?.color || '#FFFF00';
+        const isSelected = shape.id === selectedShapeId;
+
+        if (shape.type === 'circle') {
+            const centerPos = latLonToScreen(shape.centerLat, shape.centerLon, mapCenter.lat, mapCenter.lon, scale, width, height);
+            const radiusInPixels = (shape.radius / scale) * Math.min(width, height);
+
+            return (
+                <g key={`shape-${shape.id}`}>
+                    {/* Selection ring */}
+                    {isSelected && (
+                        <>
+                            <circle
+                                cx={centerPos.x}
+                                cy={centerPos.y}
+                                r={radiusInPixels + 10}
+                                fill="none"
+                                stroke={identityColor}
+                                strokeWidth="2"
+                                strokeDasharray="5,5"
+                                opacity="0.5"
+                            >
+                                <animate attributeName="stroke-dashoffset" from="0" to="10" dur="1s" repeatCount="indefinite" />
+                            </circle>
+                        </>
+                    )}
+                    {/* Circle */}
+                    <circle
+                        cx={centerPos.x}
+                        cy={centerPos.y}
+                        r={radiusInPixels}
+                        fill="none"
+                        stroke={identityColor}
+                        strokeWidth="2"
+                        opacity="0.8"
+                    />
+                </g>
+            );
+        } else if (shape.type === 'lineSegment') {
+            const points = shape.points.map(p => latLonToScreen(p.lat, p.lon, mapCenter.lat, mapCenter.lon, scale, width, height));
+            const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+
+            return (
+                <g key={`shape-${shape.id}`}>
+                    {/* Line segments */}
+                    <path
+                        d={pathData}
+                        fill="none"
+                        stroke={identityColor}
+                        strokeWidth="2"
+                        opacity="0.8"
+                    />
+                    {/* Point markers and labels */}
+                    {points.map((p, i) => (
+                        <g key={i}>
+                            {/* Larger invisible hit area for easier clicking */}
+                            <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r="10"
+                                fill="transparent"
+                                style={{ cursor: isSelected ? 'move' : 'pointer' }}
+                            />
+                            {/* Visible marker */}
+                            <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={isSelected ? "6" : "4"}
+                                fill={identityColor}
+                                opacity="0.9"
+                                stroke={isSelected ? "#FFFFFF" : "none"}
+                                strokeWidth={isSelected ? "1" : "0"}
+                                style={{ cursor: isSelected ? 'move' : 'pointer' }}
+                            />
+                            {/* Point name label */}
+                            {shape.points[i].name && (
+                                <text
+                                    x={p.x}
+                                    y={p.y - 12}
+                                    fill={identityColor}
+                                    fontSize="10"
+                                    fontFamily="Orbitron, monospace"
+                                    textAnchor="middle"
+                                    opacity="0.9"
+                                    style={{ textShadow: `0 0 4px ${identityColor}` }}
+                                >
+                                    {shape.points[i].name}
+                                </text>
+                            )}
+                        </g>
+                    ))}
+                    {/* Selection highlight */}
+                    {isSelected && (
+                        <path
+                            d={pathData}
+                            fill="none"
+                            stroke={identityColor}
+                            strokeWidth="4"
+                            opacity="0.3"
+                            strokeDasharray="5,5"
+                        >
+                            <animate attributeName="stroke-dashoffset" from="0" to="10" dur="1s" repeatCount="indefinite" />
+                        </path>
+                    )}
+                </g>
+            );
+        }
+        return null;
+    };
+
     // ========================================================================
     // COMPONENT RENDER
     // ========================================================================
@@ -1923,11 +2303,79 @@ function AICSimulator() {
                             {renderTempMark(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarSweep(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarReturns(svgRef.current.clientWidth, svgRef.current.clientHeight)}
+                            {shapes.map(shape => renderShape(shape, svgRef.current.clientWidth, svgRef.current.clientHeight))}
+                            {/* Render line segment being created */}
+                            {creatingShape && creatingShape.type === 'lineSegment' && creatingShape.points.length > 0 && (() => {
+                                const points = creatingShape.points.map(p => latLonToScreen(p.lat, p.lon, mapCenter.lat, mapCenter.lon, scale, svgRef.current.clientWidth, svgRef.current.clientHeight));
+                                const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+                                return (
+                                    <g key="creating-line">
+                                        <path d={pathData} fill="none" stroke="#FFFF00" strokeWidth="2" strokeDasharray="5,5" opacity="0.8" />
+                                        {points.map((p, i) => (
+                                            <circle key={i} cx={p.x} cy={p.y} r="4" fill="#FFFF00" opacity="0.8" />
+                                        ))}
+                                    </g>
+                                );
+                            })()}
                             {geoPoints.map(gp => renderGeoPoint(gp, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                             {assets.map(asset => renderAsset(asset, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                         </>
                     )}
                 </svg>
+
+                {/* Line Segment Creation Controls */}
+                {creatingShape && creatingShape.type === 'lineSegment' && (
+                    <div style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.95), rgba(0, 20, 0, 0.9))',
+                        border: '2px solid #00FF00',
+                        borderRadius: '8px',
+                        padding: '20px',
+                        boxShadow: '0 0 40px rgba(0, 255, 0, 0.5), inset 0 0 20px rgba(0, 255, 0, 0.1)',
+                        zIndex: 1000,
+                        minWidth: '300px',
+                        textAlign: 'center'
+                    }}>
+                        <div style={{
+                            color: '#00FF00',
+                            fontSize: '16px',
+                            fontWeight: 'bold',
+                            marginBottom: '15px',
+                            textShadow: '0 0 10px rgba(0, 255, 0, 0.7)'
+                        }}>
+                            CREATING LINE SEGMENT
+                        </div>
+                        <div style={{
+                            color: '#00FF00',
+                            fontSize: '12px',
+                            marginBottom: '20px',
+                            opacity: 0.8
+                        }}>
+                            Points: {creatingShape.points.length}
+                            <br />
+                            Click map to add points
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                            <button
+                                className="control-btn primary"
+                                onClick={finishLineSegment}
+                                disabled={creatingShape.points.length < 2}
+                                style={{ opacity: creatingShape.points.length < 2 ? 0.5 : 1 }}
+                            >
+                                APPLY
+                            </button>
+                            <button
+                                className="control-btn danger"
+                                onClick={cancelShapeCreation}
+                            >
+                                CANCEL
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Cursor Position Display */}
                 {cursorPos && (
@@ -1998,6 +2446,10 @@ function AICSimulator() {
                 selectedGeoPointId={selectedGeoPointId}
                 updateGeoPoint={updateGeoPoint}
                 deleteGeoPoint={deleteGeoPoint}
+                shapes={shapes}
+                selectedShapeId={selectedShapeId}
+                updateShape={updateShape}
+                deleteShape={deleteShape}
             />
 
             {/* Context Menu */}
@@ -2011,6 +2463,8 @@ function AICSimulator() {
                     deleteWaypoint={deleteWaypoint}
                     addGeoPoint={addGeoPoint}
                     deleteGeoPoint={deleteGeoPoint}
+                    startCreatingShape={startCreatingShape}
+                    deleteShape={deleteShape}
                 />
             )}
 
@@ -2087,10 +2541,12 @@ function ControlPanel({
     radarControlsSelected, setRadarControlsSelected,
     radarEnabled, setRadarEnabled, radarSweepOpacity, setRadarSweepOpacity,
     radarReturnDecay, setRadarReturnDecay,
-    geoPoints, selectedGeoPointId, updateGeoPoint, deleteGeoPoint
+    geoPoints, selectedGeoPointId, updateGeoPoint, deleteGeoPoint,
+    shapes, selectedShapeId, updateShape, deleteShape
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
+    const [shapePointEditValues, setShapePointEditValues] = useState({}); // Track editing values for shape points
     const selectedAssetIdRef = useRef(null);
     const selectedGeoPointIdRef = useRef(null);
 
@@ -2118,6 +2574,23 @@ function ControlPanel({
             });
         }
     }, [selectedGeoPointId, geoPoints]);
+
+    // Initialize shape point edit values when a line segment shape is selected
+    useEffect(() => {
+        const selectedShape = shapes.find(s => s.id === selectedShapeId);
+        if (selectedShape && selectedShape.type === 'lineSegment') {
+            // Initialize edit values for all points
+            const initialValues = {};
+            selectedShape.points.forEach((point, index) => {
+                initialValues[`${index}_lat`] = point.lat.toFixed(4);
+                initialValues[`${index}_lon`] = point.lon.toFixed(4);
+            });
+            setShapePointEditValues(initialValues);
+        } else {
+            // Clear edit values when no line segment is selected
+            setShapePointEditValues({});
+        }
+    }, [selectedShapeId, shapes]);
 
     const handleUpdate = (field, value) => {
         if (field === 'name') {
@@ -2160,6 +2633,26 @@ function ControlPanel({
         updateGeoPoint(selectedGeoPointId, { [field]: value });
     };
 
+    const applyShapePointCoordinate = (pointIndex, field) => {
+        const key = `${pointIndex}_${field}`;
+        const value = parseFloat(shapePointEditValues[key]);
+
+        // Validate the value
+        if (isNaN(value)) {
+            alert(`Invalid ${field} value`);
+            return;
+        }
+
+        // Get the selected shape
+        const selectedShape = shapes.find(s => s.id === selectedShapeId);
+        if (!selectedShape || selectedShape.type !== 'lineSegment') return;
+
+        // Update the specific point's coordinate
+        const newPoints = [...selectedShape.points];
+        newPoints[pointIndex] = { ...newPoints[pointIndex], [field]: value };
+        updateShape(selectedShapeId, { points: newPoints });
+    };
+
     return (
         <div className="control-panel">
             <h1>AIC SIMULATOR</h1>
@@ -2178,7 +2671,7 @@ function ControlPanel({
             </div>
 
             {/* Systems Controls - Hide when asset or geo-point is selected */}
-            {!selectedAsset && !selectedGeoPointId && (
+            {!selectedAsset && !selectedGeoPointId && !selectedShapeId && (
                 <div className="control-section">
                     <div className="section-header">SYSTEMS</div>
                     <button
@@ -2317,6 +2810,186 @@ function ControlPanel({
                 );
             })()}
 
+            {/* Shape Editor - Only show when shape is selected */}
+            {(() => {
+                const selectedShape = shapes.find(s => s.id === selectedShapeId);
+                if (!selectedShape) return null;
+
+                return (
+                    <div className="control-section">
+                        <div className="section-header">SHAPE</div>
+
+                        <div className="input-group">
+                            <label className="input-label">Type</label>
+                            <div className="input-field" style={{ backgroundColor: 'rgba(0, 255, 0, 0.05)', cursor: 'not-allowed' }}>
+                                {SHAPE_TYPES[selectedShape.type]?.label}
+                            </div>
+                        </div>
+
+                        <div className="input-group">
+                            <label className="input-label">Identity</label>
+                            <select
+                                className="input-field"
+                                value={selectedShape.identity}
+                                onChange={(e) => updateShape(selectedShape.id, { identity: e.target.value })}
+                            >
+                                <option value="friendly">Friendly</option>
+                                <option value="hostile">Hostile</option>
+                                <option value="neutral">Neutral</option>
+                                <option value="unknown">Unknown</option>
+                                <option value="unknownUnevaluated">Unknown Unevaluated</option>
+                            </select>
+                        </div>
+
+                        {selectedShape.type === 'circle' && (
+                            <>
+                                <div className="input-group">
+                                    <label className="input-label">Center Latitude</label>
+                                    <input
+                                        type="number"
+                                        step="0.0001"
+                                        className="input-field"
+                                        value={selectedShape.centerLat.toFixed(4)}
+                                        onChange={(e) => {
+                                            const value = parseFloat(e.target.value);
+                                            if (!isNaN(value)) {
+                                                updateShape(selectedShape.id, { centerLat: value });
+                                            }
+                                        }}
+                                    />
+                                </div>
+
+                                <div className="input-group">
+                                    <label className="input-label">Center Longitude</label>
+                                    <input
+                                        type="number"
+                                        step="0.0001"
+                                        className="input-field"
+                                        value={selectedShape.centerLon.toFixed(4)}
+                                        onChange={(e) => {
+                                            const value = parseFloat(e.target.value);
+                                            if (!isNaN(value)) {
+                                                updateShape(selectedShape.id, { centerLon: value });
+                                            }
+                                        }}
+                                    />
+                                </div>
+
+                                <div className="input-group">
+                                    <label className="input-label">Radius (NM)</label>
+                                    <input
+                                        type="number"
+                                        step="1"
+                                        min="1"
+                                        className="input-field"
+                                        value={selectedShape.radius}
+                                        onChange={(e) => {
+                                            const value = parseFloat(e.target.value);
+                                            if (!isNaN(value) && value > 0) {
+                                                updateShape(selectedShape.id, { radius: value });
+                                            }
+                                        }}
+                                    />
+                                </div>
+                            </>
+                        )}
+
+                        {selectedShape.type === 'lineSegment' && (
+                            <div className="input-group">
+                                <label className="input-label">Points</label>
+                                <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid rgba(0, 255, 0, 0.3)', borderRadius: '3px', padding: '8px' }}>
+                                    {selectedShape.points.map((point, index) => (
+                                        <div key={index} style={{ marginBottom: '10px', padding: '8px', borderBottom: '1px solid rgba(0, 255, 0, 0.2)', backgroundColor: 'rgba(0, 20, 0, 0.3)', borderRadius: '3px' }}>
+                                            <div style={{ fontSize: '10px', color: '#00FF00', fontWeight: 'bold', marginBottom: '5px' }}>Point {index + 1}</div>
+                                            <div style={{ marginBottom: '5px' }}>
+                                                <label style={{ fontSize: '9px', color: '#00FF00', opacity: 0.7, display: 'block', marginBottom: '2px' }}>Name</label>
+                                                <input
+                                                    type="text"
+                                                    className="input-field"
+                                                    style={{ fontSize: '10px', padding: '4px' }}
+                                                    value={point.name || ''}
+                                                    onChange={(e) => {
+                                                        const newPoints = [...selectedShape.points];
+                                                        newPoints[index] = { ...newPoints[index], name: e.target.value };
+                                                        updateShape(selectedShape.id, { points: newPoints });
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.target.blur();
+                                                        }
+                                                    }}
+                                                    placeholder="Optional"
+                                                />
+                                            </div>
+                                            <div style={{ marginBottom: '5px' }}>
+                                                <label style={{ fontSize: '9px', color: '#00FF00', opacity: 0.7, display: 'block', marginBottom: '2px' }}>Latitude</label>
+                                                <input
+                                                    type="number"
+                                                    step="0.0001"
+                                                    className="input-field"
+                                                    style={{ fontSize: '10px', padding: '4px' }}
+                                                    value={shapePointEditValues[`${index}_lat`] !== undefined ? shapePointEditValues[`${index}_lat`] : point.lat.toFixed(4)}
+                                                    onChange={(e) => setShapePointEditValues(prev => ({ ...prev, [`${index}_lat`]: e.target.value }))}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            applyShapePointCoordinate(index, 'lat');
+                                                            e.target.blur();
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={{ fontSize: '9px', color: '#00FF00', opacity: 0.7, display: 'block', marginBottom: '2px' }}>Longitude</label>
+                                                <input
+                                                    type="number"
+                                                    step="0.0001"
+                                                    className="input-field"
+                                                    style={{ fontSize: '10px', padding: '4px' }}
+                                                    value={shapePointEditValues[`${index}_lon`] !== undefined ? shapePointEditValues[`${index}_lon`] : point.lon.toFixed(4)}
+                                                    onChange={(e) => setShapePointEditValues(prev => ({ ...prev, [`${index}_lon`]: e.target.value }))}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            applyShapePointCoordinate(index, 'lon');
+                                                            e.target.blur();
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button
+                                    className="control-btn primary full-width"
+                                    onClick={() => {
+                                        // Add a new point at the end of the line segment
+                                        // Default to last point's coordinates offset slightly
+                                        const lastPoint = selectedShape.points[selectedShape.points.length - 1];
+                                        const newPoint = {
+                                            lat: lastPoint.lat + 0.01, // Offset by ~0.6 NM north
+                                            lon: lastPoint.lon + 0.01, // Offset by ~0.6 NM east
+                                            name: ''
+                                        };
+                                        const newPoints = [...selectedShape.points, newPoint];
+                                        updateShape(selectedShape.id, { points: newPoints });
+                                    }}
+                                    style={{ marginTop: '10px' }}
+                                >
+                                    + ADD POINT
+                                </button>
+                            </div>
+                        )}
+
+                        <button
+                            className="control-btn danger full-width"
+                            onClick={() => deleteShape(selectedShape.id)}
+                            style={{ marginTop: '15px' }}
+                        >
+                            DELETE SHAPE
+                        </button>
+                    </div>
+                );
+            })()}
+
             {/* Radar Controls - Only show when radar controls are selected */}
             {radarControlsSelected && (
                 <div className="control-section">
@@ -2372,7 +3045,7 @@ function ControlPanel({
             )}
 
             {/* Asset List - Only show when no asset is selected, bullseye is not selected, geo-point is not selected, and radar controls are not selected */}
-            {!selectedAsset && !bullseyeSelected && !selectedGeoPointId && !radarControlsSelected && (
+            {!selectedAsset && !bullseyeSelected && !selectedGeoPointId && !selectedShapeId && !radarControlsSelected && (
                 <div className="control-section">
                     <div className="section-header">ASSETS ({assets.length})</div>
                     <div className="asset-list">
@@ -2555,12 +3228,13 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape }) {
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
+    const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
 
     if (!contextMenu) return null;
 
-    const handleClick = (action, geoPointType = null) => {
+    const handleClick = (action, param = null) => {
         switch (action) {
             case 'addAsset':
                 addAsset({ lat: contextMenu.lat, lon: contextMenu.lon });
@@ -2575,14 +3249,21 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                 deleteWaypoint(contextMenu.assetId, contextMenu.waypointIndex);
                 break;
             case 'createGeoPoint':
-                addGeoPoint(contextMenu.lat, contextMenu.lon, geoPointType);
+                addGeoPoint(contextMenu.lat, contextMenu.lon, param);
                 break;
             case 'deleteGeoPoint':
                 deleteGeoPoint(contextMenu.geoPointId);
                 break;
+            case 'createShape':
+                startCreatingShape(param, contextMenu.lat, contextMenu.lon);
+                break;
+            case 'deleteShape':
+                deleteShape(contextMenu.shapeId);
+                break;
         }
         setContextMenu(null);
         setShowGeoPointSubmenu(false);
+        setShowShapeSubmenu(false);
     };
 
     return (
@@ -2616,6 +3297,26 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                             </div>
                         )}
                     </div>
+                    <div
+                        className="context-menu-item context-menu-parent"
+                        onMouseEnter={() => setShowShapeSubmenu(true)}
+                        onMouseLeave={() => setShowShapeSubmenu(false)}
+                    >
+                        Create Shape ›
+                        {showShapeSubmenu && (
+                            <div className="context-menu-submenu">
+                                {Object.entries(SHAPE_TYPES).map(([key, config]) => (
+                                    <div
+                                        key={key}
+                                        className="context-menu-item"
+                                        onClick={() => handleClick('createShape', key)}
+                                    >
+                                        {config.label}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </>
             )}
 
@@ -2640,6 +3341,12 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             {contextMenu.type === 'geopoint' && (
                 <div className="context-menu-item" onClick={() => handleClick('deleteGeoPoint')}>
                     Delete Geo-Point
+                </div>
+            )}
+
+            {contextMenu.type === 'shape' && (
+                <div className="context-menu-item" onClick={() => handleClick('deleteShape')}>
+                    Delete Shape
                 </div>
             )}
         </div>
