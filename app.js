@@ -2575,19 +2575,27 @@ function ControlPanel({
         }
     }, [selectedGeoPointId, geoPoints]);
 
-    // Initialize shape point edit values when a line segment shape is selected
+    // Initialize shape point edit values when a shape is selected
     useEffect(() => {
         const selectedShape = shapes.find(s => s.id === selectedShapeId);
-        if (selectedShape && selectedShape.type === 'lineSegment') {
-            // Initialize edit values for all points
+        if (selectedShape) {
             const initialValues = {};
-            selectedShape.points.forEach((point, index) => {
-                initialValues[`${index}_lat`] = point.lat.toFixed(4);
-                initialValues[`${index}_lon`] = point.lon.toFixed(4);
-            });
+
+            if (selectedShape.type === 'lineSegment') {
+                // Initialize edit values for all line segment points
+                selectedShape.points.forEach((point, index) => {
+                    initialValues[`${index}_lat`] = point.lat.toFixed(4);
+                    initialValues[`${index}_lon`] = point.lon.toFixed(4);
+                });
+            } else if (selectedShape.type === 'circle') {
+                // Initialize edit values for circle center
+                initialValues.centerLat = selectedShape.centerLat.toFixed(4);
+                initialValues.centerLon = selectedShape.centerLon.toFixed(4);
+            }
+
             setShapePointEditValues(initialValues);
         } else {
-            // Clear edit values when no line segment is selected
+            // Clear edit values when no shape is selected
             setShapePointEditValues({});
         }
     }, [selectedShapeId, shapes]);
@@ -2651,6 +2659,24 @@ function ControlPanel({
         const newPoints = [...selectedShape.points];
         newPoints[pointIndex] = { ...newPoints[pointIndex], [field]: value };
         updateShape(selectedShapeId, { points: newPoints });
+    };
+
+    const applyCircleCoordinate = (field) => {
+        const value = parseFloat(shapePointEditValues[field]);
+
+        // Validate the value
+        if (isNaN(value)) {
+            alert(`Invalid ${field} value`);
+            return;
+        }
+
+        // Get the selected shape
+        const selectedShape = shapes.find(s => s.id === selectedShapeId);
+        if (!selectedShape || selectedShape.type !== 'circle') return;
+
+        // Update the circle's center coordinate
+        const updateField = field === 'centerLat' ? 'centerLat' : 'centerLon';
+        updateShape(selectedShapeId, { [updateField]: value });
     };
 
     return (
@@ -2849,11 +2875,15 @@ function ControlPanel({
                                         type="number"
                                         step="0.0001"
                                         className="input-field"
-                                        value={selectedShape.centerLat.toFixed(4)}
-                                        onChange={(e) => {
-                                            const value = parseFloat(e.target.value);
-                                            if (!isNaN(value)) {
-                                                updateShape(selectedShape.id, { centerLat: value });
+                                        value={shapePointEditValues.centerLat !== undefined
+                                            ? shapePointEditValues.centerLat
+                                            : selectedShape.centerLat.toFixed(4)}
+                                        onChange={(e) => setShapePointEditValues(prev =>
+                                            ({ ...prev, centerLat: e.target.value }))}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                applyCircleCoordinate('centerLat');
+                                                e.target.blur();
                                             }
                                         }}
                                     />
@@ -2865,11 +2895,15 @@ function ControlPanel({
                                         type="number"
                                         step="0.0001"
                                         className="input-field"
-                                        value={selectedShape.centerLon.toFixed(4)}
-                                        onChange={(e) => {
-                                            const value = parseFloat(e.target.value);
-                                            if (!isNaN(value)) {
-                                                updateShape(selectedShape.id, { centerLon: value });
+                                        value={shapePointEditValues.centerLon !== undefined
+                                            ? shapePointEditValues.centerLon
+                                            : selectedShape.centerLon.toFixed(4)}
+                                        onChange={(e) => setShapePointEditValues(prev =>
+                                            ({ ...prev, centerLon: e.target.value }))}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                applyCircleCoordinate('centerLon');
+                                                e.target.blur();
                                             }
                                         }}
                                     />
