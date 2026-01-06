@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear AIC Simulator Storage</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00FF00;
+        }
+        button {
+            background: #00FF00;
+            color: #000;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #00CC00;
+        }
+        .info {
+            background: #2a2a2a;
+            padding: 15px;
+            margin: 20px 0;
+            border-left: 4px solid #00FF00;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            background: #2a2a2a;
+        }
+    </style>
+</head>
+<body>
+    <h1>AIC Simulator - Storage Cleanup</h1>
+
+    <div class="info">
+        <p><strong>This tool will clear all saved scenarios from localStorage.</strong></p>
+        <p>Use this if the simulator is crashing when loading old scenarios.</p>
+    </div>
+
+    <button onclick="clearStorage()">Clear All Saved Scenarios</button>
+    <button onclick="window.location.href='index.html'">Return to Simulator</button>
+
+    <div id="result"></div>
+
+    <script>
+        function clearStorage() {
+            const result = document.getElementById('result');
+
+            try {
+                const keys = Object.keys(localStorage);
+                const aicKeys = keys.filter(k => k.startsWith('aic-scenario-'));
+
+                if (aicKeys.length === 0) {
+                    result.innerHTML = '<p style="color: yellow;">No saved scenarios found.</p>';
+                    return;
+                }
+
+                result.innerHTML = '<p>Found ' + aicKeys.length + ' saved scenarios:</p><ul>';
+                aicKeys.forEach(key => {
+                    result.innerHTML += '<li>' + key + '</li>';
+                    localStorage.removeItem(key);
+                });
+                result.innerHTML += '</ul><p style="color: #00FF00; font-weight: bold;">✓ All scenarios cleared successfully!</p>';
+                result.innerHTML += '<p>You can now reload the simulator.</p>';
+
+            } catch (e) {
+                result.innerHTML = '<p style="color: red;">Error: ' + e.message + '</p>';
+            }
+        }
+
+        // Show current storage info on load
+        window.onload = function() {
+            const keys = Object.keys(localStorage);
+            const aicKeys = keys.filter(k => k.startsWith('aic-scenario-'));
+            const result = document.getElementById('result');
+
+            if (aicKeys.length > 0) {
+                result.innerHTML = '<p><strong>Current saved scenarios (' + aicKeys.length + '):</strong></p><ul>';
+                aicKeys.forEach(key => {
+                    const scenarioName = key.replace('aic-scenario-', '');
+                    result.innerHTML += '<li>' + scenarioName + '</li>';
+                });
+                result.innerHTML += '</ul>';
+            } else {
+                result.innerHTML = '<p>No saved scenarios in storage.</p>';
+            }
+        };
+    </script>
+</body>
+</html>

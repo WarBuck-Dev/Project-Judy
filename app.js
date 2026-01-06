@@ -174,6 +174,7 @@ function AICSimulator() {
             name: 'OWNSHIP',
             type: 'ownship',
             domain: 'air',
+            platform: null,
             lat: BULLSEYE.lat - (50 / 60), // 50 NM south of bullseye
             lon: BULLSEYE.lon,
             heading: 0,
@@ -229,6 +230,7 @@ function AICSimulator() {
     const [draggedShapeId, setDraggedShapeId] = useState(null);
     const [draggedShapePointIndex, setDraggedShapePointIndex] = useState(null); // For dragging individual line segment points
     const [creatingShape, setCreatingShape] = useState(null); // { type: 'lineSegment' | 'circle', points: [] }
+    const [platforms, setPlatforms] = useState({ air: [], surface: [], subSurface: [] }); // Platform configurations
 
     // Refs
     const svgRef = useRef(null);
@@ -245,6 +247,25 @@ function AICSimulator() {
     );
 
     // ========================================================================
+    // LOAD PLATFORM CONFIGURATIONS
+    // ========================================================================
+
+    useEffect(() => {
+        // Load platform configurations from platforms.json
+        fetch('platforms.json')
+            .then(response => response.json())
+            .then(data => {
+                setPlatforms(data);
+            })
+            .catch(error => {
+                console.error('Error loading platforms:', error);
+                // Set empty arrays if loading fails
+                setPlatforms({ air: [], surface: [], subSurface: [] });
+            });
+    }, []);
+
+
+    // ========================================================================
     // PHYSICS ENGINE
     // ========================================================================
 
@@ -256,11 +277,15 @@ function AICSimulator() {
             // Get domain-specific configuration
             const domainConfig = DOMAIN_TYPES[asset.domain || 'air'];
 
+            // Get platform-specific values or use domain defaults
+            const turnRate = asset.platform ? asset.platform.maxTurn : domainConfig.turnRate;
+            const climbRate = asset.platform && asset.platform.maxClimb ? (asset.platform.maxClimb / 60) : CLIMB_RATE; // Convert ft/min to ft/sec
+
             // Update heading
             if (asset.targetHeading !== null) {
                 const turnAmount = shortestTurn(asset.heading, asset.targetHeading);
                 if (Math.abs(turnAmount) > 1) {
-                    const turnDelta = Math.sign(turnAmount) * domainConfig.turnRate * deltaTime;
+                    const turnDelta = Math.sign(turnAmount) * turnRate * deltaTime;
                     updated.heading = normalizeHeading(asset.heading + turnDelta);
                 } else {
                     updated.heading = asset.targetHeading;
@@ -284,7 +309,7 @@ function AICSimulator() {
             if (domainConfig.hasAltitude && asset.targetAltitude !== null) {
                 const altDiff = asset.targetAltitude - asset.altitude;
                 if (Math.abs(altDiff) > 1) {
-                    const altDelta = Math.sign(altDiff) * CLIMB_RATE * deltaTime;
+                    const altDelta = Math.sign(altDiff) * climbRate * deltaTime;
                     updated.altitude = asset.altitude + altDelta;
                 } else {
                     updated.altitude = asset.targetAltitude;
@@ -436,7 +461,10 @@ function AICSimulator() {
         const domain = assetData.domain || 'air';
         const domainConfig = DOMAIN_TYPES[domain];
 
-        // Set default values based on domain
+        // Get platform if specified
+        const platform = assetData.platform || null;
+
+        // Set default values based on domain and platform
         let speed = assetData.speed !== undefined ? assetData.speed : (domain === 'air' ? 350 : 15);
         let altitude = assetData.altitude !== undefined ? assetData.altitude : (domain === 'air' ? 25000 : 0);
         let depth = assetData.depth !== undefined ? assetData.depth : (domain === 'subSurface' ? 50 : null);
@@ -447,14 +475,23 @@ function AICSimulator() {
             altitude = Math.min(27000, altitude);
         }
 
-        // Apply domain-specific speed limits
-        speed = Math.min(domainConfig.maxSpeed, speed);
+        // Apply platform-specific limits if platform is assigned
+        if (platform) {
+            speed = Math.min(platform.maxSpeed, speed);
+            if (domainConfig.hasAltitude) {
+                altitude = Math.min(platform.maxAltitude, altitude);
+            }
+        } else {
+            // Apply domain-specific speed limits if no platform
+            speed = Math.min(domainConfig.maxSpeed, speed);
+        }
 
         const newAsset = {
             id: nextAssetId,
             name: assetData.name || `Asset ${nextAssetId}`,
             type: assetData.type || 'unknown',
             domain: domain,
+            platform: platform,
             lat: assetData.lat || BULLSEYE.lat,
             lon: assetData.lon || BULLSEYE.lon,
             heading: assetData.heading || 0,
@@ -915,20 +952,25 @@ function AICSimulator() {
             // Ensure ownship is always present
             let loadedAssets = saveData.assets || [];
 
-            // Migrate old assets to include domain property (backward compatibility)
+            // Migrate old assets to include domain and platform properties (backward compatibility)
             loadedAssets = loadedAssets.map(asset => {
-                if (!asset.domain) {
-                    // Old saved file without domain - default all to 'air'
-                    return {
-                        ...asset,
-                        domain: 'air',
-                        depth: null,
-                        targetDepth: null,
-                        altitude: asset.altitude !== undefined ? asset.altitude : 25000,
-                        targetAltitude: asset.targetAltitude !== undefined ? asset.targetAltitude : null
-                    };
+                const migrated = { ...asset };
+
+                // Add domain if missing
+                if (!migrated.domain) {
+                    migrated.domain = 'air';
+                    migrated.depth = null;
+                    migrated.targetDepth = null;
+                    migrated.altitude = asset.altitude !== undefined ? asset.altitude : 25000;
+                    migrated.targetAltitude = asset.targetAltitude !== undefined ? asset.targetAltitude : null;
                 }
-                return asset;
+
+                // Add platform if missing
+                if (migrated.platform === undefined) {
+                    migrated.platform = null;
+                }
+
+                return migrated;
             });
 
             const ownshipIndex = loadedAssets.findIndex(a => a.id === 0 || a.type === 'ownship');
@@ -940,6 +982,7 @@ function AICSimulator() {
                     name: 'OWNSHIP',
                     type: 'ownship',
                     domain: 'air',
+                    platform: null,
                     lat: BULLSEYE.lat - (50 / 60),
                     lon: BULLSEYE.lon,
                     heading: 0,
@@ -1006,20 +1049,25 @@ function AICSimulator() {
                     // Ensure ownship is always present
                     let loadedAssets = saveData.assets || [];
 
-                    // Migrate old assets to include domain property (backward compatibility)
+                    // Migrate old assets to include domain and platform properties (backward compatibility)
                     loadedAssets = loadedAssets.map(asset => {
-                        if (!asset.domain) {
-                            // Old saved file without domain - default all to 'air'
-                            return {
-                                ...asset,
-                                domain: 'air',
-                                depth: null,
-                                targetDepth: null,
-                                altitude: asset.altitude !== undefined ? asset.altitude : 25000,
-                                targetAltitude: asset.targetAltitude !== undefined ? asset.targetAltitude : null
-                            };
+                        const migrated = { ...asset };
+
+                        // Add domain if missing
+                        if (!migrated.domain) {
+                            migrated.domain = 'air';
+                            migrated.depth = null;
+                            migrated.targetDepth = null;
+                            migrated.altitude = asset.altitude !== undefined ? asset.altitude : 25000;
+                            migrated.targetAltitude = asset.targetAltitude !== undefined ? asset.targetAltitude : null;
                         }
-                        return asset;
+
+                        // Add platform if missing
+                        if (migrated.platform === undefined) {
+                            migrated.platform = null;
+                        }
+
+                        return migrated;
                     });
 
                     const ownshipIndex = loadedAssets.findIndex(a => a.id === 0 || a.type === 'ownship');
@@ -1031,6 +1079,7 @@ function AICSimulator() {
                             name: 'OWNSHIP',
                             type: 'ownship',
                             domain: 'air',
+                            platform: null,
                             lat: BULLSEYE.lat - (50 / 60),
                             lon: BULLSEYE.lon,
                             heading: 0,
@@ -2690,6 +2739,7 @@ function AICSimulator() {
                 selectedShapeId={selectedShapeId}
                 updateShape={updateShape}
                 deleteShape={deleteShape}
+                platforms={platforms}
             />
 
             {/* Context Menu */}
@@ -2705,6 +2755,7 @@ function AICSimulator() {
                     deleteGeoPoint={deleteGeoPoint}
                     startCreatingShape={startCreatingShape}
                     deleteShape={deleteShape}
+                    platforms={platforms}
                 />
             )}
 
@@ -2782,7 +2833,8 @@ function ControlPanel({
     radarEnabled, setRadarEnabled, radarSweepOpacity, setRadarSweepOpacity,
     radarReturnDecay, setRadarReturnDecay,
     geoPoints, selectedGeoPointId, updateGeoPoint, deleteGeoPoint,
-    shapes, selectedShapeId, updateShape, deleteShape
+    shapes, selectedShapeId, updateShape, deleteShape,
+    platforms
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
@@ -3402,6 +3454,7 @@ function ControlPanel({
                                 const domainConfig = DOMAIN_TYPES[newDomain];
                                 const updates = {
                                     domain: newDomain,
+                                    platform: null, // Clear platform when changing domain
                                     altitude: domainConfig.hasAltitude ? selectedAsset.altitude : 0,
                                     depth: domainConfig.hasDepth ? (selectedAsset.depth || 50) : null,
                                     targetAltitude: domainConfig.hasAltitude ? selectedAsset.targetAltitude : null,
@@ -3421,6 +3474,75 @@ function ControlPanel({
                             <option value="subSurface">Sub-Surface</option>
                         </select>
                     </div>
+
+                    {selectedAsset.hasOwnProperty('platform') && (
+                        <div className="input-group">
+                            <label className="input-label">Platform</label>
+                            <select
+                                className="input-field"
+                                value={selectedAsset.platform && selectedAsset.platform.name ? selectedAsset.platform.name : ''}
+                                onChange={(e) => {
+                                    const platformName = e.target.value;
+                                    const domain = selectedAsset.domain || 'air';
+                                    const domainPlatforms = (platforms && platforms[domain]) ? platforms[domain] : [];
+                                    const platform = platformName ? domainPlatforms.find(p => p.name === platformName) : null;
+
+                                    const updates = { platform };
+
+                                    // Apply platform-specific limits if platform is assigned
+                                    if (platform) {
+                                        const domainConfig = DOMAIN_TYPES[domain];
+                                        if (selectedAsset.speed > platform.maxSpeed) {
+                                            updates.speed = platform.maxSpeed;
+                                            updates.targetSpeed = null;
+                                        }
+                                        if (domainConfig.hasAltitude && selectedAsset.altitude > platform.maxAltitude) {
+                                            updates.altitude = platform.maxAltitude;
+                                            updates.targetAltitude = null;
+                                        }
+                                    }
+
+                                    updateAsset(selectedAsset.id, updates);
+                                }}
+                            >
+                                <option value="">None (Generic)</option>
+                                {(platforms && platforms[selectedAsset.domain || 'air'] ? platforms[selectedAsset.domain || 'air'] : []).map((platform, idx) => (
+                                    <option key={idx} value={platform.name}>{platform.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
+                    {/* Display platform details if assigned */}
+                    {selectedAsset.platform && (
+                        <div style={{
+                            padding: '10px',
+                            background: 'rgba(0, 20, 0, 0.3)',
+                            borderRadius: '4px',
+                            border: '1px solid rgba(0, 255, 0, 0.2)',
+                            marginBottom: '10px'
+                        }}>
+                            <div style={{ fontSize: '9px', color: '#00FF00', marginBottom: '5px', fontWeight: 'bold' }}>
+                                PLATFORM SPECIFICATIONS
+                            </div>
+                            <div style={{ fontSize: '8px', color: '#00FF00', opacity: 0.8, lineHeight: '1.4' }}>
+                                <div>Max Speed: {selectedAsset.platform.maxSpeed} kts</div>
+                                {selectedAsset.platform.maxAltitude > 0 && (
+                                    <div>Max Altitude: {selectedAsset.platform.maxAltitude} ft</div>
+                                )}
+                                <div>Max Turn: {selectedAsset.platform.maxTurn}°/s</div>
+                                {selectedAsset.platform.maxClimb > 0 && (
+                                    <div>Max Climb: {selectedAsset.platform.maxClimb} ft/min</div>
+                                )}
+                                {selectedAsset.platform.weapons && selectedAsset.platform.weapons.length > 0 && (
+                                    <div>Weapons: {selectedAsset.platform.weapons.join(', ')}</div>
+                                )}
+                                {selectedAsset.platform.emitters && selectedAsset.platform.emitters.length > 0 && (
+                                    <div>Emitters: {selectedAsset.platform.emitters.join(', ')}</div>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="input-group">
                         <label className="input-label">
@@ -3569,8 +3691,9 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms }) {
     const [showDomainSubmenu, setShowDomainSubmenu] = useState(false);
+    const [showPlatformSubmenu, setShowPlatformSubmenu] = useState(null); // Stores which domain's platforms to show
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
     const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
 
@@ -3579,7 +3702,10 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
     const handleClick = (action, param = null) => {
         switch (action) {
             case 'addAsset':
-                addAsset({ lat: contextMenu.lat, lon: contextMenu.lon, domain: param });
+                // param can be { domain: 'air', platform: platformObject } or just domain string
+                const domain = typeof param === 'object' ? param.domain : param;
+                const platform = typeof param === 'object' ? param.platform : null;
+                addAsset({ lat: contextMenu.lat, lon: contextMenu.lon, domain, platform });
                 break;
             case 'goTo':
                 addWaypoint(selectedAsset.id, contextMenu.lat, contextMenu.lon, true);
@@ -3605,6 +3731,7 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
         }
         setContextMenu(null);
         setShowDomainSubmenu(false);
+        setShowPlatformSubmenu(null);
         setShowGeoPointSubmenu(false);
         setShowShapeSubmenu(false);
     };
@@ -3625,15 +3752,40 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                         Create Asset ›
                         {showDomainSubmenu && (
                             <div className="context-menu-submenu">
-                                {Object.entries(DOMAIN_TYPES).map(([key, config]) => (
-                                    <div
-                                        key={key}
-                                        className="context-menu-item"
-                                        onClick={() => handleClick('addAsset', key)}
-                                    >
-                                        {config.label}
-                                    </div>
-                                ))}
+                                {Object.entries(DOMAIN_TYPES).map(([domainKey, domainConfig]) => {
+                                    const domainPlatforms = (platforms && platforms[domainKey]) ? platforms[domainKey] : [];
+                                    return (
+                                        <div
+                                            key={domainKey}
+                                            className="context-menu-item context-menu-parent"
+                                            onMouseEnter={() => setShowPlatformSubmenu(domainKey)}
+                                            onMouseLeave={() => setShowPlatformSubmenu(null)}
+                                        >
+                                            {domainConfig.label} ›
+                                            {showPlatformSubmenu === domainKey && (
+                                                <div className="context-menu-submenu">
+                                                    {/* Option to create asset without platform */}
+                                                    <div
+                                                        className="context-menu-item"
+                                                        onClick={() => handleClick('addAsset', domainKey)}
+                                                    >
+                                                        None (Generic)
+                                                    </div>
+                                                    {/* Platform options */}
+                                                    {domainPlatforms.map((platform, idx) => (
+                                                        <div
+                                                            key={idx}
+                                                            className="context-menu-item"
+                                                            onClick={() => handleClick('addAsset', { domain: domainKey, platform })}
+                                                        >
+                                                            {platform.name}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>

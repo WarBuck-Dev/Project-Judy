@@ -97,18 +97,72 @@ Each asset can have one of five identity types (same across all domains):
 - **Unknown** (Yellow): Unidentified, evaluated
 - **Unknown Unevaluated** (Orange): Unidentified, not evaluated
 
+### Platform Assignment
+Platforms allow you to assign specific aircraft, ships, or submarines to assets with realistic performance characteristics and capabilities.
+
+**Creating Asset with Platform**:
+1. Right-click on map
+2. Hover over "Create Asset"
+3. Hover over desired domain (Air, Surface, Sub-Surface)
+4. Select platform from submenu or "None (Generic)" for unspecified platform
+
+**Available Platforms** (configurable via platforms.json):
+
+**Air Platforms**:
+- Fighter aircraft: F-16C, FA-18E, F-15C, F-22A, F-35A, MiG-29, Su-27, Su-35, J-20, Rafale, Eurofighter Typhoon
+- AWACS: E-2D Hawkeye, E-3 Sentry
+- Support: KC-135 Stratotanker
+- Strike: B-52H, A-10C
+
+**Surface Platforms**:
+- Destroyers: Arleigh Burke (DDG), Ticonderoga (CG), Type 052D, Type 055, Slava
+- Cruisers: Kirov (CGN)
+- Carriers: Nimitz CVN, Admiral Kuznetsov
+- Frigates: FREMM Frigate, LCS Freedom
+- Small craft: Patrol Boat, Fast Attack Craft
+
+**Sub-Surface Platforms**:
+- Nuclear submarines: Virginia SSN, Los Angeles SSN, Seawolf SSN, Akula SSN, Yasen SSGN, Type 093 SSN, Type 095 SSN, Astute SSN, Barracuda SSN
+- Diesel submarines: Kilo SSK, Type 212 SSK
+- Missile submarines: Ohio SSGN
+
+**Platform Specifications**:
+Each platform defines:
+- **Max Speed**: Platform maximum velocity in knots
+- **Max Altitude**: Ceiling for air platforms (feet)
+- **Max Climb**: Maximum climb rate (feet/minute)
+- **Max Turn**: Turn rate (degrees/second)
+- **Weapons**: Available weapon systems (missiles, torpedoes, bombs)
+- **Emitters**: Radar and sensor systems
+
+When a platform is assigned:
+- Speed limits automatically apply based on platform max speed
+- Altitude limits apply based on platform ceiling
+- Turn rates use platform-specific agility
+- Climb rates use platform-specific performance
+- Platform specifications display in the "SELECTED ASSET" panel
+
+**Changing Platform**:
+1. Select asset
+2. Choose new platform from "Platform" dropdown in control panel
+3. Platform constraints apply automatically
+
+**Developer Note**: Add custom platforms by editing [platforms.json](platforms.json) with the same attribute structure.
+
 ### Edit Asset
 1. Select asset by clicking on it
 2. Modify properties in "SELECTED ASSET" panel:
    - **Name**: Custom identifier
    - **Identity**: Friendly, Hostile, Neutral, Unknown, Unknown Unevaluated
    - **Domain**: Air, Surface, or Sub-Surface (cannot change for Ownship)
+   - **Platform**: Select specific platform or "None (Generic)" (changes platform constraints apply automatically)
    - **Heading**: Direction in degrees (0-359)
-   - **Speed**: Velocity in knots (max varies by domain)
+   - **Speed**: Velocity in knots (max varies by domain/platform)
    - **Altitude**: For air domain only (in feet, displayed as FL)
    - **Depth**: For sub-surface domain only (in feet)
 3. For heading/speed/altitude/depth: Enter value and press Enter or click SET
-4. Changes apply gradually at domain-specific realistic rates
+4. Changes apply gradually at domain/platform-specific realistic rates
+5. Platform specifications (max speed, altitude, turn rate, weapons, emitters) are displayed when a platform is assigned
 
 ### Report Track
 1. Select an asset
@@ -424,11 +478,25 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 2.2
-**Last Updated**: January 4, 2026
+**Version**: 2.3
+**Last Updated**: January 5, 2026
 **Status**: Production Ready
 
 ## Recent Updates
+
+### Version 2.3 (January 2026)
+- **Platform System**: Assign specific aircraft, ships, and submarines to assets
+  - Platform configuration file ([platforms.json](platforms.json)) with 40+ military platforms
+  - Three-level context menu: Create Asset → Domain → Platform selection
+  - Air platforms: F-16C, FA-18E, F-15C, F-22A, F-35A, MiG-29, Su-27, Su-35, J-20, Rafale, Eurofighter, E-2D, E-3, KC-135, B-52H, A-10C
+  - Surface platforms: Arleigh Burke, Ticonderoga, Nimitz CVN, Type 052D, Type 055, Slava, Kirov, Admiral Kuznetsov, FREMM, LCS Freedom, and more
+  - Sub-surface platforms: Virginia SSN, Los Angeles SSN, Seawolf SSN, Ohio SSGN, Kilo SSK, Akula SSN, Yasen SSGN, Type 093/095 SSN, Astute SSN, and more
+  - Platform-specific performance constraints: max speed, max altitude, turn rate, climb rate
+  - Platform weapons and emitters displayed in asset panel
+  - Physics engine uses platform-specific turn rates and climb rates
+  - Developer-configurable: add custom platforms via JSON file
+  - Platform specifications panel shows real-time capabilities
+  - Automatic speed/altitude limiting based on platform constraints
 
 ### Version 2.2 (January 2026)
 - **Domain-Based Asset System**: Multi-domain operations with Air, Surface, and Sub-Surface assets
