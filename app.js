@@ -914,6 +914,23 @@ function AICSimulator() {
 
             // Ensure ownship is always present
             let loadedAssets = saveData.assets || [];
+
+            // Migrate old assets to include domain property (backward compatibility)
+            loadedAssets = loadedAssets.map(asset => {
+                if (!asset.domain) {
+                    // Old saved file without domain - default all to 'air'
+                    return {
+                        ...asset,
+                        domain: 'air',
+                        depth: null,
+                        targetDepth: null,
+                        altitude: asset.altitude !== undefined ? asset.altitude : 25000,
+                        targetAltitude: asset.targetAltitude !== undefined ? asset.targetAltitude : null
+                    };
+                }
+                return asset;
+            });
+
             const ownshipIndex = loadedAssets.findIndex(a => a.id === 0 || a.type === 'ownship');
 
             if (ownshipIndex === -1) {
@@ -922,14 +939,17 @@ function AICSimulator() {
                     id: 0,
                     name: 'OWNSHIP',
                     type: 'ownship',
+                    domain: 'air',
                     lat: BULLSEYE.lat - (50 / 60),
                     lon: BULLSEYE.lon,
                     heading: 0,
                     speed: 150,
                     altitude: 15000,
+                    depth: null,
                     targetHeading: null,
                     targetSpeed: null,
                     targetAltitude: null,
+                    targetDepth: null,
                     waypoints: [],
                     trackNumber: null
                 }, ...loadedAssets];
@@ -985,6 +1005,23 @@ function AICSimulator() {
 
                     // Ensure ownship is always present
                     let loadedAssets = saveData.assets || [];
+
+                    // Migrate old assets to include domain property (backward compatibility)
+                    loadedAssets = loadedAssets.map(asset => {
+                        if (!asset.domain) {
+                            // Old saved file without domain - default all to 'air'
+                            return {
+                                ...asset,
+                                domain: 'air',
+                                depth: null,
+                                targetDepth: null,
+                                altitude: asset.altitude !== undefined ? asset.altitude : 25000,
+                                targetAltitude: asset.targetAltitude !== undefined ? asset.targetAltitude : null
+                            };
+                        }
+                        return asset;
+                    });
+
                     const ownshipIndex = loadedAssets.findIndex(a => a.id === 0 || a.type === 'ownship');
 
                     if (ownshipIndex === -1) {
@@ -993,14 +1030,17 @@ function AICSimulator() {
                             id: 0,
                             name: 'OWNSHIP',
                             type: 'ownship',
+                            domain: 'air',
                             lat: BULLSEYE.lat - (50 / 60),
                             lon: BULLSEYE.lon,
                             heading: 0,
                             speed: 150,
                             altitude: 15000,
+                            depth: null,
                             targetHeading: null,
                             targetSpeed: null,
                             targetAltitude: null,
+                            targetDepth: null,
                             waypoints: [],
                             trackNumber: null
                         }, ...loadedAssets];
