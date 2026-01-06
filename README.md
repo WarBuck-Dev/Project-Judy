@@ -56,26 +56,59 @@ Modern browsers block loading local JavaScript files for security reasons (CORS 
 
 ### Add Asset
 **Method 1**: Click "+ ADD ASSET" button in control panel
-- Fill in asset details (name, type, heading, speed, altitude)
+- Fill in asset details (name, identity, domain, heading, speed, altitude/depth)
 - Asset appears at bullseye by default
 
 **Method 2**: Right-click on map
-- Select "Add Asset Here"
+- Hover over "Create Asset"
+- Select domain from submenu (Air, Surface, or Sub-Surface)
 - Asset appears at clicked location
 
-### Asset Types
-Assets use MIL-STD-2525 symbology (top-half only):
-- **Friendly** (Light Blue, semicircle): Allied forces
-- **Hostile** (Red, triangle): Enemy forces
-- **Neutral** (Green, square top): Non-combatants
-- **Unknown** (Yellow, square top): Unidentified, evaluated
-- **Unknown Unevaluated** (Orange, square top): Unidentified, not evaluated
+### Asset Domains
+Assets are organized by operational domain with domain-specific symbology and constraints:
+
+**Air Domain**
+- MIL-STD-2525 symbology: Top-half shapes (semicircle, triangle, square top)
+- Maximum speed: 999 knots
+- Turn rate: 15°/second (standard rate)
+- Speed change: 10 knots/second
+- Has altitude attribute (displayed as Flight Level)
+
+**Surface Domain**
+- MIL-STD-2525 symbology: Whole shapes (full circle, diamond, square)
+- Maximum speed: 30 knots
+- Turn rate: 1°/second
+- Speed change: 2 knots/second
+- No altitude attribute
+
+**Sub-Surface Domain**
+- MIL-STD-2525 symbology: Bottom-half shapes (inverted semicircle, triangle, square bottom)
+- Maximum speed: 30 knots
+- Turn rate: 1°/second
+- Speed change: 2 knots/second
+- Has depth attribute (displayed in feet)
+- Depth change: 10 feet/second
+
+### Asset Identities
+Each asset can have one of five identity types (same across all domains):
+- **Friendly** (Light Blue): Allied forces
+- **Hostile** (Red): Enemy forces
+- **Neutral** (Green): Non-combatants
+- **Unknown** (Yellow): Unidentified, evaluated
+- **Unknown Unevaluated** (Orange): Unidentified, not evaluated
 
 ### Edit Asset
 1. Select asset by clicking on it
-2. Modify properties in "SELECTED ASSET" panel
-3. For heading/speed/altitude: Enter value and press Enter
-4. Changes apply gradually at realistic rates
+2. Modify properties in "SELECTED ASSET" panel:
+   - **Name**: Custom identifier
+   - **Identity**: Friendly, Hostile, Neutral, Unknown, Unknown Unevaluated
+   - **Domain**: Air, Surface, or Sub-Surface (cannot change for Ownship)
+   - **Heading**: Direction in degrees (0-359)
+   - **Speed**: Velocity in knots (max varies by domain)
+   - **Altitude**: For air domain only (in feet, displayed as FL)
+   - **Depth**: For sub-surface domain only (in feet)
+3. For heading/speed/altitude/depth: Enter value and press Enter or click SET
+4. Changes apply gradually at domain-specific realistic rates
 
 ### Report Track
 1. Select an asset
@@ -274,9 +307,23 @@ Shapes use the same color coding as assets and geo-points:
 ## Flight Dynamics
 
 ### Realistic Movement Rates
+
+**Air Domain Assets:**
 - **Heading changes**: 15°/second (standard rate turn)
 - **Speed changes**: 10 knots/second
 - **Altitude changes**: 6,000 feet/minute (100 ft/sec)
+- **Maximum speed**: 999 knots
+
+**Surface Domain Assets:**
+- **Heading changes**: 1°/second
+- **Speed changes**: 2 knots/second
+- **Maximum speed**: 30 knots
+
+**Sub-Surface Domain Assets:**
+- **Heading changes**: 1°/second
+- **Speed changes**: 2 knots/second
+- **Depth changes**: 600 feet/minute (10 ft/sec)
+- **Maximum speed**: 30 knots
 
 ### Physics Simulation
 - 60 Hz update rate for smooth movement
@@ -384,6 +431,16 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 ## Recent Updates
 
 ### Version 2.2 (January 2026)
+- **Domain-Based Asset System**: Multi-domain operations with Air, Surface, and Sub-Surface assets
+  - Three operational domains with domain-specific MIL-STD-2525 symbology
+  - Air: Top-half symbols, 999kt max speed, 15°/sec turn rate, altitude attribute
+  - Surface: Whole symbols, 30kt max speed, 1°/sec turn rate, no altitude
+  - Sub-Surface: Bottom-half symbols, 30kt max speed, 1°/sec turn rate, depth attribute
+  - Domain selector in asset editor panel with live domain switching
+  - Conditional UI fields (altitude for air, depth for sub-surface)
+  - Domain-aware physics engine with appropriate movement constraints
+  - "Create Asset" context menu with domain submenu selection
+  - Depth display for submarines (feet), flight level for aircraft
 - **High-Resolution Map**: Enhanced Persian Gulf cartography with detailed coastlines and islands
   - Imported high-resolution coastline data from KML source
   - Added 10 major islands including Bahrain, Qeshm, Abu Musa, and smaller islands
