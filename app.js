@@ -35,7 +35,35 @@ const SHAPE_TYPES = {
     circle: { label: 'Circle' }
 };
 
-// Turn/climb/speed rates
+// Domain configurations
+const DOMAIN_TYPES = {
+    air: {
+        label: 'Air',
+        maxSpeed: 999,
+        turnRate: 15, // degrees per second
+        speedRate: 10, // knots per second
+        hasAltitude: true,
+        hasDepth: false
+    },
+    surface: {
+        label: 'Surface',
+        maxSpeed: 30,
+        turnRate: 1, // degrees per second
+        speedRate: 2, // knots per second
+        hasAltitude: false,
+        hasDepth: false
+    },
+    subSurface: {
+        label: 'Sub-Surface',
+        maxSpeed: 30,
+        turnRate: 1, // degrees per second
+        speedRate: 2, // knots per second
+        hasAltitude: false,
+        hasDepth: true
+    }
+};
+
+// Turn/climb/speed rates (default for air assets)
 const TURN_RATE = 15; // degrees per second
 const SPEED_RATE = 10; // knots per second
 const CLIMB_RATE = 100; // feet per second (6000 ft/min)
@@ -145,14 +173,17 @@ function AICSimulator() {
             id: 0,
             name: 'OWNSHIP',
             type: 'ownship',
+            domain: 'air',
             lat: BULLSEYE.lat - (50 / 60), // 50 NM south of bullseye
             lon: BULLSEYE.lon,
             heading: 0,
             speed: 150,
             altitude: 15000,
+            depth: null,
             targetHeading: null,
             targetSpeed: null,
             targetAltitude: null,
+            targetDepth: null,
             waypoints: [],
             trackNumber: null
         }
@@ -222,11 +253,14 @@ function AICSimulator() {
             let updated = { ...asset };
             const deltaTime = PHYSICS_UPDATE_RATE / 1000; // seconds
 
+            // Get domain-specific configuration
+            const domainConfig = DOMAIN_TYPES[asset.domain || 'air'];
+
             // Update heading
             if (asset.targetHeading !== null) {
                 const turnAmount = shortestTurn(asset.heading, asset.targetHeading);
                 if (Math.abs(turnAmount) > 1) {
-                    const turnDelta = Math.sign(turnAmount) * TURN_RATE * deltaTime;
+                    const turnDelta = Math.sign(turnAmount) * domainConfig.turnRate * deltaTime;
                     updated.heading = normalizeHeading(asset.heading + turnDelta);
                 } else {
                     updated.heading = asset.targetHeading;
@@ -238,7 +272,7 @@ function AICSimulator() {
             if (asset.targetSpeed !== null) {
                 const speedDiff = asset.targetSpeed - asset.speed;
                 if (Math.abs(speedDiff) > 1) {
-                    const speedDelta = Math.sign(speedDiff) * SPEED_RATE * deltaTime;
+                    const speedDelta = Math.sign(speedDiff) * domainConfig.speedRate * deltaTime;
                     updated.speed = asset.speed + speedDelta;
                 } else {
                     updated.speed = asset.targetSpeed;
@@ -246,8 +280,8 @@ function AICSimulator() {
                 }
             }
 
-            // Update altitude
-            if (asset.targetAltitude !== null) {
+            // Update altitude (only for air domain)
+            if (domainConfig.hasAltitude && asset.targetAltitude !== null) {
                 const altDiff = asset.targetAltitude - asset.altitude;
                 if (Math.abs(altDiff) > 1) {
                     const altDelta = Math.sign(altDiff) * CLIMB_RATE * deltaTime;
@@ -255,6 +289,18 @@ function AICSimulator() {
                 } else {
                     updated.altitude = asset.targetAltitude;
                     updated.targetAltitude = null;
+                }
+            }
+
+            // Update depth (only for sub-surface domain)
+            if (domainConfig.hasDepth && asset.targetDepth !== null) {
+                const depthDiff = asset.targetDepth - asset.depth;
+                if (Math.abs(depthDiff) > 1) {
+                    const depthDelta = Math.sign(depthDiff) * 10 * deltaTime; // 10 ft/sec depth change rate
+                    updated.depth = asset.depth + depthDelta;
+                } else {
+                    updated.depth = asset.targetDepth;
+                    updated.targetDepth = null;
                 }
             }
 
@@ -386,27 +432,39 @@ function AICSimulator() {
     // ========================================================================
 
     const addAsset = useCallback((assetData) => {
-        // Apply ownship limits if creating ownship
-        let speed = assetData.speed !== undefined ? assetData.speed : 350;
-        let altitude = assetData.altitude !== undefined ? assetData.altitude : 25000;
+        // Determine domain (default to 'air' if not specified)
+        const domain = assetData.domain || 'air';
+        const domainConfig = DOMAIN_TYPES[domain];
 
+        // Set default values based on domain
+        let speed = assetData.speed !== undefined ? assetData.speed : (domain === 'air' ? 350 : 15);
+        let altitude = assetData.altitude !== undefined ? assetData.altitude : (domain === 'air' ? 25000 : 0);
+        let depth = assetData.depth !== undefined ? assetData.depth : (domain === 'subSurface' ? 50 : null);
+
+        // Apply ownship limits if creating ownship
         if (assetData.type === 'ownship') {
             speed = Math.min(220, speed);
             altitude = Math.min(27000, altitude);
         }
 
+        // Apply domain-specific speed limits
+        speed = Math.min(domainConfig.maxSpeed, speed);
+
         const newAsset = {
             id: nextAssetId,
             name: assetData.name || `Asset ${nextAssetId}`,
             type: assetData.type || 'unknown',
+            domain: domain,
             lat: assetData.lat || BULLSEYE.lat,
             lon: assetData.lon || BULLSEYE.lon,
             heading: assetData.heading || 0,
             speed: speed,
-            altitude: altitude,
+            altitude: domainConfig.hasAltitude ? altitude : 0,
+            depth: domainConfig.hasDepth ? depth : null,
             targetHeading: null,
             targetSpeed: null,
-            targetAltitude: null,
+            targetAltitude: domainConfig.hasAltitude ? null : null,
+            targetDepth: domainConfig.hasDepth ? null : null,
             waypoints: [],
             trackNumber: null
         };
@@ -1910,26 +1968,66 @@ function AICSimulator() {
                 <line x1={pos.x} y1={pos.y} x2={headingX} y2={headingY}
                       stroke={config.color} strokeWidth="2" />
 
-                {/* Asset symbol - MIL-STD-2525 air track (top half only) */}
-                {config.shape === 'circle' ? (
-                    // Friendly: Top half of circle (arc)
-                    <path
-                        d={`M ${pos.x - size} ${pos.y} A ${size} ${size} 0 0 1 ${pos.x + size} ${pos.y}`}
-                        fill="none"
-                        stroke={config.color}
-                        strokeWidth={strokeWidth}
-                    />
-                ) : config.shape === 'diamond' ? (
-                    // Hostile: Top half of diamond (triangle without bottom line)
-                    <path
-                        d={`M ${pos.x - size} ${pos.y} L ${pos.x} ${pos.y - size} L ${pos.x + size} ${pos.y}`}
-                        fill="none"
-                        stroke={config.color}
-                        strokeWidth={strokeWidth}
-                    />
-                ) : config.shape === 'ownship' ? (
-                    // Ownship: Circle with crosshair
-                    <g>
+                {/* Asset symbol - MIL-STD-2525 symbology based on domain */}
+                {asset.domain === 'air' ? (
+                    // AIR DOMAIN - Top half only
+                    config.shape === 'circle' ? (
+                        // Friendly: Top half of circle (arc)
+                        <path
+                            d={`M ${pos.x - size} ${pos.y} A ${size} ${size} 0 0 1 ${pos.x + size} ${pos.y}`}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    ) : config.shape === 'diamond' ? (
+                        // Hostile: Top half of diamond (triangle without bottom line)
+                        <path
+                            d={`M ${pos.x - size} ${pos.y} L ${pos.x} ${pos.y - size} L ${pos.x + size} ${pos.y}`}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    ) : config.shape === 'ownship' ? (
+                        // Ownship: Circle with crosshair
+                        <g>
+                            <circle
+                                cx={pos.x}
+                                cy={pos.y}
+                                r={size}
+                                fill="none"
+                                stroke={config.color}
+                                strokeWidth={strokeWidth}
+                            />
+                            <line
+                                x1={pos.x - size}
+                                y1={pos.y}
+                                x2={pos.x + size}
+                                y2={pos.y}
+                                stroke={config.color}
+                                strokeWidth={strokeWidth}
+                            />
+                            <line
+                                x1={pos.x}
+                                y1={pos.y - size}
+                                x2={pos.x}
+                                y2={pos.y + size}
+                                stroke={config.color}
+                                strokeWidth={strokeWidth}
+                            />
+                        </g>
+                    ) : (
+                        // Neutral/Unknown/Unknown Unevaluated: Top half of square
+                        <path
+                            d={`M ${pos.x - size} ${pos.y} L ${pos.x - size} ${pos.y - size} L ${pos.x + size} ${pos.y - size} L ${pos.x + size} ${pos.y}`}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    )
+                ) : asset.domain === 'surface' ? (
+                    // SURFACE DOMAIN - Whole shape
+                    config.shape === 'circle' ? (
+                        // Friendly: Full circle
                         <circle
                             cx={pos.x}
                             cy={pos.y}
@@ -1938,31 +2036,53 @@ function AICSimulator() {
                             stroke={config.color}
                             strokeWidth={strokeWidth}
                         />
-                        <line
-                            x1={pos.x - size}
-                            y1={pos.y}
-                            x2={pos.x + size}
-                            y2={pos.y}
+                    ) : config.shape === 'diamond' ? (
+                        // Hostile: Full diamond
+                        <path
+                            d={`M ${pos.x} ${pos.y - size} L ${pos.x + size} ${pos.y} L ${pos.x} ${pos.y + size} L ${pos.x - size} ${pos.y} Z`}
+                            fill="none"
                             stroke={config.color}
                             strokeWidth={strokeWidth}
                         />
-                        <line
-                            x1={pos.x}
-                            y1={pos.y - size}
-                            x2={pos.x}
-                            y2={pos.y + size}
+                    ) : (
+                        // Neutral/Unknown/Unknown Unevaluated: Full square
+                        <rect
+                            x={pos.x - size}
+                            y={pos.y - size}
+                            width={size * 2}
+                            height={size * 2}
+                            fill="none"
                             stroke={config.color}
                             strokeWidth={strokeWidth}
                         />
-                    </g>
+                    )
                 ) : (
-                    // Neutral/Unknown/Unknown Unevaluated: Top half of square
-                    <path
-                        d={`M ${pos.x - size} ${pos.y} L ${pos.x - size} ${pos.y - size} L ${pos.x + size} ${pos.y - size} L ${pos.x + size} ${pos.y}`}
-                        fill="none"
-                        stroke={config.color}
-                        strokeWidth={strokeWidth}
-                    />
+                    // SUB-SURFACE DOMAIN - Bottom half only
+                    config.shape === 'circle' ? (
+                        // Friendly: Bottom half of circle (arc)
+                        <path
+                            d={`M ${pos.x + size} ${pos.y} A ${size} ${size} 0 0 1 ${pos.x - size} ${pos.y}`}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    ) : config.shape === 'diamond' ? (
+                        // Hostile: Bottom half of diamond (inverted triangle)
+                        <path
+                            d={`M ${pos.x - size} ${pos.y} L ${pos.x} ${pos.y + size} L ${pos.x + size} ${pos.y}`}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    ) : (
+                        // Neutral/Unknown/Unknown Unevaluated: Bottom half of square
+                        <path
+                            d={`M ${pos.x - size} ${pos.y} L ${pos.x - size} ${pos.y + size} L ${pos.x + size} ${pos.y + size} L ${pos.x + size} ${pos.y}`}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    )
                 )}
 
                 {/* Name label above */}
@@ -1971,11 +2091,19 @@ function AICSimulator() {
                     {asset.name}
                 </text>
 
-                {/* Flight level and track number below */}
-                <text x={pos.x} y={pos.y+size+15} fill={config.color} fontSize="9"
-                      textAnchor="middle" fontWeight="700">
-                    FL{Math.round(asset.altitude/100)}
-                </text>
+                {/* Flight level / Depth display below */}
+                {asset.domain === 'air' && (
+                    <text x={pos.x} y={pos.y+size+15} fill={config.color} fontSize="9"
+                          textAnchor="middle" fontWeight="700">
+                        FL{Math.round(asset.altitude/100)}
+                    </text>
+                )}
+                {asset.domain === 'subSurface' && asset.depth !== null && (
+                    <text x={pos.x} y={pos.y+size+15} fill={config.color} fontSize="9"
+                          textAnchor="middle" fontWeight="700">
+                        {asset.depth}ft
+                    </text>
+                )}
                 {asset.trackNumber && (
                     <text x={pos.x} y={pos.y+size+27} fill={config.color} fontSize="8"
                           textAnchor="middle" fontWeight="700">
@@ -2630,7 +2758,8 @@ function ControlPanel({
                 name: selectedAsset.name,
                 heading: Math.round(selectedAsset.heading),
                 speed: Math.round(selectedAsset.speed),
-                altitude: Math.round(selectedAsset.altitude)
+                altitude: Math.round(selectedAsset.altitude),
+                depth: Math.round(selectedAsset.depth || 0)
             });
         }
     }, [selectedAsset?.id]); // Only depend on ID, not the whole asset object
@@ -2679,7 +2808,7 @@ function ControlPanel({
         } else if (field === 'type') {
             updateAsset(selectedAsset.id, { type: value });
         } else {
-            // For heading, speed, altitude - just update local state
+            // For heading, speed, altitude, depth - just update local state
             setEditValues(prev => ({ ...prev, [field]: value }));
         }
     };
@@ -3224,6 +3353,36 @@ function ControlPanel({
                     </div>
 
                     <div className="input-group">
+                        <label className="input-label">Domain</label>
+                        <select
+                            className="input-field"
+                            value={selectedAsset.domain || 'air'}
+                            onChange={(e) => {
+                                const newDomain = e.target.value;
+                                const domainConfig = DOMAIN_TYPES[newDomain];
+                                const updates = {
+                                    domain: newDomain,
+                                    altitude: domainConfig.hasAltitude ? selectedAsset.altitude : 0,
+                                    depth: domainConfig.hasDepth ? (selectedAsset.depth || 50) : null,
+                                    targetAltitude: domainConfig.hasAltitude ? selectedAsset.targetAltitude : null,
+                                    targetDepth: domainConfig.hasDepth ? selectedAsset.targetDepth : null
+                                };
+                                // Apply speed limit if changing to surface/subsurface
+                                if (selectedAsset.speed > domainConfig.maxSpeed) {
+                                    updates.speed = domainConfig.maxSpeed;
+                                    updates.targetSpeed = null;
+                                }
+                                updateAsset(selectedAsset.id, updates);
+                            }}
+                            disabled={selectedAsset.type === 'ownship'}
+                        >
+                            <option value="air">Air</option>
+                            <option value="surface">Surface</option>
+                            <option value="subSurface">Sub-Surface</option>
+                        </select>
+                    </div>
+
+                    <div className="input-group">
                         <label className="input-label">
                             Heading (degrees)
                             {selectedAsset && (
@@ -3284,35 +3443,71 @@ function ControlPanel({
                         </div>
                     </div>
 
-                    <div className="input-group">
-                        <label className="input-label">
-                            Altitude (feet)
-                            {selectedAsset && (
-                                <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
-                                    Current: FL{Math.round(selectedAsset.altitude / 100)}
-                                    {selectedAsset.targetAltitude !== null && ` → FL${Math.round(selectedAsset.targetAltitude / 100)}`}
-                                </span>
-                            )}
-                        </label>
-                        <div style={{ display: 'flex', gap: '5px' }}>
-                            <input
-                                className="input-field"
-                                type="number"
-                                min="0"
-                                value={editValues.altitude || 0}
-                                onChange={(e) => handleUpdate('altitude', e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && applyTarget('altitude')}
-                                style={{ flex: 1 }}
-                            />
-                            <button
-                                className="control-btn"
-                                onClick={() => applyTarget('altitude')}
-                                style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
-                            >
-                                SET
-                            </button>
+                    {/* Altitude input - only for air domain */}
+                    {(selectedAsset.domain === 'air' || !selectedAsset.domain) && (
+                        <div className="input-group">
+                            <label className="input-label">
+                                Altitude (feet)
+                                {selectedAsset && (
+                                    <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                        Current: FL{Math.round(selectedAsset.altitude / 100)}
+                                        {selectedAsset.targetAltitude !== null && ` → FL${Math.round(selectedAsset.targetAltitude / 100)}`}
+                                    </span>
+                                )}
+                            </label>
+                            <div style={{ display: 'flex', gap: '5px' }}>
+                                <input
+                                    className="input-field"
+                                    type="number"
+                                    min="0"
+                                    value={editValues.altitude || 0}
+                                    onChange={(e) => handleUpdate('altitude', e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && applyTarget('altitude')}
+                                    style={{ flex: 1 }}
+                                />
+                                <button
+                                    className="control-btn"
+                                    onClick={() => applyTarget('altitude')}
+                                    style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                >
+                                    SET
+                                </button>
+                            </div>
                         </div>
-                    </div>
+                    )}
+
+                    {/* Depth input - only for sub-surface domain */}
+                    {selectedAsset.domain === 'subSurface' && (
+                        <div className="input-group">
+                            <label className="input-label">
+                                Depth (feet)
+                                {selectedAsset && (
+                                    <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                        Current: {Math.round(selectedAsset.depth || 0)}ft
+                                        {selectedAsset.targetDepth !== null && ` → ${Math.round(selectedAsset.targetDepth)}ft`}
+                                    </span>
+                                )}
+                            </label>
+                            <div style={{ display: 'flex', gap: '5px' }}>
+                                <input
+                                    className="input-field"
+                                    type="number"
+                                    min="0"
+                                    value={editValues.depth || 0}
+                                    onChange={(e) => handleUpdate('depth', e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && applyTarget('depth')}
+                                    style={{ flex: 1 }}
+                                />
+                                <button
+                                    className="control-btn"
+                                    onClick={() => applyTarget('depth')}
+                                    style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                >
+                                    SET
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="playback-controls" style={{ marginTop: '10px' }}>
                         <button className="control-btn" onClick={() => reportTrack(selectedAsset.id)}>
@@ -3335,6 +3530,7 @@ function ControlPanel({
 // ============================================================================
 
 function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape }) {
+    const [showDomainSubmenu, setShowDomainSubmenu] = useState(false);
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
     const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
 
@@ -3343,7 +3539,7 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
     const handleClick = (action, param = null) => {
         switch (action) {
             case 'addAsset':
-                addAsset({ lat: contextMenu.lat, lon: contextMenu.lon });
+                addAsset({ lat: contextMenu.lat, lon: contextMenu.lon, domain: param });
                 break;
             case 'goTo':
                 addWaypoint(selectedAsset.id, contextMenu.lat, contextMenu.lon, true);
@@ -3368,6 +3564,7 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                 break;
         }
         setContextMenu(null);
+        setShowDomainSubmenu(false);
         setShowGeoPointSubmenu(false);
         setShowShapeSubmenu(false);
     };
@@ -3380,8 +3577,25 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
         >
             {contextMenu.type === 'empty' && (
                 <>
-                    <div className="context-menu-item" onClick={() => handleClick('addAsset')}>
-                        Add Asset Here
+                    <div
+                        className="context-menu-item context-menu-parent"
+                        onMouseEnter={() => setShowDomainSubmenu(true)}
+                        onMouseLeave={() => setShowDomainSubmenu(false)}
+                    >
+                        Create Asset ›
+                        {showDomainSubmenu && (
+                            <div className="context-menu-submenu">
+                                {Object.entries(DOMAIN_TYPES).map(([key, config]) => (
+                                    <div
+                                        key={key}
+                                        className="context-menu-item"
+                                        onClick={() => handleClick('addAsset', key)}
+                                    >
+                                        {config.label}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <div
                         className="context-menu-item context-menu-parent"
