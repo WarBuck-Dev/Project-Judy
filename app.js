@@ -492,6 +492,14 @@ function AICSimulator() {
             speed = Math.min(domainConfig.maxSpeed, speed);
         }
 
+        // Initialize emitter states (all emitters on by default)
+        const emitterStates = {};
+        if (platform && platform.emitters && platform.emitters.length > 0) {
+            platform.emitters.forEach(emitter => {
+                emitterStates[emitter] = true; // default: on
+            });
+        }
+
         const newAsset = {
             id: nextAssetId,
             name: assetData.name || `Asset ${nextAssetId}`,
@@ -509,7 +517,8 @@ function AICSimulator() {
             targetAltitude: domainConfig.hasAltitude ? null : null,
             targetDepth: domainConfig.hasDepth ? null : null,
             waypoints: [],
-            trackNumber: null
+            trackNumber: null,
+            emitterStates: emitterStates
         };
 
         setAssets(prev => [...prev, newAsset]);
@@ -3514,6 +3523,15 @@ function ControlPanel({
 
                                     const updates = { platform };
 
+                                    // Initialize emitter states for new platform
+                                    const emitterStates = {};
+                                    if (platform && platform.emitters && platform.emitters.length > 0) {
+                                        platform.emitters.forEach(emitter => {
+                                            emitterStates[emitter] = true; // default: on
+                                        });
+                                    }
+                                    updates.emitterStates = emitterStates;
+
                                     // Apply platform-specific limits if platform is assigned
                                     if (platform) {
                                         const domainConfig = DOMAIN_TYPES[domain];
@@ -3535,6 +3553,39 @@ function ControlPanel({
                                     <option key={idx} value={platform.name}>{platform.name}</option>
                                 ))}
                             </select>
+                        </div>
+                    )}
+
+                    {/* Emitter Controls */}
+                    {selectedAsset.platform && selectedAsset.platform.emitters && selectedAsset.platform.emitters.length > 0 && (
+                        <div className="input-group">
+                            <label className="input-label">Emitters</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                {selectedAsset.platform.emitters.map((emitter, idx) => (
+                                    <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px', background: '#2a2a2a', borderRadius: '3px' }}>
+                                        <span style={{ fontSize: '10px', opacity: 0.8 }}>{emitter}</span>
+                                        <button
+                                            className="control-btn"
+                                            style={{
+                                                padding: '3px 10px',
+                                                fontSize: '9px',
+                                                minWidth: '50px',
+                                                background: selectedAsset.emitterStates && selectedAsset.emitterStates[emitter] ? '#00FF00' : '#FF0000',
+                                                color: '#000'
+                                            }}
+                                            onClick={() => {
+                                                const newEmitterStates = {
+                                                    ...(selectedAsset.emitterStates || {}),
+                                                    [emitter]: !(selectedAsset.emitterStates && selectedAsset.emitterStates[emitter])
+                                                };
+                                                updateAsset(selectedAsset.id, { emitterStates: newEmitterStates });
+                                            }}
+                                        >
+                                            {selectedAsset.emitterStates && selectedAsset.emitterStates[emitter] ? 'ON' : 'OFF'}
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
 
