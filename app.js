@@ -2134,8 +2134,12 @@ function AICSimulator() {
                     const endX = ownshipPos.x + tMin * cos;
                     const endY = ownshipPos.y + tMin * sin;
 
-                    // Inset label from edge by 25 pixels
-                    const inset = 25;
+                    // Inset label from edge by 25 pixels, but more from top to avoid status bar
+                    let inset = 25;
+                    // If label is near the top edge (within 60px), inset more to avoid status indicators
+                    if (endY < 60) {
+                        inset = 60;
+                    }
                     const labelX = endX - inset * cos;
                     const labelY = endY - inset * sin;
 
