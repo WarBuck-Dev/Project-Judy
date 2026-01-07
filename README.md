@@ -103,8 +103,9 @@ Platforms allow you to assign specific aircraft, ships, or submarines to assets 
 **Creating Asset with Platform**:
 1. Right-click on map
 2. Hover over "Create Asset"
-3. Hover over desired domain (Air, Surface, Sub-Surface)
-4. Select platform from submenu or "None (Generic)" for unspecified platform
+3. Click desired domain (Air, Surface, Sub-Surface)
+4. A platform selection dialog will appear
+5. Select platform from the list or "None (Generic)" for unspecified platform
 
 **Available Platforms** (configurable via platforms.json):
 
@@ -140,7 +141,7 @@ When a platform is assigned:
 - Altitude limits apply based on platform ceiling
 - Turn rates use platform-specific agility
 - Climb rates use platform-specific performance
-- Platform specifications display in the "SELECTED ASSET" panel
+- Platform name is shown in the "SELECTED ASSET" panel
 
 **Changing Platform**:
 1. Select asset

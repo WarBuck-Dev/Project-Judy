@@ -231,6 +231,7 @@ function AICSimulator() {
     const [draggedShapePointIndex, setDraggedShapePointIndex] = useState(null); // For dragging individual line segment points
     const [creatingShape, setCreatingShape] = useState(null); // { type: 'lineSegment' | 'circle', points: [] }
     const [platforms, setPlatforms] = useState({ air: [], surface: [], subSurface: [] }); // Platform configurations
+    const [showPlatformDialog, setShowPlatformDialog] = useState(null); // { domain: string, lat: number, lon: number }
 
     // Refs
     const svgRef = useRef(null);
@@ -2756,6 +2757,7 @@ function AICSimulator() {
                     startCreatingShape={startCreatingShape}
                     deleteShape={deleteShape}
                     platforms={platforms}
+                    setShowPlatformDialog={setShowPlatformDialog}
                 />
             )}
 
@@ -2815,6 +2817,24 @@ function AICSimulator() {
 
             {showControlsDialog && (
                 <ControlsDialog onClose={() => setShowControlsDialog(false)} />
+            )}
+
+            {/* Platform Selection Dialog */}
+            {showPlatformDialog && (
+                <PlatformSelectionDialog
+                    domain={showPlatformDialog.domain}
+                    platforms={platforms}
+                    onClose={() => setShowPlatformDialog(null)}
+                    onSelect={(platform) => {
+                        addAsset({
+                            lat: showPlatformDialog.lat,
+                            lon: showPlatformDialog.lon,
+                            domain: showPlatformDialog.domain,
+                            platform: platform
+                        });
+                        setShowPlatformDialog(null);
+                    }}
+                />
             )}
         </div>
     );
@@ -3513,37 +3533,6 @@ function ControlPanel({
                         </div>
                     )}
 
-                    {/* Display platform details if assigned */}
-                    {selectedAsset.platform && (
-                        <div style={{
-                            padding: '10px',
-                            background: 'rgba(0, 20, 0, 0.3)',
-                            borderRadius: '4px',
-                            border: '1px solid rgba(0, 255, 0, 0.2)',
-                            marginBottom: '10px'
-                        }}>
-                            <div style={{ fontSize: '9px', color: '#00FF00', marginBottom: '5px', fontWeight: 'bold' }}>
-                                PLATFORM SPECIFICATIONS
-                            </div>
-                            <div style={{ fontSize: '8px', color: '#00FF00', opacity: 0.8, lineHeight: '1.4' }}>
-                                <div>Max Speed: {selectedAsset.platform.maxSpeed} kts</div>
-                                {selectedAsset.platform.maxAltitude > 0 && (
-                                    <div>Max Altitude: {selectedAsset.platform.maxAltitude} ft</div>
-                                )}
-                                <div>Max Turn: {selectedAsset.platform.maxTurn}°/s</div>
-                                {selectedAsset.platform.maxClimb > 0 && (
-                                    <div>Max Climb: {selectedAsset.platform.maxClimb} ft/min</div>
-                                )}
-                                {selectedAsset.platform.weapons && selectedAsset.platform.weapons.length > 0 && (
-                                    <div>Weapons: {selectedAsset.platform.weapons.join(', ')}</div>
-                                )}
-                                {selectedAsset.platform.emitters && selectedAsset.platform.emitters.length > 0 && (
-                                    <div>Emitters: {selectedAsset.platform.emitters.join(', ')}</div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
                     <div className="input-group">
                         <label className="input-label">
                             Heading (degrees)
@@ -3691,9 +3680,8 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog }) {
     const [showDomainSubmenu, setShowDomainSubmenu] = useState(false);
-    const [showPlatformSubmenu, setShowPlatformSubmenu] = useState(null); // Stores which domain's platforms to show
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
     const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
 
@@ -3701,6 +3689,15 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
 
     const handleClick = (action, param = null) => {
         switch (action) {
+            case 'selectDomain':
+                // Open platform selection dialog for the selected domain
+                setShowPlatformDialog({
+                    domain: param,
+                    lat: contextMenu.lat,
+                    lon: contextMenu.lon
+                });
+                setContextMenu(null);
+                break;
             case 'addAsset':
                 // param can be { domain: 'air', platform: platformObject } or just domain string
                 const domain = typeof param === 'object' ? param.domain : param;
@@ -3731,7 +3728,6 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
         }
         setContextMenu(null);
         setShowDomainSubmenu(false);
-        setShowPlatformSubmenu(null);
         setShowGeoPointSubmenu(false);
         setShowShapeSubmenu(false);
     };
@@ -3752,40 +3748,15 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                         Create Asset ›
                         {showDomainSubmenu && (
                             <div className="context-menu-submenu">
-                                {Object.entries(DOMAIN_TYPES).map(([domainKey, domainConfig]) => {
-                                    const domainPlatforms = (platforms && platforms[domainKey]) ? platforms[domainKey] : [];
-                                    return (
-                                        <div
-                                            key={domainKey}
-                                            className="context-menu-item context-menu-parent"
-                                            onMouseEnter={() => setShowPlatformSubmenu(domainKey)}
-                                            onMouseLeave={() => setShowPlatformSubmenu(null)}
-                                        >
-                                            {domainConfig.label} ›
-                                            {showPlatformSubmenu === domainKey && (
-                                                <div className="context-menu-submenu">
-                                                    {/* Option to create asset without platform */}
-                                                    <div
-                                                        className="context-menu-item"
-                                                        onClick={() => handleClick('addAsset', domainKey)}
-                                                    >
-                                                        None (Generic)
-                                                    </div>
-                                                    {/* Platform options */}
-                                                    {domainPlatforms.map((platform, idx) => (
-                                                        <div
-                                                            key={idx}
-                                                            className="context-menu-item"
-                                                            onClick={() => handleClick('addAsset', { domain: domainKey, platform })}
-                                                        >
-                                                            {platform.name}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
+                                {Object.entries(DOMAIN_TYPES).map(([domainKey, domainConfig]) => (
+                                    <div
+                                        key={domainKey}
+                                        className="context-menu-item"
+                                        onClick={() => handleClick('selectDomain', domainKey)}
+                                    >
+                                        {domainConfig.label}
+                                    </div>
+                                ))}
                             </div>
                         )}
                     </div>
@@ -4167,6 +4138,62 @@ function ControlsDialog({ onClose }) {
 
                 <div className="modal-buttons" style={{ marginTop: '20px' }}>
                     <button className="control-btn primary full-width" onClick={onClose}>CLOSE</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ============================================================================
+// PLATFORM SELECTION DIALOG
+// ============================================================================
+
+function PlatformSelectionDialog({ domain, platforms, onClose, onSelect }) {
+    const domainConfig = DOMAIN_TYPES[domain];
+    const domainPlatforms = (platforms && platforms[domain]) ? platforms[domain] : [];
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+                <h2>SELECT {domainConfig.label.toUpperCase()} PLATFORM</h2>
+
+                <div style={{ maxHeight: '60vh', overflowY: 'auto', marginTop: '20px' }}>
+                    {/* Option for generic asset */}
+                    <div
+                        className="save-item"
+                        style={{ cursor: 'pointer', marginBottom: '10px' }}
+                        onClick={() => onSelect(null)}
+                    >
+                        <div className="save-item-info">
+                            <div className="save-item-name" style={{ fontWeight: 'bold' }}>None (Generic)</div>
+                            <div className="save-item-date" style={{ fontSize: '9px', opacity: 0.7 }}>
+                                Standard {domainConfig.label} asset with default performance
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Platform options */}
+                    {domainPlatforms.map((platform, idx) => (
+                        <div
+                            key={idx}
+                            className="save-item"
+                            style={{ cursor: 'pointer', marginBottom: '10px' }}
+                            onClick={() => onSelect(platform)}
+                        >
+                            <div className="save-item-info">
+                                <div className="save-item-name">{platform.name}</div>
+                                <div className="save-item-date" style={{ fontSize: '9px', opacity: 0.7 }}>
+                                    Max Speed: {platform.maxSpeed} kts
+                                    {platform.maxAltitude > 0 && ` | Max Alt: ${platform.maxAltitude} ft`}
+                                    {platform.weapons && platform.weapons.length > 0 && ` | Weapons: ${platform.weapons.length}`}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="modal-buttons" style={{ marginTop: '20px' }}>
+                    <button className="control-btn full-width" onClick={onClose}>CANCEL</button>
                 </div>
             </div>
         </div>
