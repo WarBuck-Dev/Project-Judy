@@ -253,7 +253,12 @@ function AICSimulator() {
 
     useEffect(() => {
         // Load platform configurations from platforms.json
-        fetch('platforms.json')
+        fetch('platforms.json', {
+            cache: 'no-store',
+            headers: {
+                'Cache-Control': 'no-cache'
+            }
+        })
             .then(response => response.json())
             .then(data => {
                 setPlatforms(data);
