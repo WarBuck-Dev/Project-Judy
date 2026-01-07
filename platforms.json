@@ -1,7 +1,37 @@
 {
   "air": [
     {
-      "name": "F-16C",
+      "name": "E-2D",
+      "domain": "air",
+      "weapons": [],
+      "emitters": ["APY-9"],
+      "maxSpeed": 350,
+      "maxAltitude": 37000,
+      "maxClimb": 2500,
+      "maxTurn": 5
+    },
+    {
+      "name": "F-18E",
+      "domain": "air",
+      "weapons": ["AIM-120 AMRAAM", "AIM-9 Sidewinder", "AGM-84 Harpoon"],
+      "emitters": ["APG-79"],
+      "maxSpeed": 1190,
+      "maxAltitude": 50000,
+      "maxClimb": 44000,
+      "maxTurn": 15
+    },
+    {
+      "name": "F-18F",
+      "domain": "air",
+      "weapons": ["AIM-120 AMRAAM", "AIM-9 Sidewinder", "AGM-84 Harpoon"],
+      "emitters": ["APG-79"],
+      "maxSpeed": 1190,
+      "maxAltitude": 50000,
+      "maxClimb": 44000,
+      "maxTurn": 15
+    },
+    {
+      "name": "F-16",
       "domain": "air",
       "weapons": ["AIM-120 AMRAAM", "AIM-9 Sidewinder", "AGM-65 Maverick"],
       "emitters": ["APG-68"],
@@ -9,46 +39,6 @@
       "maxAltitude": 50000,
       "maxClimb": 50000,
       "maxTurn": 15
-    },
-    {
-      "name": "FA-18E",
-      "domain": "air",
-      "weapons": ["A/A Missile", "ASM"],
-      "emitters": ["APG-79"],
-      "maxSpeed": 900,
-      "maxAltitude": 50000,
-      "maxClimb": 6000,
-      "maxTurn": 15
-    },
-    {
-      "name": "F-15C",
-      "domain": "air",
-      "weapons": ["AIM-120 AMRAAM", "AIM-9 Sidewinder"],
-      "emitters": ["APG-63"],
-      "maxSpeed": 1650,
-      "maxAltitude": 65000,
-      "maxClimb": 50000,
-      "maxTurn": 15
-    },
-    {
-      "name": "F-22A",
-      "domain": "air",
-      "weapons": ["AIM-120 AMRAAM", "AIM-9X Sidewinder", "GBU-32 JDAM"],
-      "emitters": ["APG-77"],
-      "maxSpeed": 1500,
-      "maxAltitude": 65000,
-      "maxClimb": 62000,
-      "maxTurn": 18
-    },
-    {
-      "name": "F-35A",
-      "domain": "air",
-      "weapons": ["AIM-120 AMRAAM", "AIM-9X Sidewinder", "GBU-31 JDAM"],
-      "emitters": ["APG-81"],
-      "maxSpeed": 1200,
-      "maxAltitude": 50000,
-      "maxClimb": 45000,
-      "maxTurn": 14
     },
     {
       "name": "MiG-29",
@@ -61,103 +51,43 @@
       "maxTurn": 17
     },
     {
-      "name": "Su-27",
+      "name": "MiG-21",
       "domain": "air",
-      "weapons": ["R-27 (AA-10)", "R-73 (AA-11)", "R-77 (AA-12)"],
-      "emitters": ["N001"],
-      "maxSpeed": 1550,
-      "maxAltitude": 62000,
-      "maxClimb": 55000,
-      "maxTurn": 16
-    },
-    {
-      "name": "Su-35",
-      "domain": "air",
-      "weapons": ["R-77 (AA-12)", "R-73 (AA-11)", "Kh-31 (AS-17)"],
-      "emitters": ["Irbis-E"],
-      "maxSpeed": 1550,
-      "maxAltitude": 62000,
-      "maxClimb": 55000,
-      "maxTurn": 18
-    },
-    {
-      "name": "J-20",
-      "domain": "air",
-      "weapons": ["PL-15", "PL-10"],
-      "emitters": ["AESA Type 1475"],
-      "maxSpeed": 1305,
-      "maxAltitude": 65000,
+      "weapons": ["R-60 (AA-8)", "R-3S (AA-2)"],
+      "emitters": ["RP-21"],
+      "maxSpeed": 1300,
+      "maxAltitude": 57000,
       "maxClimb": 50000,
-      "maxTurn": 15
-    },
-    {
-      "name": "Rafale",
-      "domain": "air",
-      "weapons": ["MICA", "Meteor", "SCALP"],
-      "emitters": ["RBE2-AA"],
-      "maxSpeed": 1390,
-      "maxAltitude": 50000,
-      "maxClimb": 60000,
       "maxTurn": 16
     },
     {
-      "name": "Eurofighter Typhoon",
+      "name": "Su-25",
       "domain": "air",
-      "weapons": ["IRIS-T", "Meteor", "AMRAAM"],
-      "emitters": ["CAPTOR-M"],
-      "maxSpeed": 1550,
-      "maxAltitude": 65000,
-      "maxClimb": 62000,
-      "maxTurn": 17
-    },
-    {
-      "name": "E-2D Hawkeye",
-      "domain": "air",
-      "weapons": [],
-      "emitters": ["APY-9"],
-      "maxSpeed": 350,
-      "maxAltitude": 37000,
-      "maxClimb": 2500,
-      "maxTurn": 5
-    },
-    {
-      "name": "E-3 Sentry",
-      "domain": "air",
-      "weapons": [],
-      "emitters": ["APY-1", "APY-2"],
-      "maxSpeed": 530,
-      "maxAltitude": 42000,
-      "maxClimb": 3000,
-      "maxTurn": 5
-    },
-    {
-      "name": "KC-135 Stratotanker",
-      "domain": "air",
-      "weapons": [],
+      "weapons": ["S-25 Rockets", "FAB-500", "Kh-25"],
       "emitters": [],
-      "maxSpeed": 580,
-      "maxAltitude": 50000,
+      "maxSpeed": 590,
+      "maxAltitude": 23000,
       "maxClimb": 3000,
-      "maxTurn": 3
+      "maxTurn": 10
     },
     {
-      "name": "B-52H",
+      "name": "P-8",
       "domain": "air",
-      "weapons": ["AGM-86 ALCM", "AGM-158 JASSM", "Mk 84"],
-      "emitters": ["APQ-166"],
-      "maxSpeed": 650,
-      "maxAltitude": 50000,
-      "maxClimb": 1500,
+      "weapons": ["Mk 54 Torpedo", "Harpoon", "SLAM-ER"],
+      "emitters": ["APY-10"],
+      "maxSpeed": 490,
+      "maxAltitude": 41000,
+      "maxClimb": 2000,
       "maxTurn": 4
     },
     {
-      "name": "A-10C",
+      "name": "MH-60R",
       "domain": "air",
-      "weapons": ["AGM-65 Maverick", "GBU-12", "GAU-8"],
-      "emitters": [],
-      "maxSpeed": 450,
-      "maxAltitude": 45000,
-      "maxClimb": 6000,
+      "weapons": ["Mk 54 Torpedo", "AGM-114 Hellfire"],
+      "emitters": ["APS-147"],
+      "maxSpeed": 180,
+      "maxAltitude": 14000,
+      "maxClimb": 1500,
       "maxTurn": 8
     }
   ],
