@@ -2134,15 +2134,22 @@ function AICSimulator() {
                     const endX = ownshipPos.x + tMin * cos;
                     const endY = ownshipPos.y + tMin * sin;
 
-                    // Place label at the end of the line (on screen edge)
-                    const labelX = endX;
-                    const labelY = endY;
+                    // Inset label from edge by 25 pixels
+                    const inset = 25;
+                    const labelX = endX - inset * cos;
+                    const labelY = endY - inset * sin;
 
                     const isSelected = selectedEsmId === emitter.id;
 
+                    const handleEsmClick = (e) => {
+                        e.stopPropagation();
+                        setEsmControlsSelected(true);
+                        setSelectedEsmId(emitter.id);
+                    };
+
                     return (
                         <g key={emitter.id}>
-                            {/* LOB Line - solid orange */}
+                            {/* LOB Line - solid orange, clickable */}
                             <line
                                 x1={ownshipPos.x}
                                 y1={ownshipPos.y}
@@ -2151,15 +2158,24 @@ function AICSimulator() {
                                 stroke="#FF8800"
                                 strokeWidth={isSelected ? 2 : 1.5}
                                 opacity={0.8}
+                                style={{ cursor: 'pointer' }}
+                                onClick={handleEsmClick}
+                            />
+                            {/* Invisible wider line for easier clicking */}
+                            <line
+                                x1={ownshipPos.x}
+                                y1={ownshipPos.y}
+                                x2={endX}
+                                y2={endY}
+                                stroke="transparent"
+                                strokeWidth={10}
+                                style={{ cursor: 'pointer' }}
+                                onClick={handleEsmClick}
                             />
                             {/* Label Box - solid orange with black text */}
                             <g
                                 style={{ cursor: 'pointer' }}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEsmControlsSelected(true);
-                                    setSelectedEsmId(emitter.id);
-                                }}
+                                onClick={handleEsmClick}
                             >
                                 <rect
                                     x={labelX - 18}
