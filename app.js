@@ -225,6 +225,8 @@ function AICSimulator() {
     const [detectedEmitters, setDetectedEmitters] = useState([]); // List of detected emitters: { id, assetId, emitterName, bearing, visible, serialNumber }
     const [selectedEsmId, setSelectedEsmId] = useState(null); // Selected ESM contact ID
     const [nextEsmSerialNumber, setNextEsmSerialNumber] = useState(1); // Counter for ESM serial numbers
+    const [manualBearingLines, setManualBearingLines] = useState([]); // Manual bearing lines: { id, bearing, serialNumber, lat, lon, emitterName }
+    const [nextManualLineSerialNumber, setNextManualLineSerialNumber] = useState(1); // Counter for manual line serial numbers
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
@@ -856,6 +858,13 @@ function AICSimulator() {
             setSelectedShapeId(null);
         }
     }, [selectedShapeId]);
+
+    const deleteManualBearingLine = useCallback((lineId) => {
+        setManualBearingLines(prev => prev.filter(l => l.id !== lineId));
+        if (selectedEsmId === lineId) {
+            setSelectedEsmId(null);
+        }
+    }, [selectedEsmId]);
 
     const updateShape = useCallback((shapeId, updates) => {
         setShapes(prev => prev.map(s => {
@@ -2210,8 +2219,8 @@ function AICSimulator() {
                                     width={36}
                                     height={18}
                                     fill={boxColor}
-                                    stroke={boxColor}
-                                    strokeWidth={1}
+                                    stroke={isSelected ? '#FFFFFF' : boxColor}
+                                    strokeWidth={isSelected ? 2 : 1}
                                     rx="2"
                                     ry="2"
                                 />
@@ -2224,6 +2233,147 @@ function AICSimulator() {
                                     fontWeight="bold"
                                 >
                                     E{emitter.serialNumber.toString().padStart(2, '0')}
+                                </text>
+                            </g>
+                        </g>
+                    );
+                })}
+            </g>
+        );
+    };
+
+    const renderManualBearingLines = (width, height) => {
+        if (manualBearingLines.length === 0) return null;
+
+        return (
+            <g className="manual-bearing-lines">
+                {manualBearingLines.map((line) => {
+                    // Draw from the stored ownship position at time of creation
+                    const lineStartPos = latLonToScreen(line.ownshipLat, line.ownshipLon, mapCenter.lat, mapCenter.lon, scale, width, height);
+
+                    // Use the fixed bearing from when the line was created
+                    const bearingRad = (line.bearing - 90) * Math.PI / 180; // Convert to radians (0° is north)
+
+                    // Find intersection with screen edges
+                    const cos = Math.cos(bearingRad);
+                    const sin = Math.sin(bearingRad);
+
+                    // Calculate distances to each edge
+                    let tMin = Infinity;
+
+                    // Check right edge (x = width)
+                    if (cos > 0) {
+                        const t = (width - lineStartPos.x) / cos;
+                        if (t > 0) tMin = Math.min(tMin, t);
+                    }
+                    // Check left edge (x = 0)
+                    if (cos < 0) {
+                        const t = -lineStartPos.x / cos;
+                        if (t > 0) tMin = Math.min(tMin, t);
+                    }
+                    // Check bottom edge (y = height)
+                    if (sin > 0) {
+                        const t = (height - lineStartPos.y) / sin;
+                        if (t > 0) tMin = Math.min(tMin, t);
+                    }
+                    // Check top edge (y = 0)
+                    if (sin < 0) {
+                        const t = -lineStartPos.y / sin;
+                        if (t > 0) tMin = Math.min(tMin, t);
+                    }
+
+                    const endX = lineStartPos.x + tMin * cos;
+                    const endY = lineStartPos.y + tMin * sin;
+
+                    // Inset label from edge by 25 pixels, but more from top to avoid status bar
+                    let inset = 25;
+                    if (endY < 60) {
+                        inset = 60;
+                    }
+                    const labelX = endX - inset * cos;
+                    const labelY = endY - inset * sin;
+
+                    const isSelected = selectedEsmId === line.id;
+
+                    // Manual lines are cyan/blue color
+                    const lineColor = '#00CCFF';
+                    const boxColor = '#00CCFF';
+                    const textColor = '#000000';
+
+                    const handleManualLineClick = (e) => {
+                        e.stopPropagation();
+                        setSelectedEsmId(line.id);
+                        setEsmControlsSelected(true);
+                        setRadarControlsSelected(false);
+                        setSelectedAssetId(null);
+                        setSelectedGeoPointId(null);
+                        setSelectedShapeId(null);
+                        setBullseyeSelected(false);
+                    };
+
+                    const handleManualLineRightClick = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setContextMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            type: 'manualBearingLine',
+                            id: line.id,
+                            serialNumber: line.serialNumber
+                        });
+                    };
+
+                    return (
+                        <g key={line.id}>
+                            {/* Line */}
+                            <line
+                                x1={lineStartPos.x}
+                                y1={lineStartPos.y}
+                                x2={endX}
+                                y2={endY}
+                                stroke={lineColor}
+                                strokeWidth={isSelected ? 3 : 2}
+                                strokeDasharray="5,5"
+                                opacity={isSelected ? 1 : 0.8}
+                            />
+                            {/* Invisible thick line for easier clicking */}
+                            <line
+                                x1={lineStartPos.x}
+                                y1={lineStartPos.y}
+                                x2={endX}
+                                y2={endY}
+                                stroke="transparent"
+                                strokeWidth={10}
+                                style={{ cursor: 'pointer' }}
+                                onClick={handleManualLineClick}
+                                onContextMenu={handleManualLineRightClick}
+                            />
+                            {/* Label Box */}
+                            <g
+                                style={{ cursor: 'pointer' }}
+                                onClick={handleManualLineClick}
+                                onContextMenu={handleManualLineRightClick}
+                            >
+                                <rect
+                                    x={labelX - 18}
+                                    y={labelY - 9}
+                                    width={36}
+                                    height={18}
+                                    fill={boxColor}
+                                    stroke={isSelected ? '#FFFFFF' : boxColor}
+                                    strokeWidth={isSelected ? 2 : 1}
+                                    rx="2"
+                                    ry="2"
+                                />
+                                <text
+                                    x={labelX}
+                                    y={labelY + 4}
+                                    fontSize="11"
+                                    fill={textColor}
+                                    textAnchor="middle"
+                                    fontWeight="bold"
+                                >
+                                    M{line.serialNumber.toString().padStart(2, '0')}
                                 </text>
                             </g>
                         </g>
@@ -2851,6 +3001,7 @@ function AICSimulator() {
                             {geoPoints.map(gp => renderGeoPoint(gp, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                             {assets.map(asset => renderAsset(asset, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                             {renderEsmLines(svgRef.current.clientWidth, svgRef.current.clientHeight)}
+                            {renderManualBearingLines(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                         </>
                     )}
                 </svg>
@@ -2992,6 +3143,10 @@ function AICSimulator() {
                 deleteShape={deleteShape}
                 platforms={platforms}
                 missionTime={missionTime}
+                manualBearingLines={manualBearingLines}
+                setManualBearingLines={setManualBearingLines}
+                nextManualLineSerialNumber={nextManualLineSerialNumber}
+                setNextManualLineSerialNumber={setNextManualLineSerialNumber}
             />
 
             {/* Context Menu */}
@@ -3009,6 +3164,7 @@ function AICSimulator() {
                     deleteShape={deleteShape}
                     platforms={platforms}
                     setShowPlatformDialog={setShowPlatformDialog}
+                    deleteManualBearingLine={deleteManualBearingLine}
                 />
             )}
 
@@ -3108,7 +3264,8 @@ function ControlPanel({
     selectedEsmId, setSelectedEsmId,
     geoPoints, selectedGeoPointId, updateGeoPoint, deleteGeoPoint,
     shapes, selectedShapeId, updateShape, deleteShape,
-    platforms, missionTime
+    platforms, missionTime,
+    manualBearingLines, setManualBearingLines, nextManualLineSerialNumber, setNextManualLineSerialNumber
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
@@ -3665,18 +3822,6 @@ function ControlPanel({
                 <div className="control-section">
                     <div className="section-header">ESM</div>
 
-                    {/* Back Button */}
-                    <button
-                        className="control-btn full-width"
-                        onClick={() => {
-                            setEsmControlsSelected(false);
-                            setSelectedEsmId(null);
-                        }}
-                        style={{ marginBottom: '15px' }}
-                    >
-                        ← BACK
-                    </button>
-
                     {/* ESM ON/OFF Button */}
                     <div className="playback-controls" style={{ marginBottom: '15px' }}>
                         <button
@@ -3688,16 +3833,49 @@ function ControlPanel({
                         </button>
                     </div>
 
+                    {/* Bearing Line Button */}
+                    <button
+                        className="control-btn full-width"
+                        onClick={() => {
+                            if (!selectedEsmId) {
+                                alert('Please select an emitter from the list first');
+                                return;
+                            }
+                            const selectedEmitter = detectedEmitters.find(e => e.id === selectedEsmId);
+                            if (!selectedEmitter) return;
+
+                            const ownship = assets.find(a => a.type === 'ownship');
+                            if (!ownship) return;
+
+                            // Create manual bearing line - snapshot of current ownship position and bearing
+                            const newLine = {
+                                id: `manual-${nextManualLineSerialNumber}`,
+                                bearing: selectedEmitter.bearing, // Fixed bearing at time of creation
+                                serialNumber: nextManualLineSerialNumber,
+                                ownshipLat: ownship.lat, // Store ownship position at time of creation
+                                ownshipLon: ownship.lon,
+                                emitterName: selectedEmitter.emitterName
+                            };
+                            setManualBearingLines(prev => [...prev, newLine]);
+                            setNextManualLineSerialNumber(prev => prev + 1);
+                        }}
+                        style={{ marginBottom: '15px' }}
+                        disabled={!selectedEsmId}
+                    >
+                        BEARING LINE
+                    </button>
+
                     {/* Detected Emitters List */}
                     <div className="input-group">
                         <label className="input-label">DETECTED EMITTERS ({detectedEmitters.filter(e => e.visible).length}/{detectedEmitters.length})</label>
                         <div style={{ maxHeight: '400px', overflowY: 'auto', marginTop: '10px' }}>
-                            {detectedEmitters.length === 0 ? (
+                            {detectedEmitters.length === 0 && manualBearingLines.length === 0 ? (
                                 <div style={{ padding: '10px', opacity: 0.5, fontSize: '10px', textAlign: 'center' }}>
                                     {esmEnabled ? 'No emitters detected' : 'ESM system is OFF'}
                                 </div>
                             ) : (
-                                detectedEmitters.map((emitter) => {
+                                <>
+                                {detectedEmitters.map((emitter) => {
                                     // Calculate age (time since last seen)
                                     const age = emitter.active ? 0 : (missionTime - (emitter.lastSeenTime || missionTime));
                                     const ageMinutes = Math.floor(age / 60);
@@ -3756,7 +3934,41 @@ function ControlPanel({
                                             </div>
                                         </div>
                                     );
-                                })
+                                })}
+
+                                {/* Manual Bearing Lines */}
+                                {manualBearingLines.map((line) => {
+                                    return (
+                                        <div
+                                            key={line.id}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                padding: '8px',
+                                                marginBottom: '5px',
+                                                background: selectedEsmId === line.id ? '#003333' : '#2a2a2a',
+                                                borderRadius: '3px',
+                                                border: selectedEsmId === line.id ? '1px solid #00CCFF' : 'none',
+                                                cursor: 'pointer'
+                                            }}
+                                            onClick={() => setSelectedEsmId(line.id)}
+                                        >
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#00CCFF' }}>
+                                                    M{line.serialNumber.toString().padStart(2, '0')}
+                                                </div>
+                                                <div style={{ fontSize: '11px', opacity: 0.9, fontWeight: '500' }}>
+                                                    {line.emitterName}
+                                                </div>
+                                                <div style={{ fontSize: '8px', opacity: 0.5 }}>
+                                                    BRG: {Math.round(line.bearing)}°
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                </>
                             )}
                         </div>
                     </div>
@@ -4098,7 +4310,7 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine }) {
     const [showDomainSubmenu, setShowDomainSubmenu] = useState(false);
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
     const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
@@ -4142,6 +4354,9 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                 break;
             case 'deleteShape':
                 deleteShape(contextMenu.shapeId);
+                break;
+            case 'deleteManualBearingLine':
+                deleteManualBearingLine(contextMenu.id);
                 break;
         }
         setContextMenu(null);
@@ -4248,6 +4463,12 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             {contextMenu.type === 'shape' && (
                 <div className="context-menu-item" onClick={() => handleClick('deleteShape')}>
                     Delete Shape
+                </div>
+            )}
+
+            {contextMenu.type === 'manualBearingLine' && (
+                <div className="context-menu-item" onClick={() => handleClick('deleteManualBearingLine')}>
+                    Delete M{contextMenu.serialNumber.toString().padStart(2, '0')}
                 </div>
             )}
         </div>
