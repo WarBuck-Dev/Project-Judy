@@ -2116,7 +2116,7 @@ function AICSimulator() {
 
         return (
             <g>
-                {detectedEmitters.filter(emitter => emitter.visible && emitter.active).map(emitter => {
+                {detectedEmitters.filter(emitter => emitter.visible).map(emitter => {
                     // Calculate end point of LOB line (extend to edge of screen)
                     const bearingRad = (emitter.bearing - 90) * Math.PI / 180; // Convert to radians (0° is north)
 
@@ -2161,6 +2161,12 @@ function AICSimulator() {
                     const labelY = endY - inset * sin;
 
                     const isSelected = selectedEsmId === emitter.id;
+                    const isActive = emitter.active;
+
+                    // Colors based on active state: Orange for active, Gray for inactive
+                    const lineColor = isActive ? '#FF8800' : '#888888';
+                    const boxColor = isActive ? '#FF8800' : '#888888';
+                    const textColor = '#000000';
 
                     const handleEsmClick = (e) => {
                         e.stopPropagation();
@@ -2170,15 +2176,15 @@ function AICSimulator() {
 
                     return (
                         <g key={emitter.id}>
-                            {/* LOB Line - solid orange, clickable */}
+                            {/* LOB Line - solid, clickable */}
                             <line
                                 x1={ownshipPos.x}
                                 y1={ownshipPos.y}
                                 x2={endX}
                                 y2={endY}
-                                stroke="#FF8800"
+                                stroke={lineColor}
                                 strokeWidth={isSelected ? 2 : 1.5}
-                                opacity={0.8}
+                                opacity={isActive ? 0.8 : 0.6}
                                 style={{ cursor: 'pointer' }}
                                 onClick={handleEsmClick}
                             />
@@ -2193,7 +2199,7 @@ function AICSimulator() {
                                 style={{ cursor: 'pointer' }}
                                 onClick={handleEsmClick}
                             />
-                            {/* Label Box - solid orange with black text */}
+                            {/* Label Box */}
                             <g
                                 style={{ cursor: 'pointer' }}
                                 onClick={handleEsmClick}
@@ -2203,8 +2209,8 @@ function AICSimulator() {
                                     y={labelY - 9}
                                     width={36}
                                     height={18}
-                                    fill="#FF8800"
-                                    stroke="#FF8800"
+                                    fill={boxColor}
+                                    stroke={boxColor}
                                     strokeWidth={1}
                                     rx="2"
                                     ry="2"
@@ -2213,7 +2219,7 @@ function AICSimulator() {
                                     x={labelX}
                                     y={labelY + 4}
                                     fontSize="11"
-                                    fill="#000000"
+                                    fill={textColor}
                                     textAnchor="middle"
                                     fontWeight="bold"
                                 >
