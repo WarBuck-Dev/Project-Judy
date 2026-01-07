@@ -2904,6 +2904,14 @@ function AICSimulator() {
                 setRadarSweepOpacity={setRadarSweepOpacity}
                 radarReturnDecay={radarReturnDecay}
                 setRadarReturnDecay={setRadarReturnDecay}
+                esmControlsSelected={esmControlsSelected}
+                setEsmControlsSelected={setEsmControlsSelected}
+                esmEnabled={esmEnabled}
+                setEsmEnabled={setEsmEnabled}
+                detectedEmitters={detectedEmitters}
+                setDetectedEmitters={setDetectedEmitters}
+                selectedEsmId={selectedEsmId}
+                setSelectedEsmId={setSelectedEsmId}
                 geoPoints={geoPoints}
                 selectedGeoPointId={selectedGeoPointId}
                 updateGeoPoint={updateGeoPoint}
@@ -3024,6 +3032,9 @@ function ControlPanel({
     radarControlsSelected, setRadarControlsSelected,
     radarEnabled, setRadarEnabled, radarSweepOpacity, setRadarSweepOpacity,
     radarReturnDecay, setRadarReturnDecay,
+    esmControlsSelected, setEsmControlsSelected,
+    esmEnabled, setEsmEnabled, detectedEmitters, setDetectedEmitters,
+    selectedEsmId, setSelectedEsmId,
     geoPoints, selectedGeoPointId, updateGeoPoint, deleteGeoPoint,
     shapes, selectedShapeId, updateShape, deleteShape,
     platforms
