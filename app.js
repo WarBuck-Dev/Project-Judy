@@ -220,6 +220,11 @@ function AICSimulator() {
     const [radarEnabled, setRadarEnabled] = useState(true); // Radar ON/OFF state
     const [radarSweepOpacity, setRadarSweepOpacity] = useState(0.5); // Radar sweep opacity (0-1)
     const [radarReturnDecay, setRadarReturnDecay] = useState(30); // Radar return decay time in seconds
+    const [esmEnabled, setEsmEnabled] = useState(false); // ESM ON/OFF state (OFF by default)
+    const [esmControlsSelected, setEsmControlsSelected] = useState(false); // ESM controls page selected
+    const [detectedEmitters, setDetectedEmitters] = useState([]); // List of detected emitters: { id, assetId, emitterName, bearing, visible, serialNumber }
+    const [selectedEsmId, setSelectedEsmId] = useState(null); // Selected ESM contact ID
+    const [nextEsmSerialNumber, setNextEsmSerialNumber] = useState(1); // Counter for ESM serial numbers
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
@@ -457,6 +462,83 @@ function AICSimulator() {
             setRadarReturns(prev => prev.filter(ret => missionTime - ret.missionTime < radarReturnDecay));
         }
     }, [missionTime, isRunning, radarReturnDecay]);
+
+    // ========================================================================
+    // ESM SYSTEM - Detect active emitters
+    // ========================================================================
+
+    useEffect(() => {
+        if (!esmEnabled || !isRunning) {
+            // Clear detected emitters when ESM is off
+            setDetectedEmitters([]);
+            setNextEsmSerialNumber(1);
+            return;
+        }
+
+        const ownship = assets.find(a => a.type === 'ownship');
+        if (!ownship) return;
+
+        // Build list of all active emitters from other assets
+        const activeEmitters = [];
+        assets.forEach(asset => {
+            // Skip ownship
+            if (asset.type === 'ownship') return;
+
+            // Skip assets without platforms or emitters
+            if (!asset.platform || !asset.platform.emitters || asset.platform.emitters.length === 0) return;
+
+            // Check each emitter
+            asset.platform.emitters.forEach(emitterName => {
+                // Check if this emitter is turned ON
+                if (asset.emitterStates && asset.emitterStates[emitterName]) {
+                    // Calculate bearing from ownship to this asset
+                    const bearing = calculateBearing(ownship.lat, ownship.lon, asset.lat, asset.lon);
+
+                    // Create unique ID for this emitter
+                    const emitterId = `${asset.id}-${emitterName}`;
+
+                    activeEmitters.push({
+                        id: emitterId,
+                        assetId: asset.id,
+                        emitterName: emitterName,
+                        bearing: bearing,
+                        lat: asset.lat,
+                        lon: asset.lon
+                    });
+                }
+            });
+        });
+
+        // Update detected emitters list, preserving serial numbers and visibility states
+        setDetectedEmitters(prev => {
+            const updated = [];
+            const prevMap = new Map(prev.map(e => [e.id, e]));
+
+            activeEmitters.forEach(emitter => {
+                const existing = prevMap.get(emitter.id);
+                if (existing) {
+                    // Keep existing emitter with updated bearing and position
+                    updated.push({
+                        ...existing,
+                        bearing: emitter.bearing,
+                        lat: emitter.lat,
+                        lon: emitter.lon
+                    });
+                } else {
+                    // New emitter detected - assign serial number
+                    const serialNumber = prev.length > 0 ? Math.max(...prev.map(e => e.serialNumber)) + 1 : nextEsmSerialNumber;
+                    updated.push({
+                        ...emitter,
+                        serialNumber: serialNumber,
+                        visible: true // Default to visible
+                    });
+                    setNextEsmSerialNumber(serialNumber + 1);
+                }
+            });
+
+            return updated;
+        });
+    }, [esmEnabled, isRunning, assets, nextEsmSerialNumber]);
 
     // ========================================================================
     // ASSET MANAGEMENT
@@ -2006,6 +2088,81 @@ function AICSimulator() {
         );
     };
 
+    const renderEsmLines = (width, height) => {
+        const ownship = assets.find(a => a.type === 'ownship');
+        if (!ownship || !esmEnabled) return null;
+
+        const ownshipPos = latLonToScreen(ownship.lat, ownship.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+
+        return (
+            <g>
+                {detectedEmitters.filter(emitter => emitter.visible).map(emitter => {
+                    // Calculate end point of LOB line (extend to edge of screen)
+                    const bearingRad = (emitter.bearing - 90) * Math.PI / 180; // Convert to radians (0° is north)
+                    const maxDistance = Math.sqrt(width * width + height * height); // Diagonal of screen
+                    const endX = ownshipPos.x + maxDistance * Math.cos(bearingRad);
+                    const endY = ownshipPos.y + maxDistance * Math.sin(bearingRad);
+
+                    // Calculate position for label (320 NM out or asset position, whichever is closer)
+                    const assetPos = latLonToScreen(emitter.lat, emitter.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+                    const distToAsset = Math.sqrt((assetPos.x - ownshipPos.x) ** 2 + (assetPos.y - ownshipPos.y) ** 2);
+                    const rangeIn320NM = (320 / scale) * Math.min(width, height);
+                    const labelDist = Math.min(distToAsset + 30, rangeIn320NM); // Place label 30px past asset or at 320 NM
+                    const labelX = ownshipPos.x + labelDist * Math.cos(bearingRad);
+                    const labelY = ownshipPos.y + labelDist * Math.sin(bearingRad);
+
+                    const isSelected = selectedEsmId === emitter.id;
+
+                    return (
+                        <g key={emitter.id}>
+                            {/* LOB Line */}
+                            <line
+                                x1={ownshipPos.x}
+                                y1={ownshipPos.y}
+                                x2={endX}
+                                y2={endY}
+                                stroke="#FF8800"
+                                strokeWidth={isSelected ? 2 : 1}
+                                opacity={isSelected ? 0.8 : 0.5}
+                                strokeDasharray="5,5"
+                            />
+                            {/* Label Box */}
+                            <g
+                                style={{ cursor: 'pointer' }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEsmControlsSelected(true);
+                                    setSelectedEsmId(emitter.id);
+                                }}
+                            >
+                                <rect
+                                    x={labelX - 20}
+                                    y={labelY - 10}
+                                    width={40}
+                                    height={20}
+                                    fill={isSelected ? '#FF8800' : '#000000'}
+                                    stroke="#FF8800"
+                                    strokeWidth={isSelected ? 2 : 1}
+                                    opacity={0.9}
+                                />
+                                <text
+                                    x={labelX}
+                                    y={labelY + 4}
+                                    fontSize="10"
+                                    fill={isSelected ? '#000000' : '#FF8800'}
+                                    textAnchor="middle"
+                                    fontWeight="bold"
+                                >
+                                    E{emitter.serialNumber.toString().padStart(2, '0')}
+                                </text>
+                            </g>
+                        </g>
+                    );
+                })}
+            </g>
+        );
+    };
+
     const renderAsset = (asset, width, height) => {
         const config = ASSET_TYPES[asset.type];
         const pos = latLonToScreen(asset.lat, asset.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
@@ -2607,6 +2764,7 @@ function AICSimulator() {
                             {renderTempMark(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarSweep(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarReturns(svgRef.current.clientWidth, svgRef.current.clientHeight)}
+                            {renderEsmLines(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {shapes.map(shape => renderShape(shape, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                             {/* Render line segment being created */}
                             {creatingShape && creatingShape.type === 'lineSegment' && creatingShape.points.length > 0 && (() => {
@@ -3033,6 +3191,12 @@ function ControlPanel({
                     >
                         RADAR
                     </button>
+                    <button
+                        className="control-btn full-width"
+                        onClick={() => setEsmControlsSelected(true)}
+                    >
+                        ESM
+                    </button>
                 </div>
             )}
 
@@ -3356,6 +3520,15 @@ function ControlPanel({
                 <div className="control-section">
                     <div className="section-header">RADAR</div>
 
+                    {/* Back Button */}
+                    <button
+                        className="control-btn full-width"
+                        onClick={() => setRadarControlsSelected(false)}
+                        style={{ marginBottom: '15px' }}
+                    >
+                        ← BACK
+                    </button>
+
                     {/* Radar ON/OFF Button */}
                     <div className="playback-controls" style={{ marginBottom: '15px' }}>
                         <button
@@ -3405,8 +3578,96 @@ function ControlPanel({
                 </div>
             )}
 
-            {/* Asset List - Only show when no asset is selected, bullseye is not selected, geo-point is not selected, and radar controls are not selected */}
-            {!selectedAsset && !bullseyeSelected && !selectedGeoPointId && !selectedShapeId && !radarControlsSelected && (
+            {/* ESM Controls - Only show when ESM controls are selected */}
+            {esmControlsSelected && (
+                <div className="control-section">
+                    <div className="section-header">ESM</div>
+
+                    {/* Back Button */}
+                    <button
+                        className="control-btn full-width"
+                        onClick={() => {
+                            setEsmControlsSelected(false);
+                            setSelectedEsmId(null);
+                        }}
+                        style={{ marginBottom: '15px' }}
+                    >
+                        ← BACK
+                    </button>
+
+                    {/* ESM ON/OFF Button */}
+                    <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                        <button
+                            className={`control-btn ${esmEnabled ? 'primary' : 'danger'}`}
+                            onClick={() => setEsmEnabled(!esmEnabled)}
+                            style={{ width: '100%' }}
+                        >
+                            {esmEnabled ? 'ON' : 'OFF'}
+                        </button>
+                    </div>
+
+                    {/* Detected Emitters List */}
+                    <div className="input-group">
+                        <label className="input-label">DETECTED EMITTERS ({detectedEmitters.filter(e => e.visible).length}/{detectedEmitters.length})</label>
+                        <div style={{ maxHeight: '400px', overflowY: 'auto', marginTop: '10px' }}>
+                            {detectedEmitters.length === 0 ? (
+                                <div style={{ padding: '10px', opacity: 0.5, fontSize: '10px', textAlign: 'center' }}>
+                                    {esmEnabled ? 'No emitters detected' : 'ESM system is OFF'}
+                                </div>
+                            ) : (
+                                detectedEmitters.map((emitter) => (
+                                    <div
+                                        key={emitter.id}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            padding: '8px',
+                                            marginBottom: '5px',
+                                            background: selectedEsmId === emitter.id ? '#003300' : '#2a2a2a',
+                                            borderRadius: '3px',
+                                            border: selectedEsmId === emitter.id ? '1px solid #00FF00' : 'none',
+                                            cursor: 'pointer'
+                                        }}
+                                        onClick={() => setSelectedEsmId(emitter.id)}
+                                    >
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#FF8800' }}>
+                                                E{emitter.serialNumber.toString().padStart(2, '0')}
+                                            </div>
+                                            <div style={{ fontSize: '9px', opacity: 0.7 }}>
+                                                {emitter.emitterName}
+                                            </div>
+                                            <div style={{ fontSize: '8px', opacity: 0.5 }}>
+                                                BRG: {Math.round(emitter.bearing)}°
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                            <label style={{ fontSize: '9px', display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={emitter.visible}
+                                                    onChange={(e) => {
+                                                        e.stopPropagation();
+                                                        setDetectedEmitters(prev => prev.map(em =>
+                                                            em.id === emitter.id ? { ...em, visible: !em.visible } : em
+                                                        ));
+                                                    }}
+                                                    style={{ cursor: 'pointer' }}
+                                                />
+                                                VIS
+                                            </label>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Asset List - Only show when no asset is selected, bullseye is not selected, geo-point is not selected, and radar/ESM controls are not selected */}
+            {!selectedAsset && !bullseyeSelected && !selectedGeoPointId && !selectedShapeId && !radarControlsSelected && !esmControlsSelected && (
                 <div className="control-section">
                     <div className="section-header">ASSETS ({assets.length})</div>
                     <div className="asset-list">
