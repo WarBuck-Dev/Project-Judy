@@ -468,7 +468,7 @@ function AICSimulator() {
     // ========================================================================
 
     useEffect(() => {
-        if (!esmEnabled || !isRunning) {
+        if (!esmEnabled) {
             // Clear detected emitters when ESM is off
             setDetectedEmitters([]);
             setNextEsmSerialNumber(1);
@@ -538,7 +538,7 @@ function AICSimulator() {
 
             return updated;
         });
-    }, [esmEnabled, isRunning, assets, nextEsmSerialNumber]);
+    }, [esmEnabled, assets, nextEsmSerialNumber]);
 
     // ========================================================================
     // ASSET MANAGEMENT
@@ -2102,17 +2102,41 @@ function AICSimulator() {
                 {detectedEmitters.filter(emitter => emitter.visible).map(emitter => {
                     // Calculate end point of LOB line (extend to edge of screen)
                     const bearingRad = (emitter.bearing - 90) * Math.PI / 180; // Convert to radians (0° is north)
-                    const maxDistance = Math.sqrt(width * width + height * height); // Diagonal of screen
-                    const endX = ownshipPos.x + maxDistance * Math.cos(bearingRad);
-                    const endY = ownshipPos.y + maxDistance * Math.sin(bearingRad);
 
-                    // Calculate position for label (320 NM out or asset position, whichever is closer)
-                    const assetPos = latLonToScreen(emitter.lat, emitter.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
-                    const distToAsset = Math.sqrt((assetPos.x - ownshipPos.x) ** 2 + (assetPos.y - ownshipPos.y) ** 2);
-                    const rangeIn320NM = (320 / scale) * Math.min(width, height);
-                    const labelDist = Math.min(distToAsset + 30, rangeIn320NM); // Place label 30px past asset or at 320 NM
-                    const labelX = ownshipPos.x + labelDist * Math.cos(bearingRad);
-                    const labelY = ownshipPos.y + labelDist * Math.sin(bearingRad);
+                    // Find intersection with screen edges
+                    const cos = Math.cos(bearingRad);
+                    const sin = Math.sin(bearingRad);
+
+                    // Calculate distances to each edge
+                    let tMin = Infinity;
+
+                    // Check right edge (x = width)
+                    if (cos > 0) {
+                        const t = (width - ownshipPos.x) / cos;
+                        if (t > 0) tMin = Math.min(tMin, t);
+                    }
+                    // Check left edge (x = 0)
+                    if (cos < 0) {
+                        const t = -ownshipPos.x / cos;
+                        if (t > 0) tMin = Math.min(tMin, t);
+                    }
+                    // Check bottom edge (y = height)
+                    if (sin > 0) {
+                        const t = (height - ownshipPos.y) / sin;
+                        if (t > 0) tMin = Math.min(tMin, t);
+                    }
+                    // Check top edge (y = 0)
+                    if (sin < 0) {
+                        const t = -ownshipPos.y / sin;
+                        if (t > 0) tMin = Math.min(tMin, t);
+                    }
+
+                    const endX = ownshipPos.x + tMin * cos;
+                    const endY = ownshipPos.y + tMin * sin;
+
+                    // Place label at the end of the line (on screen edge)
+                    const labelX = endX;
+                    const labelY = endY;
 
                     const isSelected = selectedEsmId === emitter.id;
 
@@ -2128,7 +2152,7 @@ function AICSimulator() {
                                 strokeWidth={isSelected ? 2 : 1.5}
                                 opacity={0.8}
                             />
-                            {/* Label Box */}
+                            {/* Label Box - solid orange with black text */}
                             <g
                                 style={{ cursor: 'pointer' }}
                                 onClick={(e) => {
@@ -2142,7 +2166,7 @@ function AICSimulator() {
                                     y={labelY - 9}
                                     width={36}
                                     height={18}
-                                    fill="rgba(0, 0, 0, 0.7)"
+                                    fill="#FF8800"
                                     stroke="#FF8800"
                                     strokeWidth={1}
                                     rx="2"
@@ -2152,7 +2176,7 @@ function AICSimulator() {
                                     x={labelX}
                                     y={labelY + 4}
                                     fontSize="11"
-                                    fill="#FF8800"
+                                    fill="#000000"
                                     textAnchor="middle"
                                     fontWeight="bold"
                                 >
