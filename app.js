@@ -492,11 +492,11 @@ function AICSimulator() {
             speed = Math.min(domainConfig.maxSpeed, speed);
         }
 
-        // Initialize emitter states (all emitters on by default)
+        // Initialize emitter states (all emitters off by default)
         const emitterStates = {};
         if (platform && platform.emitters && platform.emitters.length > 0) {
             platform.emitters.forEach(emitter => {
-                emitterStates[emitter] = true; // default: on
+                emitterStates[emitter] = false; // default: off
             });
         }
 
@@ -3527,7 +3527,7 @@ function ControlPanel({
                                     const emitterStates = {};
                                     if (platform && platform.emitters && platform.emitters.length > 0) {
                                         platform.emitters.forEach(emitter => {
-                                            emitterStates[emitter] = true; // default: on
+                                            emitterStates[emitter] = false; // default: off
                                         });
                                     }
                                     updates.emitterStates = emitterStates;
@@ -3560,18 +3560,22 @@ function ControlPanel({
                     {selectedAsset.platform && selectedAsset.platform.emitters && selectedAsset.platform.emitters.length > 0 && (
                         <div className="input-group">
                             <label className="input-label">Emitters</label>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                 {selectedAsset.platform.emitters.map((emitter, idx) => (
-                                    <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px', background: '#2a2a2a', borderRadius: '3px' }}>
-                                        <span style={{ fontSize: '10px', opacity: 0.8 }}>{emitter}</span>
+                                    <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px', background: '#2a2a2a', borderRadius: '3px', gap: '10px' }}>
+                                        <span style={{ fontSize: '10px', opacity: 0.8, flex: 1 }}>{emitter}</span>
                                         <button
                                             className="control-btn"
                                             style={{
-                                                padding: '3px 10px',
+                                                padding: '6px 8px',
                                                 fontSize: '9px',
-                                                minWidth: '50px',
+                                                minWidth: '45px',
+                                                width: '45px',
+                                                height: '28px',
                                                 background: selectedAsset.emitterStates && selectedAsset.emitterStates[emitter] ? '#00FF00' : '#FF0000',
-                                                color: '#000'
+                                                color: '#000',
+                                                fontWeight: 'bold',
+                                                flexShrink: 0
                                             }}
                                             onClick={() => {
                                                 const newEmitterStates = {
