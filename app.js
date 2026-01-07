@@ -509,20 +509,24 @@ function AICSimulator() {
             });
         });
 
-        // Update detected emitters list, preserving serial numbers and visibility states
+        // Update detected emitters list, preserving serial numbers, visibility states, and age tracking
         setDetectedEmitters(prev => {
             const updated = [];
             const prevMap = new Map(prev.map(e => [e.id, e]));
+            const activeEmitterIds = new Set(activeEmitters.map(e => e.id));
 
+            // Add currently active emitters
             activeEmitters.forEach(emitter => {
                 const existing = prevMap.get(emitter.id);
                 if (existing) {
-                    // Keep existing emitter with updated bearing and position
+                    // Keep existing emitter with updated bearing and position, reset lastSeenTime
                     updated.push({
                         ...existing,
                         bearing: emitter.bearing,
                         lat: emitter.lat,
-                        lon: emitter.lon
+                        lon: emitter.lon,
+                        lastSeenTime: missionTime, // Reset last seen time
+                        active: true
                     });
                 } else {
                     // New emitter detected - assign serial number
@@ -530,15 +534,28 @@ function AICSimulator() {
                     updated.push({
                         ...emitter,
                         serialNumber: serialNumber,
-                        visible: true // Default to visible
+                        visible: true, // Default to visible
+                        lastSeenTime: missionTime,
+                        active: true
                     });
                     setNextEsmSerialNumber(serialNumber + 1);
                 }
             });
 
+            // Keep previously detected emitters that are no longer active (for age tracking)
+            prev.forEach(prevEmitter => {
+                if (!activeEmitterIds.has(prevEmitter.id)) {
+                    // Emitter no longer active, but keep it in the list
+                    updated.push({
+                        ...prevEmitter,
+                        active: false
+                    });
+                }
+            });
+
             return updated;
         });
-    }, [esmEnabled, assets, nextEsmSerialNumber]);
+    }, [esmEnabled, assets, nextEsmSerialNumber, missionTime]);
 
     // ========================================================================
     // ASSET MANAGEMENT
@@ -2099,7 +2116,7 @@ function AICSimulator() {
 
         return (
             <g>
-                {detectedEmitters.filter(emitter => emitter.visible).map(emitter => {
+                {detectedEmitters.filter(emitter => emitter.visible && emitter.active).map(emitter => {
                     // Calculate end point of LOB line (extend to edge of screen)
                     const bearingRad = (emitter.bearing - 90) * Math.PI / 180; // Convert to radians (0° is north)
 
@@ -3673,51 +3690,66 @@ function ControlPanel({
                                     {esmEnabled ? 'No emitters detected' : 'ESM system is OFF'}
                                 </div>
                             ) : (
-                                detectedEmitters.map((emitter) => (
-                                    <div
-                                        key={emitter.id}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                            padding: '8px',
-                                            marginBottom: '5px',
-                                            background: selectedEsmId === emitter.id ? '#003300' : '#2a2a2a',
-                                            borderRadius: '3px',
-                                            border: selectedEsmId === emitter.id ? '1px solid #00FF00' : 'none',
-                                            cursor: 'pointer'
-                                        }}
-                                        onClick={() => setSelectedEsmId(emitter.id)}
-                                    >
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#FF8800' }}>
-                                                E{emitter.serialNumber.toString().padStart(2, '0')}
+                                detectedEmitters.map((emitter) => {
+                                    // Calculate age (time since last seen)
+                                    const age = emitter.active ? 0 : (missionTime - (emitter.lastSeenTime || missionTime));
+                                    const ageMinutes = Math.floor(age / 60);
+                                    const ageSeconds = Math.floor(age % 60);
+                                    const ageDisplay = `${ageMinutes.toString().padStart(2, '0')}+${ageSeconds.toString().padStart(2, '0')}`;
+
+                                    return (
+                                        <div
+                                            key={emitter.id}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                padding: '8px',
+                                                marginBottom: '5px',
+                                                background: selectedEsmId === emitter.id ? '#003300' : '#2a2a2a',
+                                                borderRadius: '3px',
+                                                border: selectedEsmId === emitter.id ? '1px solid #00FF00' : 'none',
+                                                cursor: 'pointer',
+                                                opacity: emitter.active ? 1 : 0.6
+                                            }}
+                                            onClick={() => setSelectedEsmId(emitter.id)}
+                                        >
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#FF8800' }}>
+                                                    E{emitter.serialNumber.toString().padStart(2, '0')}
+                                                </div>
+                                                <div style={{ fontSize: '11px', opacity: 0.9, fontWeight: '500' }}>
+                                                    {emitter.emitterName}
+                                                </div>
+                                                <div style={{ fontSize: '8px', opacity: 0.5 }}>
+                                                    BRG: {Math.round(emitter.bearing)}°
+                                                </div>
                                             </div>
-                                            <div style={{ fontSize: '9px', opacity: 0.7 }}>
-                                                {emitter.emitterName}
-                                            </div>
-                                            <div style={{ fontSize: '8px', opacity: 0.5 }}>
-                                                BRG: {Math.round(emitter.bearing)}°
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{ textAlign: 'right' }}>
+                                                    <div style={{ fontSize: '7px', opacity: 0.5 }}>AGE</div>
+                                                    <div style={{ fontSize: '10px', fontWeight: 'bold', color: emitter.active ? '#00FF00' : '#FFAA00' }}>
+                                                        {ageDisplay}
+                                                    </div>
+                                                </div>
+                                                <label style={{ fontSize: '9px', display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={emitter.visible}
+                                                        onChange={(e) => {
+                                                            e.stopPropagation();
+                                                            setDetectedEmitters(prev => prev.map(em =>
+                                                                em.id === emitter.id ? { ...em, visible: !em.visible } : em
+                                                            ));
+                                                        }}
+                                                        style={{ cursor: 'pointer' }}
+                                                    />
+                                                    VIS
+                                                </label>
                                             </div>
                                         </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                            <label style={{ fontSize: '9px', display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={emitter.visible}
-                                                    onChange={(e) => {
-                                                        e.stopPropagation();
-                                                        setDetectedEmitters(prev => prev.map(em =>
-                                                            em.id === emitter.id ? { ...em, visible: !em.visible } : em
-                                                        ));
-                                                    }}
-                                                    style={{ cursor: 'pointer' }}
-                                                />
-                                                VIS
-                                            </label>
-                                        </div>
-                                    </div>
-                                ))
+                                    );
+                                })
                             )}
                         </div>
                     </div>
