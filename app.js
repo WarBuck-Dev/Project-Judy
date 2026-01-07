@@ -2985,6 +2985,7 @@ function AICSimulator() {
                 updateShape={updateShape}
                 deleteShape={deleteShape}
                 platforms={platforms}
+                missionTime={missionTime}
             />
 
             {/* Context Menu */}
@@ -3101,7 +3102,7 @@ function ControlPanel({
     selectedEsmId, setSelectedEsmId,
     geoPoints, selectedGeoPointId, updateGeoPoint, deleteGeoPoint,
     shapes, selectedShapeId, updateShape, deleteShape,
-    platforms
+    platforms, missionTime
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
