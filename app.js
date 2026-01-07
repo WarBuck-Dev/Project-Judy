@@ -3509,7 +3509,7 @@ function ControlPanel({
                         </select>
                     </div>
 
-                    {selectedAsset.hasOwnProperty('platform') && (
+                    {selectedAsset.hasOwnProperty('platform') && selectedAsset.type !== 'ownship' && (
                         <div className="input-group">
                             <label className="input-label">Platform</label>
                             <select
@@ -3557,7 +3557,7 @@ function ControlPanel({
                     )}
 
                     {/* Emitter Controls */}
-                    {selectedAsset.platform && selectedAsset.platform.emitters && selectedAsset.platform.emitters.length > 0 && (
+                    {selectedAsset.type !== 'ownship' && selectedAsset.platform && selectedAsset.platform.emitters && selectedAsset.platform.emitters.length > 0 && (
                         <div className="input-group">
                             <label className="input-label">Emitters</label>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
