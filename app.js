@@ -1368,6 +1368,7 @@ function AICSimulator() {
             setBullseyeSelected(false);
             setSelectedGeoPointId(null);
             setRadarControlsSelected(false);
+            setEsmControlsSelected(false);
             setTempMark(null);
         } else if (clickedAsset) {
             setSelectedAssetId(clickedAsset.id);
@@ -1375,6 +1376,7 @@ function AICSimulator() {
             setSelectedGeoPointId(null);
             setSelectedShapeId(null);
             setRadarControlsSelected(false);
+            setEsmControlsSelected(false);
             setTempMark(null);
         } else {
             // Place temporary mark
@@ -1385,6 +1387,7 @@ function AICSimulator() {
             setSelectedGeoPointId(null);
             setSelectedShapeId(null);
             setRadarControlsSelected(false);
+            setEsmControlsSelected(false);
         }
     }, [assets, geoPoints, shapes, contextMenu, mapCenter, scale, creatingShape, addLineSegmentPoint]);
 
@@ -2115,16 +2118,15 @@ function AICSimulator() {
 
                     return (
                         <g key={emitter.id}>
-                            {/* LOB Line */}
+                            {/* LOB Line - solid orange */}
                             <line
                                 x1={ownshipPos.x}
                                 y1={ownshipPos.y}
                                 x2={endX}
                                 y2={endY}
                                 stroke="#FF8800"
-                                strokeWidth={isSelected ? 2 : 1}
-                                opacity={isSelected ? 0.8 : 0.5}
-                                strokeDasharray="5,5"
+                                strokeWidth={isSelected ? 2 : 1.5}
+                                opacity={0.8}
                             />
                             {/* Label Box */}
                             <g
@@ -2136,20 +2138,21 @@ function AICSimulator() {
                                 }}
                             >
                                 <rect
-                                    x={labelX - 20}
-                                    y={labelY - 10}
-                                    width={40}
-                                    height={20}
-                                    fill={isSelected ? '#FF8800' : '#000000'}
+                                    x={labelX - 18}
+                                    y={labelY - 9}
+                                    width={36}
+                                    height={18}
+                                    fill="rgba(0, 0, 0, 0.7)"
                                     stroke="#FF8800"
-                                    strokeWidth={isSelected ? 2 : 1}
-                                    opacity={0.9}
+                                    strokeWidth={1}
+                                    rx="2"
+                                    ry="2"
                                 />
                                 <text
                                     x={labelX}
                                     y={labelY + 4}
-                                    fontSize="10"
-                                    fill={isSelected ? '#000000' : '#FF8800'}
+                                    fontSize="11"
+                                    fill="#FF8800"
                                     textAnchor="middle"
                                     fontWeight="bold"
                                 >
