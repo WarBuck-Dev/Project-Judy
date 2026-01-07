@@ -2807,7 +2807,6 @@ function AICSimulator() {
                             {renderTempMark(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarSweep(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarReturns(svgRef.current.clientWidth, svgRef.current.clientHeight)}
-                            {renderEsmLines(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {shapes.map(shape => renderShape(shape, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                             {/* Render line segment being created */}
                             {creatingShape && creatingShape.type === 'lineSegment' && creatingShape.points.length > 0 && (() => {
@@ -2824,6 +2823,7 @@ function AICSimulator() {
                             })()}
                             {geoPoints.map(gp => renderGeoPoint(gp, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                             {assets.map(asset => renderAsset(asset, svgRef.current.clientWidth, svgRef.current.clientHeight))}
+                            {renderEsmLines(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                         </>
                     )}
                 </svg>
