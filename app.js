@@ -1710,6 +1710,8 @@ function AICSimulator() {
             setSelectedAssetId(null);
             setSelectedGeoPointId(null);
             setRadarControlsSelected(false);
+            setEsmControlsSelected(false);
+            setIffControlsSelected(false);
             setTempMark(null);
             return;
         }
@@ -1727,6 +1729,8 @@ function AICSimulator() {
                     setSelectedGeoPointId(null);
                     setBullseyeSelected(false);
                     setRadarControlsSelected(false);
+                    setEsmControlsSelected(false);
+                    setIffControlsSelected(false);
                     setTempMark(null);
                     // Check if this is the already-selected shape (enable dragging)
                     if (selectedShapeId === shape.id) {
@@ -1745,6 +1749,8 @@ function AICSimulator() {
                         setSelectedGeoPointId(null);
                         setBullseyeSelected(false);
                         setRadarControlsSelected(false);
+                        setEsmControlsSelected(false);
+                        setIffControlsSelected(false);
                         setTempMark(null);
                         // Check if this is the already-selected shape (enable dragging of this specific point)
                         if (selectedShapeId === shape.id) {
@@ -1768,6 +1774,8 @@ function AICSimulator() {
                 setSelectedShapeId(null);
                 setBullseyeSelected(false);
                 setRadarControlsSelected(false);
+                setEsmControlsSelected(false);
+                setIffControlsSelected(false);
                 setTempMark(null);
                 // Check if this is the already-selected geo-point (enable dragging)
                 if (selectedGeoPointId === geoPoint.id) {
@@ -1819,6 +1827,10 @@ function AICSimulator() {
         }
 
         if (!clickedAsset) {
+            // Close control panels when clicking on empty space
+            setRadarControlsSelected(false);
+            setEsmControlsSelected(false);
+            setIffControlsSelected(false);
             setIsDragging(true);
             setDragStart({
                 x: e.clientX,
@@ -4046,16 +4058,35 @@ function ControlPanel({
             {/* Radar Controls - Only show when radar controls are selected */}
             {radarControlsSelected && (
                 <div className="control-section">
-                    <div className="section-header">RADAR</div>
-
-                    {/* Back Button */}
-                    <button
-                        className="control-btn full-width"
-                        onClick={() => setRadarControlsSelected(false)}
-                        style={{ marginBottom: '15px' }}
-                    >
-                        ← BACK
-                    </button>
+                    <div className="section-header" style={{ position: 'relative' }}>
+                        RADAR
+                        {/* Close Button */}
+                        <button
+                            onClick={() => setRadarControlsSelected(false)}
+                            style={{
+                                position: 'absolute',
+                                right: '0',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'none',
+                                border: 'none',
+                                color: '#00FF00',
+                                fontSize: '18px',
+                                cursor: 'pointer',
+                                padding: '0',
+                                width: '20px',
+                                height: '20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: '0.7'
+                            }}
+                            onMouseEnter={(e) => e.target.style.opacity = '1'}
+                            onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                        >
+                            ✕
+                        </button>
+                    </div>
 
                     {/* Radar ON/OFF Button */}
                     <div className="playback-controls" style={{ marginBottom: '15px' }}>
@@ -4127,7 +4158,35 @@ function ControlPanel({
             {/* ESM Controls - Only show when ESM controls are selected */}
             {esmControlsSelected && (
                 <div className="control-section">
-                    <div className="section-header">ESM</div>
+                    <div className="section-header" style={{ position: 'relative' }}>
+                        ESM
+                        {/* Close Button */}
+                        <button
+                            onClick={() => setEsmControlsSelected(false)}
+                            style={{
+                                position: 'absolute',
+                                right: '0',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'none',
+                                border: 'none',
+                                color: '#00FF00',
+                                fontSize: '18px',
+                                cursor: 'pointer',
+                                padding: '0',
+                                width: '20px',
+                                height: '20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: '0.7'
+                            }}
+                            onMouseEnter={(e) => e.target.style.opacity = '1'}
+                            onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                        >
+                            ✕
+                        </button>
+                    </div>
 
                     {/* ESM ON/OFF Button */}
                     <div className="playback-controls" style={{ marginBottom: '15px' }}>
@@ -4285,16 +4344,35 @@ function ControlPanel({
             {/* IFF Controls - Only show when IFF controls are selected */}
             {iffControlsSelected && (
                 <div className="control-section">
-                    <div className="section-header">IFF</div>
-
-                    {/* Back Button */}
-                    <button
-                        className="control-btn full-width"
-                        onClick={() => setIffControlsSelected(false)}
-                        style={{ marginBottom: '15px' }}
-                    >
-                        ← BACK
-                    </button>
+                    <div className="section-header" style={{ position: 'relative' }}>
+                        IFF
+                        {/* Close Button */}
+                        <button
+                            onClick={() => setIffControlsSelected(false)}
+                            style={{
+                                position: 'absolute',
+                                right: '0',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'none',
+                                border: 'none',
+                                color: '#00FF00',
+                                fontSize: '18px',
+                                cursor: 'pointer',
+                                padding: '0',
+                                width: '20px',
+                                height: '20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: '0.7'
+                            }}
+                            onMouseEnter={(e) => e.target.style.opacity = '1'}
+                            onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                        >
+                            ✕
+                        </button>
+                    </div>
 
                     {/* IFF ON/OFF Button */}
                     <div className="playback-controls" style={{ marginBottom: '15px' }}>
