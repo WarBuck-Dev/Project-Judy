@@ -228,6 +228,14 @@ function AICSimulator() {
     const [nextEsmSerialNumber, setNextEsmSerialNumber] = useState(1); // Counter for ESM serial numbers
     const [manualBearingLines, setManualBearingLines] = useState([]); // Manual bearing lines: { id, bearing, serialNumber, lat, lon, emitterName }
     const [nextManualLineSerialNumber, setNextManualLineSerialNumber] = useState(1); // Counter for manual line serial numbers
+    const [iffEnabled, setIffEnabled] = useState(false); // IFF ON/OFF state (OFF by default)
+    const [iffControlsSelected, setIffControlsSelected] = useState(false); // IFF controls page selected
+    const [iffOwnshipModeI, setIffOwnshipModeI] = useState(''); // Ownship MODE I (2 digit octal)
+    const [iffOwnshipModeII, setIffOwnshipModeII] = useState(''); // Ownship MODE II (4 digit octal)
+    const [iffOwnshipModeIII, setIffOwnshipModeIII] = useState(''); // Ownship MODE III (4 digit octal)
+    const [iffOwnshipModeIV, setIffOwnshipModeIV] = useState(false); // Ownship MODE IV ON/OFF
+    const [iffReturns, setIffReturns] = useState([]); // IFF returns similar to radar returns
+    const [iffReturnIntensity, setIffReturnIntensity] = useState(100); // IFF return intensity (1-100%)
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
@@ -479,6 +487,69 @@ function AICSimulator() {
     }, [missionTime, isRunning, radarReturnDecay]);
 
     // ========================================================================
+    // IFF SYSTEM - Generate IFF returns for squawking assets
+    // ========================================================================
+
+    // IFF return generation - create returns when sweep passes over squawking assets
+    useEffect(() => {
+        if (isRunning && iffEnabled) {
+            const ownship = assets.find(a => a.type === 'ownship');
+            if (!ownship) return;
+
+            // Check each asset to see if the sweep just passed over it and it's squawking IFF
+            assets.forEach(asset => {
+                // Skip ownship itself
+                if (asset.type === 'ownship') return;
+
+                // Skip assets not squawking IFF
+                if (!asset.iffSquawking) return;
+
+                // Calculate bearing from ownship to asset
+                const bearing = calculateBearing(ownship.lat, ownship.lon, asset.lat, asset.lon);
+                const distance = calculateDistance(ownship.lat, ownship.lon, asset.lat, asset.lon);
+
+                // Skip if asset is beyond 320 NM range
+                if (distance > 320) return;
+
+                // Calculate radar horizon (IFF uses same horizon as radar)
+                const ownshipAltFt = ownship.altitude || 0;
+                const targetAltFt = asset.domain === 'air' ? (asset.altitude || 0) : 0;
+                const iffHorizonNM = 1.23 * (Math.sqrt(ownshipAltFt) + Math.sqrt(targetAltFt));
+
+                // Skip if target is beyond IFF horizon
+                if (distance > iffHorizonNM) return;
+
+                // Check if sweep angle just passed over this bearing
+                const angleDiff = Math.abs(((bearing - radarSweepAngle + 540) % 360) - 180);
+
+                if (angleDiff < 1) {
+                    // Create IFF return for this asset
+                    const newReturn = {
+                        assetId: asset.id,
+                        lat: asset.lat,
+                        lon: asset.lon,
+                        bearing: bearing,
+                        distance: distance,
+                        missionTime: missionTime,
+                        modeI: asset.iffModeI,
+                        modeII: asset.iffModeII,
+                        modeIII: asset.iffModeIII,
+                        id: `${asset.id}-${missionTime}-${Math.random()}`
+                    };
+                    setIffReturns(prev => [...prev, newReturn]);
+                }
+            });
+        }
+    }, [isRunning, iffEnabled, radarSweepAngle, assets, missionTime]);
+
+    // Clean up old IFF returns based on radar decay setting (IFF returns use same decay)
+    useEffect(() => {
+        if (isRunning) {
+            setIffReturns(prev => prev.filter(ret => missionTime - ret.missionTime < radarReturnDecay));
+        }
+    }, [missionTime, isRunning, radarReturnDecay]);
+
+    // ========================================================================
     // ESM SYSTEM - Detect active emitters
     // ========================================================================
 
@@ -632,7 +703,11 @@ function AICSimulator() {
             targetDepth: domainConfig.hasDepth ? null : null,
             waypoints: [],
             trackNumber: null,
-            emitterStates: emitterStates
+            emitterStates: emitterStates,
+            iffModeI: assetData.iffModeI || '',
+            iffModeII: assetData.iffModeII || '',
+            iffModeIII: assetData.iffModeIII || '',
+            iffSquawking: assetData.iffSquawking !== undefined ? assetData.iffSquawking : false
         };
 
         setAssets(prev => [...prev, newAsset]);
@@ -2129,6 +2204,103 @@ function AICSimulator() {
         );
     };
 
+    const renderIFFReturns = (width, height) => {
+        const ownship = assets.find(a => a.type === 'ownship');
+        if (!ownship) return null;
+
+        const ownshipPos = latLonToScreen(ownship.lat, ownship.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+
+        // Simple seeded random function for consistent fuzziness
+        const seededRandom = (seed) => {
+            const x = Math.sin(seed) * 10000;
+            return x - Math.floor(x);
+        };
+
+        return (
+            <g>
+                {iffReturns.map(ret => {
+                    const age = missionTime - ret.missionTime;
+                    const baseOpacity = Math.max(0, 1 - (age / radarReturnDecay));
+                    const opacity = baseOpacity * (iffReturnIntensity / 100);
+
+                    // Get the actual target position
+                    const targetPos = latLonToScreen(ret.lat, ret.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+
+                    // Calculate azimuth spread (same as radar)
+                    const azimuthSpreadDegrees = 0.5 + (ret.distance / 50);
+
+                    // Calculate segments for solid/hazy appearance (same density as radar)
+                    const pixelsPerNM = Math.min(width, height) / scale;
+                    const baseSegments = Math.max(15, Math.floor(azimuthSpreadDegrees * 8));
+                    const numSegments = Math.floor(baseSegments * (1 + pixelsPerNM / 50));
+                    const segments = [];
+
+                    // Create hash from return ID for seeding
+                    let idHash = 0;
+                    for (let c = 0; c < ret.id.length; c++) {
+                        idHash = ((idHash << 5) - idHash) + ret.id.charCodeAt(c);
+                        idHash = idHash & idHash;
+                    }
+
+                    // Calculate angle from ownship to target
+                    const bearingToTarget = Math.atan2(targetPos.y - ownshipPos.y, targetPos.x - ownshipPos.x);
+
+                    // Offset IFF return toward ownship by approximately the radar return width
+                    // This prevents overlap with radar returns
+                    const offsetDistance = 8; // pixels - approximately one radar return width
+                    const iffOffsetX = -offsetDistance * Math.cos(bearingToTarget);
+                    const iffOffsetY = -offsetDistance * Math.sin(bearingToTarget);
+
+                    for (let i = 0; i < numSegments; i++) {
+                        const spreadFactor = ((i - numSegments / 2) / numSegments);
+                        const azimuthOffsetRadians = spreadFactor * azimuthSpreadDegrees * Math.PI / 180;
+
+                        const perpAngle = bearingToTarget + Math.PI / 2;
+                        const spreadDistance = ret.distance * Math.tan(azimuthOffsetRadians) * pixelsPerNM;
+
+                        const spreadX = spreadDistance * Math.cos(perpAngle);
+                        const spreadY = spreadDistance * Math.sin(perpAngle);
+
+                        // Very slight curve toward ownship
+                        const curveAmount = Math.abs(spreadFactor) * 0.5;
+                        const curveX = -curveAmount * Math.cos(bearingToTarget);
+                        const curveY = -curveAmount * Math.sin(bearingToTarget);
+
+                        const segmentX = targetPos.x + spreadX + curveX + iffOffsetX;
+                        const segmentY = targetPos.y + spreadY + curveY + iffOffsetY;
+
+                        // Add stationary fuzziness
+                        const fuzzSeed = idHash + i * 100;
+                        const fuzzX = (seededRandom(fuzzSeed) - 0.5) * 3;
+                        const fuzzY = (seededRandom(fuzzSeed + 50) - 0.5) * 3;
+
+                        segments.push({
+                            x: segmentX + fuzzX,
+                            y: segmentY + fuzzY,
+                            opacity: opacity * (0.4 + seededRandom(fuzzSeed + 25) * 0.4),
+                            radius: 3 + seededRandom(fuzzSeed + 75) * 2
+                        });
+                    }
+
+                    return (
+                        <g key={ret.id}>
+                            {segments.map((seg, idx) => (
+                                <circle
+                                    key={`${ret.id}-${idx}`}
+                                    cx={seg.x}
+                                    cy={seg.y}
+                                    r={seg.radius}
+                                    fill="#00FF00"
+                                    opacity={seg.opacity}
+                                />
+                            ))}
+                        </g>
+                    );
+                })}
+            </g>
+        );
+    };
+
     const renderRadarSweep = (width, height) => {
         const ownship = assets.find(a => a.type === 'ownship');
         // Don't show radar sweep until user has started simulation at least once, or if radar is disabled
@@ -3071,6 +3243,7 @@ function AICSimulator() {
                             {renderTempMark(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarSweep(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarReturns(svgRef.current.clientWidth, svgRef.current.clientHeight)}
+                            {renderIFFReturns(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {shapes.map(shape => renderShape(shape, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                             {/* Render line segment being created */}
                             {creatingShape && creatingShape.type === 'lineSegment' && creatingShape.points.length > 0 && (() => {
@@ -3222,6 +3395,20 @@ function AICSimulator() {
                 setDetectedEmitters={setDetectedEmitters}
                 selectedEsmId={selectedEsmId}
                 setSelectedEsmId={setSelectedEsmId}
+                iffControlsSelected={iffControlsSelected}
+                setIffControlsSelected={setIffControlsSelected}
+                iffEnabled={iffEnabled}
+                setIffEnabled={setIffEnabled}
+                iffOwnshipModeI={iffOwnshipModeI}
+                setIffOwnshipModeI={setIffOwnshipModeI}
+                iffOwnshipModeII={iffOwnshipModeII}
+                setIffOwnshipModeII={setIffOwnshipModeII}
+                iffOwnshipModeIII={iffOwnshipModeIII}
+                setIffOwnshipModeIII={setIffOwnshipModeIII}
+                iffOwnshipModeIV={iffOwnshipModeIV}
+                setIffOwnshipModeIV={setIffOwnshipModeIV}
+                iffReturnIntensity={iffReturnIntensity}
+                setIffReturnIntensity={setIffReturnIntensity}
                 geoPoints={geoPoints}
                 selectedGeoPointId={selectedGeoPointId}
                 updateGeoPoint={updateGeoPoint}
@@ -3351,6 +3538,13 @@ function ControlPanel({
     esmControlsSelected, setEsmControlsSelected,
     esmEnabled, setEsmEnabled, detectedEmitters, setDetectedEmitters,
     selectedEsmId, setSelectedEsmId,
+    iffControlsSelected, setIffControlsSelected,
+    iffEnabled, setIffEnabled,
+    iffOwnshipModeI, setIffOwnshipModeI,
+    iffOwnshipModeII, setIffOwnshipModeII,
+    iffOwnshipModeIII, setIffOwnshipModeIII,
+    iffOwnshipModeIV, setIffOwnshipModeIV,
+    iffReturnIntensity, setIffReturnIntensity,
     geoPoints, selectedGeoPointId, updateGeoPoint, deleteGeoPoint,
     shapes, selectedShapeId, updateShape, deleteShape,
     platforms, missionTime,
@@ -3524,6 +3718,12 @@ function ControlPanel({
                         onClick={() => setEsmControlsSelected(true)}
                     >
                         ESM
+                    </button>
+                    <button
+                        className="control-btn full-width"
+                        onClick={() => setIffControlsSelected(true)}
+                    >
+                        IFF
                     </button>
                 </div>
             )}
@@ -4082,8 +4282,132 @@ function ControlPanel({
                 </div>
             )}
 
-            {/* Asset List - Only show when no asset is selected, bullseye is not selected, geo-point is not selected, and radar/ESM controls are not selected */}
-            {!selectedAsset && !bullseyeSelected && !selectedGeoPointId && !selectedShapeId && !radarControlsSelected && !esmControlsSelected && (
+            {/* IFF Controls - Only show when IFF controls are selected */}
+            {iffControlsSelected && (
+                <div className="control-section">
+                    <div className="section-header">IFF</div>
+
+                    {/* Back Button */}
+                    <button
+                        className="control-btn full-width"
+                        onClick={() => setIffControlsSelected(false)}
+                        style={{ marginBottom: '15px' }}
+                    >
+                        ← BACK
+                    </button>
+
+                    {/* IFF ON/OFF Button */}
+                    <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                        <button
+                            className={`control-btn ${iffEnabled ? 'primary' : 'danger'}`}
+                            onClick={() => setIffEnabled(!iffEnabled)}
+                            style={{ width: '100%' }}
+                        >
+                            {iffEnabled ? 'ON' : 'OFF'}
+                        </button>
+                    </div>
+
+                    {/* Ownship IFF Codes */}
+                    <div style={{ marginBottom: '15px', padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '10px', opacity: 0.7 }}>
+                            OWNSHIP CODES
+                        </div>
+
+                        {/* MODE I */}
+                        <div className="input-group" style={{ marginBottom: '10px' }}>
+                            <label className="input-label">MODE I (2 digit octal)</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                value={iffOwnshipModeI}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    // Only allow octal digits (0-7) and max 2 chars
+                                    if (/^[0-7]{0,2}$/.test(val)) {
+                                        setIffOwnshipModeI(val);
+                                    }
+                                }}
+                                placeholder="00"
+                                maxLength="2"
+                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                        </div>
+
+                        {/* MODE II */}
+                        <div className="input-group" style={{ marginBottom: '10px' }}>
+                            <label className="input-label">MODE II (4 digit octal)</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                value={iffOwnshipModeII}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    // Only allow octal digits (0-7) and max 4 chars
+                                    if (/^[0-7]{0,4}$/.test(val)) {
+                                        setIffOwnshipModeII(val);
+                                    }
+                                }}
+                                placeholder="0000"
+                                maxLength="4"
+                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                        </div>
+
+                        {/* MODE III */}
+                        <div className="input-group" style={{ marginBottom: '10px' }}>
+                            <label className="input-label">MODE III (4 digit octal)</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                value={iffOwnshipModeIII}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    // Only allow octal digits (0-7) and max 4 chars
+                                    if (/^[0-7]{0,4}$/.test(val)) {
+                                        setIffOwnshipModeIII(val);
+                                    }
+                                }}
+                                placeholder="0000"
+                                maxLength="4"
+                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                        </div>
+
+                        {/* MODE IV */}
+                        <div className="input-group">
+                            <label className="input-label">MODE IV</label>
+                            <button
+                                className={`control-btn ${iffOwnshipModeIV ? 'primary' : 'danger'}`}
+                                onClick={() => setIffOwnshipModeIV(!iffOwnshipModeIV)}
+                                style={{ width: '100%' }}
+                            >
+                                {iffOwnshipModeIV ? 'ON' : 'OFF'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* IFF Return Intensity Slider */}
+                    <div className="input-group" style={{ marginTop: '15px' }}>
+                        <label className="input-label">Return Intensity</label>
+                        <input
+                            type="range"
+                            min="1"
+                            max="100"
+                            step="1"
+                            value={iffReturnIntensity}
+                            onChange={(e) => setIffReturnIntensity(parseInt(e.target.value))}
+                            className="slider"
+                            style={{ width: '100%' }}
+                        />
+                        <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '5px' }}>
+                            {iffReturnIntensity}%
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Asset List - Only show when no asset is selected, bullseye is not selected, geo-point is not selected, and radar/ESM/IFF controls are not selected */}
+            {!selectedAsset && !bullseyeSelected && !selectedGeoPointId && !selectedShapeId && !radarControlsSelected && !esmControlsSelected && !iffControlsSelected && (
                 <div className="control-section">
                     <div className="section-header">ASSETS ({assets.length})</div>
                     <div className="asset-list">
@@ -4266,6 +4590,98 @@ function ControlPanel({
                                         </button>
                                     </div>
                                 ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* IFF Codes - Only for non-ownship assets */}
+                    {selectedAsset.type !== 'ownship' && (
+                        <div className="input-group">
+                            <label className="input-label">IFF Codes</label>
+                            <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                                {/* IFF Squawking Toggle */}
+                                <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <span style={{ fontSize: '10px', opacity: 0.8 }}>Squawking</span>
+                                    <button
+                                        className="control-btn"
+                                        style={{
+                                            padding: '6px 8px',
+                                            fontSize: '9px',
+                                            minWidth: '45px',
+                                            background: selectedAsset.iffSquawking ? '#00FF00' : '#FF0000',
+                                            color: '#000',
+                                            fontWeight: 'bold'
+                                        }}
+                                        onClick={() => {
+                                            updateAsset(selectedAsset.id, { iffSquawking: !selectedAsset.iffSquawking });
+                                        }}
+                                    >
+                                        {selectedAsset.iffSquawking ? 'ON' : 'OFF'}
+                                    </button>
+                                </div>
+
+                                {/* MODE I */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        MODE I (2 digit octal)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        value={selectedAsset.iffModeI || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (/^[0-7]{0,2}$/.test(val)) {
+                                                updateAsset(selectedAsset.id, { iffModeI: val });
+                                            }
+                                        }}
+                                        placeholder="00"
+                                        maxLength="2"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                    />
+                                </div>
+
+                                {/* MODE II */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        MODE II (4 digit octal)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        value={selectedAsset.iffModeII || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (/^[0-7]{0,4}$/.test(val)) {
+                                                updateAsset(selectedAsset.id, { iffModeII: val });
+                                            }
+                                        }}
+                                        placeholder="0000"
+                                        maxLength="4"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                    />
+                                </div>
+
+                                {/* MODE III */}
+                                <div>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        MODE III (4 digit octal)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        value={selectedAsset.iffModeIII || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (/^[0-7]{0,4}$/.test(val)) {
+                                                updateAsset(selectedAsset.id, { iffModeIII: val });
+                                            }
+                                        }}
+                                        placeholder="0000"
+                                        maxLength="4"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                    />
+                                </div>
                             </div>
                         </div>
                     )}

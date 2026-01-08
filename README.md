@@ -588,6 +588,20 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - Click manual line to select and open ESM control panel
   - ESM list displays both auto-detected emitters and manual lines
   - Bearing lines dynamically recalculate as ownship moves
+- **IFF (Identify Friend or Foe) System**: Interrogation and identification system
+  - ON/OFF toggle for IFF system (OFF by default)
+  - Ownship IFF code configuration (MODE I, II, III, IV)
+  - MODE I: 2-digit octal code (0-7)
+  - MODE II: 4-digit octal code (0-7)
+  - MODE III: 4-digit octal code (0-7)
+  - MODE IV: ON/OFF encrypted mode
+  - Per-asset IFF configuration with squawk toggle
+  - Neon green IFF returns overlay radar returns
+  - IFF returns offset toward ownship to prevent overlap with radar
+  - Return intensity control (1-100% in 1% increments)
+  - Uses same radar horizon physics as radar system
+  - 320 NM maximum interrogation range
+  - Access via IFF button in SYSTEMS section
 - **Bullseye Customization**: Click bullseye to set custom name (e.g., "VEGAS")
 - **Mission Time Clock**: HH:MM:SS display shows elapsed mission time
 - **MIL-STD-2525 Symbology**: Aircraft symbols now use military standard (top-half only)
@@ -597,6 +611,7 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 ### UI Improvements
 - SYSTEMS section added under PLAYBACK controls
 - RADAR control panel integrates with existing UI pattern
+- IFF control panel with ownship code configuration
 - Fixed mission time box width to prevent layout shifts
 - Removed green glow from map background for cleaner display
 - Temp mark now clears when selecting assets or bullseye
