@@ -2431,11 +2431,15 @@ function AICSimulator() {
                     const endX = ownshipPos.x + tMin * cos;
                     const endY = ownshipPos.y + tMin * sin;
 
-                    // Inset label from edge by 25 pixels, but more from top to avoid status bar
-                    let inset = 25;
-                    // If label is near the top edge (within 60px), inset more to avoid status indicators
-                    if (endY < 60) {
-                        inset = 60;
+                    // Inset label from edge - increased by 50% for better spacing
+                    let inset = 37.5; // Increased from 25
+                    // If label is near the top edge (within 90px), inset more to avoid status indicators
+                    if (endY < 90) {
+                        inset = 90; // Increased from 60
+                    }
+                    // If label is near the bottom edge, double the inset (2x = 75px)
+                    if (endY > height - 90) {
+                        inset = 75; // 2x the base inset
                     }
                     const labelX = endX - inset * cos;
                     const labelY = endY - inset * sin;
@@ -2456,29 +2460,33 @@ function AICSimulator() {
 
                     return (
                         <g key={emitter.id}>
-                            {/* LOB Line - solid, clickable */}
-                            <line
-                                x1={ownshipPos.x}
-                                y1={ownshipPos.y}
-                                x2={endX}
-                                y2={endY}
-                                stroke={lineColor}
-                                strokeWidth={isSelected ? 2 : 1.5}
-                                opacity={isActive ? 0.8 : 0.6}
-                                style={{ cursor: 'pointer' }}
-                                onClick={handleEsmClick}
-                            />
-                            {/* Invisible wider line for easier clicking */}
-                            <line
-                                x1={ownshipPos.x}
-                                y1={ownshipPos.y}
-                                x2={endX}
-                                y2={endY}
-                                stroke="transparent"
-                                strokeWidth={10}
-                                style={{ cursor: 'pointer' }}
-                                onClick={handleEsmClick}
-                            />
+                            {/* LOB Line - only show when selected */}
+                            {isSelected && (
+                                <>
+                                    <line
+                                        x1={ownshipPos.x}
+                                        y1={ownshipPos.y}
+                                        x2={endX}
+                                        y2={endY}
+                                        stroke={lineColor}
+                                        strokeWidth={2}
+                                        opacity={isActive ? 0.8 : 0.6}
+                                        style={{ cursor: 'pointer' }}
+                                        onClick={handleEsmClick}
+                                    />
+                                    {/* Invisible wider line for easier clicking */}
+                                    <line
+                                        x1={ownshipPos.x}
+                                        y1={ownshipPos.y}
+                                        x2={endX}
+                                        y2={endY}
+                                        stroke="transparent"
+                                        strokeWidth={10}
+                                        style={{ cursor: 'pointer' }}
+                                        onClick={handleEsmClick}
+                                    />
+                                </>
+                            )}
                             {/* Label Box */}
                             <g
                                 style={{ cursor: 'pointer' }}
@@ -2556,10 +2564,14 @@ function AICSimulator() {
                     const endX = lineStartPos.x + tMin * cos;
                     const endY = lineStartPos.y + tMin * sin;
 
-                    // Inset label from edge by 25 pixels, but more from top to avoid status bar
-                    let inset = 25;
-                    if (endY < 60) {
-                        inset = 60;
+                    // Inset label from edge - increased by 50% for better spacing
+                    let inset = 37.5; // Increased from 25
+                    if (endY < 90) {
+                        inset = 90; // Increased from 60
+                    }
+                    // If label is near the bottom edge, double the inset (2x = 75px)
+                    if (endY > height - 90) {
+                        inset = 75; // 2x the base inset
                     }
                     const labelX = endX - inset * cos;
                     const labelY = endY - inset * sin;
@@ -2596,7 +2608,7 @@ function AICSimulator() {
 
                     return (
                         <g key={line.id}>
-                            {/* Line */}
+                            {/* Line - always show for manual bearing lines */}
                             <line
                                 x1={lineStartPos.x}
                                 y1={lineStartPos.y}
