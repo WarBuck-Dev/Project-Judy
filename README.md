@@ -556,15 +556,39 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - 320 NM maximum range
   - 40-degree sweep trail with 60-segment smooth gradient
   - Sweep-based radar return generation
+- **Realistic Radar Returns**: Advanced radar physics simulation
+  - Banana-shaped returns with azimuth spreading (increases with distance)
+  - Distance-based resolution degradation (farther = longer returns)
+  - Stationary fuzziness/noise for realistic appearance
+  - Zoom-adaptive density (more segments when zoomed in)
+  - Radar horizon calculation: d = 1.23 × (√h_radar + √h_target)
+  - Surface/subsurface targets limited by horizon (h_target = 0)
+  - Air targets detected based on altitude
+  - Returns align precisely with track symbols
 - **Radar Controls Panel**: Adjustable radar settings
   - ON/OFF toggle for radar system (red when disabled)
   - Sweep opacity control (0-100% in 1% increments)
   - Return decay time (10-60 seconds in 1-second increments)
+  - Return intensity control (1-100% in 1% increments)
   - Access via RADAR button in SYSTEMS section
   - Radar returns decay naturally when radar is turned off
   - New returns only generate when radar is enabled
+- **ESM (Electronic Support Measures) System**: Passive emitter detection and tracking
+  - ON/OFF toggle for ESM system
+  - Automatic detection of active radar emitters within 320 NM
+  - Orange lines of bearing (LOB) from ownship to detected emitters
+  - Gray LOB and labels for inactive emitters (last seen position)
+  - ESM contact labels (E01, E02, etc.) with white border when selected
+  - VIS checkbox per emitter to show/hide individual LOBs
+  - AGE timer (MM+SS format) tracks time since last detection
+  - Manual bearing lines for triangulation (M01, M02, etc.)
+  - Manual lines create fixed reference snapshots from ownship position
+  - Cyan dashed styling for manual lines vs orange/gray auto lines
+  - Right-click context menu to delete manual bearing lines
+  - Click manual line to select and open ESM control panel
+  - ESM list displays both auto-detected emitters and manual lines
+  - Bearing lines dynamically recalculate as ownship moves
 - **Bullseye Customization**: Click bullseye to set custom name (e.g., "VEGAS")
-- **Radar Returns**: Simulated radar returns synchronized with sweep rotation
 - **Mission Time Clock**: HH:MM:SS display shows elapsed mission time
 - **MIL-STD-2525 Symbology**: Aircraft symbols now use military standard (top-half only)
 - **Improved Asset Dragging**: Drag selected assets to reposition on map

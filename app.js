@@ -220,6 +220,7 @@ function AICSimulator() {
     const [radarEnabled, setRadarEnabled] = useState(true); // Radar ON/OFF state
     const [radarSweepOpacity, setRadarSweepOpacity] = useState(0.5); // Radar sweep opacity (0-1)
     const [radarReturnDecay, setRadarReturnDecay] = useState(30); // Radar return decay time in seconds
+    const [radarReturnIntensity, setRadarReturnIntensity] = useState(100); // Radar return intensity (1-100%)
     const [esmEnabled, setEsmEnabled] = useState(false); // ESM ON/OFF state (OFF by default)
     const [esmControlsSelected, setEsmControlsSelected] = useState(false); // ESM controls page selected
     const [detectedEmitters, setDetectedEmitters] = useState([]); // List of detected emitters: { id, assetId, emitterName, bearing, visible, serialNumber }
@@ -439,6 +440,16 @@ function AICSimulator() {
                 // Skip if asset is beyond 320 NM range
                 if (distance > 320) return;
 
+                // Calculate radar horizon
+                // d_total ≈ 1.23 × (√h_radar_ft + √h_target_ft)
+                // For surface/subsurface assets, target height is 0
+                const ownshipAltFt = ownship.altitude || 0;
+                const targetAltFt = asset.domain === 'air' ? (asset.altitude || 0) : 0;
+                const radarHorizonNM = 1.23 * (Math.sqrt(ownshipAltFt) + Math.sqrt(targetAltFt));
+
+                // Skip if target is beyond radar horizon
+                if (distance > radarHorizonNM) return;
+
                 // Check if sweep angle just passed over this bearing (within 0.6 degrees)
                 // We use a tolerance of 1 degree to account for timing
                 const angleDiff = Math.abs(((bearing - radarSweepAngle + 540) % 360) - 180);
@@ -449,6 +460,8 @@ function AICSimulator() {
                         assetId: asset.id,
                         lat: asset.lat,
                         lon: asset.lon,
+                        bearing: bearing,
+                        distance: distance,
                         missionTime: missionTime,
                         id: `${asset.id}-${missionTime}-${Math.random()}`
                     };
@@ -2020,22 +2033,96 @@ function AICSimulator() {
     };
 
     const renderRadarReturns = (width, height) => {
+        const ownship = assets.find(a => a.type === 'ownship');
+        if (!ownship) return null;
+
+        const ownshipPos = latLonToScreen(ownship.lat, ownship.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+
+        // Simple seeded random function for consistent fuzziness
+        const seededRandom = (seed) => {
+            const x = Math.sin(seed) * 10000;
+            return x - Math.floor(x);
+        };
+
         return (
             <g>
                 {radarReturns.map(ret => {
                     const age = missionTime - ret.missionTime; // Age in seconds
-                    const opacity = Math.max(0, 1 - (age / radarReturnDecay)); // Fade based on decay setting
-                    const pos = latLonToScreen(ret.lat, ret.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+                    const baseOpacity = Math.max(0, 1 - (age / radarReturnDecay)); // Fade based on decay setting
+                    const opacity = baseOpacity * (radarReturnIntensity / 100); // Apply intensity setting
+
+                    // Get the actual target position - this is the center of the radar return
+                    const targetPos = latLonToScreen(ret.lat, ret.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+
+                    // Calculate azimuth spread based on distance (longer at farther ranges)
+                    // Typical radar azimuth resolution degrades with distance
+                    const azimuthSpreadDegrees = 0.5 + (ret.distance / 50); // Increases with distance
+
+                    // Calculate banana shape - arc that curves toward ownship
+                    // More segments for solid/hazy appearance - scale with zoom level
+                    const pixelsPerNM = Math.min(width, height) / scale;
+                    const baseSegments = Math.max(15, Math.floor(azimuthSpreadDegrees * 8));
+                    // Add extra segments based on zoom level for smooth appearance when zoomed in
+                    const numSegments = Math.floor(baseSegments * (1 + pixelsPerNM / 50));
+                    const segments = [];
+
+                    // Create a hash from the return ID for seeding
+                    let idHash = 0;
+                    for (let c = 0; c < ret.id.length; c++) {
+                        idHash = ((idHash << 5) - idHash) + ret.id.charCodeAt(c);
+                        idHash = idHash & idHash;
+                    }
+
+                    // Calculate angle from ownship to target for perpendicular spread
+                    const bearingToTarget = Math.atan2(targetPos.y - ownshipPos.y, targetPos.x - ownshipPos.x);
+
+                    for (let i = 0; i < numSegments; i++) {
+                        // Spread segments perpendicular to the bearing from ownship
+                        const spreadFactor = ((i - numSegments / 2) / numSegments);
+                        const azimuthOffsetRadians = spreadFactor * azimuthSpreadDegrees * Math.PI / 180;
+
+                        // Rotate perpendicular to bearing (90 degrees offset)
+                        const perpAngle = bearingToTarget + Math.PI / 2;
+                        const spreadDistance = ret.distance * Math.tan(azimuthOffsetRadians) * pixelsPerNM;
+
+                        // Position spread perpendicular to bearing
+                        const spreadX = spreadDistance * Math.cos(perpAngle);
+                        const spreadY = spreadDistance * Math.sin(perpAngle);
+
+                        // Very slight curve toward ownship (banana shape)
+                        const curveAmount = Math.abs(spreadFactor) * 0.5; // Pixels
+                        const curveX = -curveAmount * Math.cos(bearingToTarget);
+                        const curveY = -curveAmount * Math.sin(bearingToTarget);
+
+                        const segmentX = targetPos.x + spreadX + curveX;
+                        const segmentY = targetPos.y + spreadY + curveY;
+
+                        // Add stationary fuzziness using seeded random
+                        const fuzzSeed = idHash + i * 100;
+                        const fuzzX = (seededRandom(fuzzSeed) - 0.5) * 3;
+                        const fuzzY = (seededRandom(fuzzSeed + 50) - 0.5) * 3;
+
+                        segments.push({
+                            x: segmentX + fuzzX,
+                            y: segmentY + fuzzY,
+                            opacity: opacity * (0.4 + seededRandom(fuzzSeed + 25) * 0.4),
+                            radius: 3 + seededRandom(fuzzSeed + 75) * 2 // Larger, more variable circles
+                        });
+                    }
 
                     return (
-                        <circle
-                            key={ret.id}
-                            cx={pos.x}
-                            cy={pos.y}
-                            r={4}
-                            fill="#FFFFFF"
-                            opacity={opacity * 0.7}
-                        />
+                        <g key={ret.id}>
+                            {segments.map((seg, idx) => (
+                                <circle
+                                    key={`${ret.id}-${idx}`}
+                                    cx={seg.x}
+                                    cy={seg.y}
+                                    r={seg.radius}
+                                    fill="#FFFFFF"
+                                    opacity={seg.opacity}
+                                />
+                            ))}
+                        </g>
                     );
                 })}
             </g>
@@ -3125,6 +3212,8 @@ function AICSimulator() {
                 setRadarSweepOpacity={setRadarSweepOpacity}
                 radarReturnDecay={radarReturnDecay}
                 setRadarReturnDecay={setRadarReturnDecay}
+                radarReturnIntensity={radarReturnIntensity}
+                setRadarReturnIntensity={setRadarReturnIntensity}
                 esmControlsSelected={esmControlsSelected}
                 setEsmControlsSelected={setEsmControlsSelected}
                 esmEnabled={esmEnabled}
@@ -3258,7 +3347,7 @@ function ControlPanel({
     restartSimulation, hasStarted, bullseyeSelected, bullseyeName, setBullseyeName,
     radarControlsSelected, setRadarControlsSelected,
     radarEnabled, setRadarEnabled, radarSweepOpacity, setRadarSweepOpacity,
-    radarReturnDecay, setRadarReturnDecay,
+    radarReturnDecay, setRadarReturnDecay, radarReturnIntensity, setRadarReturnIntensity,
     esmControlsSelected, setEsmControlsSelected,
     esmEnabled, setEsmEnabled, detectedEmitters, setDetectedEmitters,
     selectedEsmId, setSelectedEsmId,
@@ -3812,6 +3901,24 @@ function ControlPanel({
                         />
                         <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '5px' }}>
                             {radarReturnDecay} seconds
+                        </div>
+                    </div>
+
+                    {/* Radar Return Intensity Slider */}
+                    <div className="input-group" style={{ marginTop: '15px' }}>
+                        <label className="input-label">Return Intensity</label>
+                        <input
+                            type="range"
+                            min="1"
+                            max="100"
+                            step="1"
+                            value={radarReturnIntensity}
+                            onChange={(e) => setRadarReturnIntensity(parseInt(e.target.value))}
+                            className="slider"
+                            style={{ width: '100%' }}
+                        />
+                        <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '5px' }}>
+                            {radarReturnIntensity}%
                         </div>
                     </div>
                 </div>
