@@ -3677,10 +3677,23 @@ function ControlPanel({
                 heading: Math.round(selectedAsset.heading),
                 speed: Math.round(selectedAsset.speed),
                 altitude: Math.round(selectedAsset.altitude),
-                depth: Math.round(selectedAsset.depth || 0)
+                depth: Math.round(selectedAsset.depth || 0),
+                lat: decimalToDMM(selectedAsset.lat, true),
+                lon: decimalToDMM(selectedAsset.lon, false)
             });
         }
     }, [selectedAsset?.id]); // Only depend on ID, not the whole asset object
+
+    // Update asset LAT/LONG display when asset position changes (e.g., during dragging)
+    useEffect(() => {
+        if (selectedAsset) {
+            setEditValues(prev => ({
+                ...prev,
+                lat: decimalToDMM(selectedAsset.lat, true),
+                lon: decimalToDMM(selectedAsset.lon, false)
+            }));
+        }
+    }, [selectedAsset?.lat, selectedAsset?.lon]);
 
     // Update geo-point edit values when geo-point is first selected, when switching geo-points, or when position changes
     useEffect(() => {
@@ -3751,6 +3764,20 @@ function ControlPanel({
         updateAsset(selectedAsset.id, { [targetField]: value });
 
         console.log(`Setting ${targetField} to ${value} for asset ${selectedAsset.id}`);
+    };
+
+    const applyAssetCoordinate = (field) => {
+        const isLatitude = field === 'lat';
+        const value = dmmToDecimal(editValues[field]);
+
+        // Validate the value
+        if (value === null) {
+            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E054 00.0 or W054 00.0'}`);
+            return;
+        }
+
+        // Apply the coordinate change
+        updateAsset(selectedAsset.id, { [field]: value });
     };
 
     const applyGeoPointCoordinate = (field) => {
@@ -5008,6 +5035,40 @@ function ControlPanel({
                             </div>
                         </div>
                     )}
+
+                    {/* Latitude input */}
+                    <div className="input-group">
+                        <label className="input-label">Latitude</label>
+                        <input
+                            type="text"
+                            className="input-field"
+                            value={editValues.lat || ''}
+                            onChange={(e) => setEditValues(prev => ({ ...prev, lat: e.target.value.toUpperCase() }))}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    applyAssetCoordinate('lat');
+                                }
+                            }}
+                            placeholder="N26 30.0"
+                        />
+                    </div>
+
+                    {/* Longitude input */}
+                    <div className="input-group">
+                        <label className="input-label">Longitude</label>
+                        <input
+                            type="text"
+                            className="input-field"
+                            value={editValues.lon || ''}
+                            onChange={(e) => setEditValues(prev => ({ ...prev, lon: e.target.value.toUpperCase() }))}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    applyAssetCoordinate('lon');
+                                }
+                            }}
+                            placeholder="E054 00.0"
+                        />
+                    </div>
 
                     {/* Depth input - only for sub-surface domain */}
                     {selectedAsset.domain === 'subSurface' && (
