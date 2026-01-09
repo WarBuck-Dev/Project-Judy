@@ -678,7 +678,22 @@ function AICSimulator() {
                                        asset.datalinkTrackBlockStart &&
                                        asset.datalinkTrackBlockEnd;
 
+                // Debug logging
+                if (asset.name && asset.datalinkNet) {
+                    console.log('Datalink Check:', {
+                        name: asset.name,
+                        userNet: userNet,
+                        assetNet: assetNet,
+                        assetInDatalink: assetInDatalink,
+                        currentIdentity: asset.identity,
+                        datalinkJU: asset.datalinkJU,
+                        trackBlockStart: asset.datalinkTrackBlockStart,
+                        trackBlockEnd: asset.datalinkTrackBlockEnd
+                    });
+                }
+
                 if (assetInDatalink && (asset.identity !== 'friendly' || !asset.datalinkActive || asset.trackNumber !== asset.datalinkJU)) {
+                    console.log('Setting asset to friendly:', asset.name);
                     hasChanges = true;
                     return {
                         ...asset,
