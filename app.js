@@ -72,6 +72,47 @@ const CLIMB_RATE = 100; // feet per second (6000 ft/min)
 // UTILITY FUNCTIONS - NAVIGATION AND PHYSICS
 // ============================================================================
 
+// Convert decimal degrees to DMM format (Degrees & Decimal Minutes)
+// Example: 26.5 -> "N26 30.0" or -26.5 -> "S26 30.0"
+function decimalToDMM(decimal, isLatitude) {
+    const isNegative = decimal < 0;
+    const absDecimal = Math.abs(decimal);
+    const degrees = Math.floor(absDecimal);
+    const minutes = (absDecimal - degrees) * 60;
+
+    let direction;
+    if (isLatitude) {
+        direction = isNegative ? 'S' : 'N';
+    } else {
+        direction = isNegative ? 'W' : 'E';
+    }
+
+    return `${direction}${degrees} ${minutes.toFixed(1)}`;
+}
+
+// Convert DMM format to decimal degrees
+// Example: "N26 30.0" -> 26.5 or "S26 30.0" -> -26.5
+function dmmToDecimal(dmm) {
+    // Match patterns like "N26 30.0", "S26 30.0", "E126 45.2", "W126 45.2"
+    const match = dmm.trim().match(/^([NSEW])(\d+)\s+(\d+\.?\d*)$/i);
+    if (!match) return null;
+
+    const direction = match[1].toUpperCase();
+    const degrees = parseInt(match[2]);
+    const minutes = parseFloat(match[3]);
+
+    if (minutes >= 60) return null; // Invalid minutes
+
+    let decimal = degrees + (minutes / 60);
+
+    // Apply negative sign for South and West
+    if (direction === 'S' || direction === 'W') {
+        decimal = -decimal;
+    }
+
+    return decimal;
+}
+
 // Calculate bearing between two lat/lon points (in degrees)
 function calculateBearing(lat1, lon1, lat2, lon2) {
     const φ1 = lat1 * Math.PI / 180;
@@ -214,8 +255,8 @@ function AICSimulator() {
     const [missionTime, setMissionTime] = useState(0);
     const [bullseyeName, setBullseyeName] = useState('');
     const [bullseyePosition, setBullseyePosition] = useState({ lat: 26.5, lon: 54.0 });
-    const [bullseyeLatInput, setBullseyeLatInput] = useState('26.5');
-    const [bullseyeLonInput, setBullseyeLonInput] = useState('54.0');
+    const [bullseyeLatInput, setBullseyeLatInput] = useState('N26 30.0');
+    const [bullseyeLonInput, setBullseyeLonInput] = useState('E54 0.0');
     const [bullseyeSelected, setBullseyeSelected] = useState(false);
     const [draggedBullseye, setDraggedBullseye] = useState(false);
     const [radarControlsSelected, setRadarControlsSelected] = useState(false);
@@ -1193,8 +1234,8 @@ function AICSimulator() {
             // Load bullseye position (with fallback to default)
             const loadedBullseye = saveData.bullseye || { lat: 26.5, lon: 54.0 };
             setBullseyePosition(loadedBullseye);
-            setBullseyeLatInput(loadedBullseye.lat.toString());
-            setBullseyeLonInput(loadedBullseye.lon.toString());
+            setBullseyeLatInput(decimalToDMM(loadedBullseye.lat, true));
+            setBullseyeLonInput(decimalToDMM(loadedBullseye.lon, false));
 
             if (ownshipIndex === -1) {
                 // No ownship found, add default ownship 50 NM south of bullseye
@@ -1296,8 +1337,8 @@ function AICSimulator() {
                     // Load bullseye position (with fallback to default)
                     const loadedBullseye = saveData.bullseye || { lat: 26.5, lon: 54.0 };
                     setBullseyePosition(loadedBullseye);
-                    setBullseyeLatInput(loadedBullseye.lat.toString());
-                    setBullseyeLonInput(loadedBullseye.lon.toString());
+                    setBullseyeLatInput(decimalToDMM(loadedBullseye.lat, true));
+                    setBullseyeLonInput(decimalToDMM(loadedBullseye.lon, false));
 
                     if (ownshipIndex === -1) {
                         // No ownship found, add default ownship 50 NM south of bullseye
@@ -1662,8 +1703,8 @@ function AICSimulator() {
         // Handle bullseye dragging
         if (draggedBullseye) {
             setBullseyePosition({ lat: latLon.lat, lon: latLon.lon });
-            setBullseyeLatInput(latLon.lat.toFixed(6));
-            setBullseyeLonInput(latLon.lon.toFixed(6));
+            setBullseyeLatInput(decimalToDMM(latLon.lat, true));
+            setBullseyeLonInput(decimalToDMM(latLon.lon, false));
             return;
         }
 
@@ -3640,8 +3681,8 @@ function ControlPanel({
         if (selectedGeoPoint && selectedGeoPoint.id !== selectedGeoPointIdRef.current) {
             selectedGeoPointIdRef.current = selectedGeoPoint.id;
             setGeoPointEditValues({
-                lat: selectedGeoPoint.lat.toFixed(4),
-                lon: selectedGeoPoint.lon.toFixed(4)
+                lat: decimalToDMM(selectedGeoPoint.lat, true),
+                lon: decimalToDMM(selectedGeoPoint.lon, false)
             });
         }
     }, [selectedGeoPointId, geoPoints]);
@@ -3655,13 +3696,13 @@ function ControlPanel({
             if (selectedShape.type === 'lineSegment') {
                 // Initialize edit values for all line segment points
                 selectedShape.points.forEach((point, index) => {
-                    initialValues[`${index}_lat`] = point.lat.toFixed(4);
-                    initialValues[`${index}_lon`] = point.lon.toFixed(4);
+                    initialValues[`${index}_lat`] = decimalToDMM(point.lat, true);
+                    initialValues[`${index}_lon`] = decimalToDMM(point.lon, false);
                 });
             } else if (selectedShape.type === 'circle') {
                 // Initialize edit values for circle center
-                initialValues.centerLat = selectedShape.centerLat.toFixed(4);
-                initialValues.centerLon = selectedShape.centerLon.toFixed(4);
+                initialValues.centerLat = decimalToDMM(selectedShape.centerLat, true);
+                initialValues.centerLon = decimalToDMM(selectedShape.centerLon, false);
             }
 
             setShapePointEditValues(initialValues);
@@ -3700,11 +3741,12 @@ function ControlPanel({
     };
 
     const applyGeoPointCoordinate = (field) => {
-        const value = parseFloat(geoPointEditValues[field]);
+        const isLatitude = field === 'lat';
+        const value = dmmToDecimal(geoPointEditValues[field]);
 
         // Validate the value
-        if (isNaN(value)) {
-            alert(`Invalid ${field} value`);
+        if (value === null) {
+            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E54 0.0 or W54 0.0'}`);
             return;
         }
 
@@ -3714,11 +3756,12 @@ function ControlPanel({
 
     const applyShapePointCoordinate = (pointIndex, field) => {
         const key = `${pointIndex}_${field}`;
-        const value = parseFloat(shapePointEditValues[key]);
+        const isLatitude = field === 'lat';
+        const value = dmmToDecimal(shapePointEditValues[key]);
 
         // Validate the value
-        if (isNaN(value)) {
-            alert(`Invalid ${field} value`);
+        if (value === null) {
+            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E54 0.0 or W54 0.0'}`);
             return;
         }
 
@@ -3733,11 +3776,12 @@ function ControlPanel({
     };
 
     const applyCircleCoordinate = (field) => {
-        const value = parseFloat(shapePointEditValues[field]);
+        const isLatitude = field === 'centerLat';
+        const value = dmmToDecimal(shapePointEditValues[field]);
 
         // Validate the value
-        if (isNaN(value)) {
-            alert(`Invalid ${field} value`);
+        if (value === null) {
+            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E54 0.0 or W54 0.0'}`);
             return;
         }
 
@@ -3827,19 +3871,19 @@ function ControlPanel({
                             className="input-field"
                             type="text"
                             value={bullseyeLatInput}
-                            onChange={(e) => setBullseyeLatInput(e.target.value)}
+                            onChange={(e) => setBullseyeLatInput(e.target.value.toUpperCase())}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
-                                    const lat = parseFloat(bullseyeLatInput);
-                                    if (!isNaN(lat) && lat >= -90 && lat <= 90) {
+                                    const lat = dmmToDecimal(bullseyeLatInput);
+                                    if (lat !== null && lat >= -90 && lat <= 90) {
                                         setBullseyePosition({ ...bullseyePosition, lat });
                                     } else {
-                                        alert('Invalid latitude. Must be between -90 and 90.');
-                                        setBullseyeLatInput(bullseyePosition.lat.toString());
+                                        alert('Invalid latitude. Format: N26 30.0 or S26 30.0');
+                                        setBullseyeLatInput(decimalToDMM(bullseyePosition.lat, true));
                                     }
                                 }
                             }}
-                            placeholder="26.5"
+                            placeholder="N26 30.0"
                         />
                     </div>
                     <div className="input-group">
@@ -3848,19 +3892,19 @@ function ControlPanel({
                             className="input-field"
                             type="text"
                             value={bullseyeLonInput}
-                            onChange={(e) => setBullseyeLonInput(e.target.value)}
+                            onChange={(e) => setBullseyeLonInput(e.target.value.toUpperCase())}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
-                                    const lon = parseFloat(bullseyeLonInput);
-                                    if (!isNaN(lon) && lon >= -180 && lon <= 180) {
+                                    const lon = dmmToDecimal(bullseyeLonInput);
+                                    if (lon !== null && lon >= -180 && lon <= 180) {
                                         setBullseyePosition({ ...bullseyePosition, lon });
                                     } else {
-                                        alert('Invalid longitude. Must be between -180 and 180.');
-                                        setBullseyeLonInput(bullseyePosition.lon.toString());
+                                        alert('Invalid longitude. Format: E54 0.0 or W54 0.0');
+                                        setBullseyeLonInput(decimalToDMM(bullseyePosition.lon, false));
                                     }
                                 }
                             }}
-                            placeholder="54.0"
+                            placeholder="E54 0.0"
                         />
                     </div>
                     <div className="input-group" style={{ marginTop: '10px', fontSize: '9px', opacity: 0.7 }}>
@@ -3921,32 +3965,32 @@ function ControlPanel({
                         <div className="input-group">
                             <label className="input-label">Latitude</label>
                             <input
-                                type="number"
-                                step="0.0001"
+                                type="text"
                                 className="input-field"
                                 value={geoPointEditValues.lat || ''}
-                                onChange={(e) => setGeoPointEditValues(prev => ({ ...prev, lat: e.target.value }))}
+                                onChange={(e) => setGeoPointEditValues(prev => ({ ...prev, lat: e.target.value.toUpperCase() }))}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                         applyGeoPointCoordinate('lat');
                                     }
                                 }}
+                                placeholder="N26 30.0"
                             />
                         </div>
 
                         <div className="input-group">
                             <label className="input-label">Longitude</label>
                             <input
-                                type="number"
-                                step="0.0001"
+                                type="text"
                                 className="input-field"
                                 value={geoPointEditValues.lon || ''}
-                                onChange={(e) => setGeoPointEditValues(prev => ({ ...prev, lon: e.target.value }))}
+                                onChange={(e) => setGeoPointEditValues(prev => ({ ...prev, lon: e.target.value.toUpperCase() }))}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                         applyGeoPointCoordinate('lon');
                                     }
                                 }}
+                                placeholder="E54 0.0"
                             />
                         </div>
 
@@ -3997,40 +4041,40 @@ function ControlPanel({
                                 <div className="input-group">
                                     <label className="input-label">Center Latitude</label>
                                     <input
-                                        type="number"
-                                        step="0.0001"
+                                        type="text"
                                         className="input-field"
                                         value={shapePointEditValues.centerLat !== undefined
                                             ? shapePointEditValues.centerLat
-                                            : selectedShape.centerLat.toFixed(4)}
+                                            : decimalToDMM(selectedShape.centerLat, true)}
                                         onChange={(e) => setShapePointEditValues(prev =>
-                                            ({ ...prev, centerLat: e.target.value }))}
+                                            ({ ...prev, centerLat: e.target.value.toUpperCase() }))}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
                                                 applyCircleCoordinate('centerLat');
                                                 e.target.blur();
                                             }
                                         }}
+                                        placeholder="N26 30.0"
                                     />
                                 </div>
 
                                 <div className="input-group">
                                     <label className="input-label">Center Longitude</label>
                                     <input
-                                        type="number"
-                                        step="0.0001"
+                                        type="text"
                                         className="input-field"
                                         value={shapePointEditValues.centerLon !== undefined
                                             ? shapePointEditValues.centerLon
-                                            : selectedShape.centerLon.toFixed(4)}
+                                            : decimalToDMM(selectedShape.centerLon, false)}
                                         onChange={(e) => setShapePointEditValues(prev =>
-                                            ({ ...prev, centerLon: e.target.value }))}
+                                            ({ ...prev, centerLon: e.target.value.toUpperCase() }))}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
                                                 applyCircleCoordinate('centerLon');
                                                 e.target.blur();
                                             }
                                         }}
+                                        placeholder="E54 0.0"
                                     />
                                 </div>
 
@@ -4083,35 +4127,35 @@ function ControlPanel({
                                             <div style={{ marginBottom: '5px' }}>
                                                 <label style={{ fontSize: '9px', color: '#00FF00', opacity: 0.7, display: 'block', marginBottom: '2px' }}>Latitude</label>
                                                 <input
-                                                    type="number"
-                                                    step="0.0001"
+                                                    type="text"
                                                     className="input-field"
                                                     style={{ fontSize: '10px', padding: '4px' }}
-                                                    value={shapePointEditValues[`${index}_lat`] !== undefined ? shapePointEditValues[`${index}_lat`] : point.lat.toFixed(4)}
-                                                    onChange={(e) => setShapePointEditValues(prev => ({ ...prev, [`${index}_lat`]: e.target.value }))}
+                                                    value={shapePointEditValues[`${index}_lat`] !== undefined ? shapePointEditValues[`${index}_lat`] : decimalToDMM(point.lat, true)}
+                                                    onChange={(e) => setShapePointEditValues(prev => ({ ...prev, [`${index}_lat`]: e.target.value.toUpperCase() }))}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
                                                             applyShapePointCoordinate(index, 'lat');
                                                             e.target.blur();
                                                         }
                                                     }}
+                                                    placeholder="N26 30.0"
                                                 />
                                             </div>
                                             <div>
                                                 <label style={{ fontSize: '9px', color: '#00FF00', opacity: 0.7, display: 'block', marginBottom: '2px' }}>Longitude</label>
                                                 <input
-                                                    type="number"
-                                                    step="0.0001"
+                                                    type="text"
                                                     className="input-field"
                                                     style={{ fontSize: '10px', padding: '4px' }}
-                                                    value={shapePointEditValues[`${index}_lon`] !== undefined ? shapePointEditValues[`${index}_lon`] : point.lon.toFixed(4)}
-                                                    onChange={(e) => setShapePointEditValues(prev => ({ ...prev, [`${index}_lon`]: e.target.value }))}
+                                                    value={shapePointEditValues[`${index}_lon`] !== undefined ? shapePointEditValues[`${index}_lon`] : decimalToDMM(point.lon, false)}
+                                                    onChange={(e) => setShapePointEditValues(prev => ({ ...prev, [`${index}_lon`]: e.target.value.toUpperCase() }))}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
                                                             applyShapePointCoordinate(index, 'lon');
                                                             e.target.blur();
                                                         }
                                                     }}
+                                                    placeholder="E54 0.0"
                                                 />
                                             </div>
                                         </div>
