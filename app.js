@@ -4808,17 +4808,28 @@ function ControlPanel({
                             <input
                                 className="input-field"
                                 type="text"
-                                value={iffOwnshipModeI}
+                                defaultValue={iffOwnshipModeI}
+                                key={`mode1-${iffOwnshipModeI}`}
                                 onChange={(e) => {
                                     const val = e.target.value;
                                     // Only allow octal digits (0-7) and max 2 chars
-                                    if (/^[0-7]{0,2}$/.test(val)) {
-                                        setIffOwnshipModeI(val);
+                                    if (!/^[0-7]{0,2}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
+                                    }
+                                    e.target.style.color = '#00BFFF';
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        if (/^[0-7]{0,2}$/.test(val)) {
+                                            setIffOwnshipModeI(val);
+                                            e.target.style.color = '#00FF00';
+                                        }
                                     }
                                 }}
-                                placeholder="00"
+                                placeholder="00 (press Enter)"
                                 maxLength="2"
-                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
                             />
                         </div>
 
@@ -4828,17 +4839,28 @@ function ControlPanel({
                             <input
                                 className="input-field"
                                 type="text"
-                                value={iffOwnshipModeII}
+                                defaultValue={iffOwnshipModeII}
+                                key={`mode2-${iffOwnshipModeII}`}
                                 onChange={(e) => {
                                     const val = e.target.value;
                                     // Only allow octal digits (0-7) and max 4 chars
-                                    if (/^[0-7]{0,4}$/.test(val)) {
-                                        setIffOwnshipModeII(val);
+                                    if (!/^[0-7]{0,4}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
+                                    }
+                                    e.target.style.color = '#00BFFF';
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        if (/^[0-7]{0,4}$/.test(val)) {
+                                            setIffOwnshipModeII(val);
+                                            e.target.style.color = '#00FF00';
+                                        }
                                     }
                                 }}
-                                placeholder="0000"
+                                placeholder="0000 (press Enter)"
                                 maxLength="4"
-                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
                             />
                         </div>
 
@@ -4848,17 +4870,28 @@ function ControlPanel({
                             <input
                                 className="input-field"
                                 type="text"
-                                value={iffOwnshipModeIII}
+                                defaultValue={iffOwnshipModeIII}
+                                key={`mode3-${iffOwnshipModeIII}`}
                                 onChange={(e) => {
                                     const val = e.target.value;
                                     // Only allow octal digits (0-7) and max 4 chars
-                                    if (/^[0-7]{0,4}$/.test(val)) {
-                                        setIffOwnshipModeIII(val);
+                                    if (!/^[0-7]{0,4}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
+                                    }
+                                    e.target.style.color = '#00BFFF';
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        if (/^[0-7]{0,4}$/.test(val)) {
+                                            setIffOwnshipModeIII(val);
+                                            e.target.style.color = '#00FF00';
+                                        }
                                     }
                                 }}
-                                placeholder="0000"
+                                placeholder="0000 (press Enter)"
                                 maxLength="4"
-                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
                             />
                         </div>
 
@@ -5326,16 +5359,27 @@ function ControlPanel({
                                     <input
                                         className="input-field"
                                         type="text"
-                                        value={selectedAsset.iffModeI || ''}
+                                        defaultValue={selectedAsset.iffModeI || ''}
+                                        key={`asset-mode1-${selectedAsset.id}-${selectedAsset.iffModeI}`}
                                         onChange={(e) => {
                                             const val = e.target.value;
-                                            if (/^[0-7]{0,2}$/.test(val)) {
-                                                updateAsset(selectedAsset.id, { iffModeI: val });
+                                            if (!/^[0-7]{0,2}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^[0-7]{0,2}$/.test(val)) {
+                                                    updateAsset(selectedAsset.id, { iffModeI: val });
+                                                    e.target.style.color = '#00FF00';
+                                                }
                                             }
                                         }}
-                                        placeholder="00"
+                                        placeholder="00 (press Enter)"
                                         maxLength="2"
-                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
                                     />
                                 </div>
 
@@ -5347,16 +5391,27 @@ function ControlPanel({
                                     <input
                                         className="input-field"
                                         type="text"
-                                        value={selectedAsset.iffModeII || ''}
+                                        defaultValue={selectedAsset.iffModeII || ''}
+                                        key={`asset-mode2-${selectedAsset.id}-${selectedAsset.iffModeII}`}
                                         onChange={(e) => {
                                             const val = e.target.value;
-                                            if (/^[0-7]{0,4}$/.test(val)) {
-                                                updateAsset(selectedAsset.id, { iffModeII: val });
+                                            if (!/^[0-7]{0,4}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^[0-7]{0,4}$/.test(val)) {
+                                                    updateAsset(selectedAsset.id, { iffModeII: val });
+                                                    e.target.style.color = '#00FF00';
+                                                }
                                             }
                                         }}
-                                        placeholder="0000"
+                                        placeholder="0000 (press Enter)"
                                         maxLength="4"
-                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
                                     />
                                 </div>
 
@@ -5368,16 +5423,27 @@ function ControlPanel({
                                     <input
                                         className="input-field"
                                         type="text"
-                                        value={selectedAsset.iffModeIII || ''}
+                                        defaultValue={selectedAsset.iffModeIII || ''}
+                                        key={`asset-mode3-${selectedAsset.id}-${selectedAsset.iffModeIII}`}
                                         onChange={(e) => {
                                             const val = e.target.value;
-                                            if (/^[0-7]{0,4}$/.test(val)) {
-                                                updateAsset(selectedAsset.id, { iffModeIII: val });
+                                            if (!/^[0-7]{0,4}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^[0-7]{0,4}$/.test(val)) {
+                                                    updateAsset(selectedAsset.id, { iffModeIII: val });
+                                                    e.target.style.color = '#00FF00';
+                                                }
                                             }
                                         }}
-                                        placeholder="0000"
+                                        placeholder="0000 (press Enter)"
                                         maxLength="4"
-                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
                                     />
                                 </div>
                             </div>
