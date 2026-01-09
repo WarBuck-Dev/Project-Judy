@@ -3145,13 +3145,13 @@ function AICSimulator() {
                 {/* Labels below asset - dynamically positioned */}
                 {(() => {
                     let currentY = pos.y + size + 15;
-                    const lineSpacing = 10;
+                    const lineSpacing = 12;
                     const labels = [];
 
                     // Track number
                     if (asset.trackNumber) {
                         labels.push(
-                            <text key="tn" x={pos.x} y={currentY} fill={config.color} fontSize="8"
+                            <text key="tn" x={pos.x} y={currentY} fill={config.color} fontSize="10"
                                   textAnchor="middle" fontWeight="700">
                                 TN#{asset.trackNumber}
                             </text>
@@ -3163,7 +3163,7 @@ function AICSimulator() {
                     if (asset.iffSquawking) {
                         if (asset.iffModeI) {
                             labels.push(
-                                <text key="m1" x={pos.x} y={currentY} fill={config.color} fontSize="8"
+                                <text key="m1" x={pos.x} y={currentY} fill={config.color} fontSize="10"
                                       textAnchor="middle" fontWeight="700">
                                     M1: {asset.iffModeI}
                                 </text>
@@ -3172,7 +3172,7 @@ function AICSimulator() {
                         }
                         if (asset.iffModeII) {
                             labels.push(
-                                <text key="m2" x={pos.x} y={currentY} fill={config.color} fontSize="8"
+                                <text key="m2" x={pos.x} y={currentY} fill={config.color} fontSize="10"
                                       textAnchor="middle" fontWeight="700">
                                     M2: {asset.iffModeII}
                                 </text>
@@ -3181,7 +3181,7 @@ function AICSimulator() {
                         }
                         if (asset.iffModeIII) {
                             labels.push(
-                                <text key="m3" x={pos.x} y={currentY} fill={config.color} fontSize="8"
+                                <text key="m3" x={pos.x} y={currentY} fill={config.color} fontSize="10"
                                       textAnchor="middle" fontWeight="700">
                                     M3: {asset.iffModeIII}
                                 </text>
@@ -3193,14 +3193,14 @@ function AICSimulator() {
                     // Altitude / Depth - always shown
                     if (asset.domain === 'air') {
                         labels.push(
-                            <text key="alt" x={pos.x} y={currentY} fill={config.color} fontSize="8"
+                            <text key="alt" x={pos.x} y={currentY} fill={config.color} fontSize="10"
                                   textAnchor="middle" fontWeight="700">
                                 ALT: FL{Math.round(asset.altitude/100)}
                             </text>
                         );
                     } else if (asset.domain === 'subSurface' && asset.depth !== null) {
                         labels.push(
-                            <text key="depth" x={pos.x} y={currentY} fill={config.color} fontSize="8"
+                            <text key="depth" x={pos.x} y={currentY} fill={config.color} fontSize="10"
                                   textAnchor="middle" fontWeight="700">
                                 DEPTH: {asset.depth}ft
                             </text>
