@@ -596,12 +596,25 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - MODE III: 4-digit octal code (0-7)
   - MODE IV: ON/OFF encrypted mode
   - Per-asset IFF configuration with squawk toggle
+  - Auto-padding: partial codes filled with zeros (e.g., "7" → "07", "12" → "0012")
+  - IFF codes displayed on map when squawking (M1:, M2:, M3:, ALT:)
   - Neon green IFF returns overlay radar returns
   - IFF returns offset toward ownship to prevent overlap with radar
   - Return intensity control (1-100% in 1% increments)
   - Uses same radar horizon physics as radar system
   - 320 NM maximum interrogation range
   - Access via IFF button in SYSTEMS section
+- **Datalink System**: Tactical data link network for track sharing
+  - ON/OFF toggle for datalink system
+  - NET configuration (1-127)
+  - JU (Joint Unit) code (5 digits)
+  - Track block assignment (start/end ranges, 5 digits each)
+  - Automatic track number assignment from available block
+  - Automatic identity assignment (assets on same NET become friendly)
+  - Per-asset datalink configuration
+  - Track numbers displayed on map (TN#XXXXX)
+  - Report track function to add assets to datalink
+  - Access via DATALINK button in SYSTEMS section
 - **Bullseye Customization**: Click bullseye to set custom name (e.g., "VEGAS")
 - **Mission Time Clock**: HH:MM:SS display shows elapsed mission time
 - **MIL-STD-2525 Symbology**: Aircraft symbols now use military standard (top-half only)
@@ -612,6 +625,10 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 - SYSTEMS section added under PLAYBACK controls
 - RADAR control panel integrates with existing UI pattern
 - IFF control panel with ownship code configuration
+- DATALINK control panel with NET/JU/Track Block configuration
+- Tabbed asset control panel (GENERAL, IFF, DATALINK, EMITTER)
+- Blue text indicators for uncommitted values (press Enter to commit)
+- Dynamic label positioning on map (no gaps when fields are blank)
 - Fixed mission time box width to prevent layout shifts
 - Removed green glow from map background for cleaner display
 - Temp mark now clears when selecting assets or bullseye
