@@ -239,6 +239,7 @@ function AICSimulator() {
     ]);
     const [selectedAssetId, setSelectedAssetId] = useState(null);
     const [selectedAssetTab, setSelectedAssetTab] = useState('general');
+    const [selectedSystemTab, setSelectedSystemTab] = useState('radar');
     const [isRunning, setIsRunning] = useState(false);
     const [scale, setScale] = useState(INITIAL_SCALE);
     const [mapCenter, setMapCenter] = useState({ lat: 26.5, lon: 54.0 });
@@ -4134,30 +4135,530 @@ function ControlPanel({
             {!selectedAsset && !selectedGeoPointId && !selectedShapeId && (
                 <div className="control-section">
                     <div className="section-header">SYSTEMS</div>
-                    <button
-                        className="control-btn full-width"
-                        onClick={() => setRadarControlsSelected(true)}
-                    >
-                        RADAR
-                    </button>
-                    <button
-                        className="control-btn full-width"
-                        onClick={() => setEsmControlsSelected(true)}
-                    >
-                        ESM
-                    </button>
-                    <button
-                        className="control-btn full-width"
-                        onClick={() => setIffControlsSelected(true)}
-                    >
-                        IFF
-                    </button>
-                    <button
-                        className="control-btn full-width"
-                        onClick={() => setDatalinkControlsSelected(true)}
-                    >
-                        DATALINK
-                    </button>
+
+                    {/* System Tab Navigation */}
+                    <div style={{ display: 'flex', gap: '5px', marginBottom: '15px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
+                        <button
+                            onClick={() => setSelectedSystemTab('radar')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedSystemTab === 'radar' ? (radarEnabled ? '#00FF00' : '#FF0000') : 'transparent',
+                                color: selectedSystemTab === 'radar' ? '#000' : (radarEnabled ? '#00FF00' : '#FF0000'),
+                                border: 'none',
+                                borderBottom: selectedSystemTab === 'radar' ? `2px solid ${radarEnabled ? '#00FF00' : '#FF0000'}` : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            RADAR
+                        </button>
+                        <button
+                            onClick={() => setSelectedSystemTab('esm')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedSystemTab === 'esm' ? (esmEnabled ? '#00FF00' : '#FF0000') : 'transparent',
+                                color: selectedSystemTab === 'esm' ? '#000' : (esmEnabled ? '#00FF00' : '#FF0000'),
+                                border: 'none',
+                                borderBottom: selectedSystemTab === 'esm' ? `2px solid ${esmEnabled ? '#00FF00' : '#FF0000'}` : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            ESM
+                        </button>
+                        <button
+                            onClick={() => setSelectedSystemTab('iff')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedSystemTab === 'iff' ? (iffEnabled ? '#00FF00' : '#FF0000') : 'transparent',
+                                color: selectedSystemTab === 'iff' ? '#000' : (iffEnabled ? '#00FF00' : '#FF0000'),
+                                border: 'none',
+                                borderBottom: selectedSystemTab === 'iff' ? `2px solid ${iffEnabled ? '#00FF00' : '#FF0000'}` : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            IFF
+                        </button>
+                        <button
+                            onClick={() => setSelectedSystemTab('datalink')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedSystemTab === 'datalink' ? (datalinkEnabled ? '#00FF00' : '#FF0000') : 'transparent',
+                                color: selectedSystemTab === 'datalink' ? '#000' : (datalinkEnabled ? '#00FF00' : '#FF0000'),
+                                border: 'none',
+                                borderBottom: selectedSystemTab === 'datalink' ? `2px solid ${datalinkEnabled ? '#00FF00' : '#FF0000'}` : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            DATALINK
+                        </button>
+                    </div>
+
+                    {/* RADAR TAB */}
+                    {selectedSystemTab === 'radar' && (
+                        <div>
+                            {/* Radar ON/OFF Button */}
+                            <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                                <button
+                                    className={`control-btn ${radarEnabled ? 'primary' : 'danger'}`}
+                                    onClick={() => setRadarEnabled(!radarEnabled)}
+                                    style={{ width: '100%' }}
+                                >
+                                    {radarEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+
+                            {/* Radar Controls */}
+                            <div className="input-group">
+                                <label className="input-label">Sweep Opacity (%)</label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    value={radarSweepOpacity}
+                                    onChange={(e) => setRadarSweepOpacity(Number(e.target.value))}
+                                    className="slider"
+                                />
+                                <div style={{ textAlign: 'center', fontSize: '12px', marginTop: '5px' }}>
+                                    {radarSweepOpacity}%
+                                </div>
+                            </div>
+
+                            <div className="input-group">
+                                <label className="input-label">Return Decay (sec)</label>
+                                <input
+                                    type="range"
+                                    min="10"
+                                    max="60"
+                                    value={radarReturnDecay}
+                                    onChange={(e) => setRadarReturnDecay(Number(e.target.value))}
+                                    className="slider"
+                                />
+                                <div style={{ textAlign: 'center', fontSize: '12px', marginTop: '5px' }}>
+                                    {radarReturnDecay}s
+                                </div>
+                            </div>
+
+                            <div className="input-group">
+                                <label className="input-label">Return Intensity (%)</label>
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="100"
+                                    value={radarReturnIntensity}
+                                    onChange={(e) => setRadarReturnIntensity(Number(e.target.value))}
+                                    className="slider"
+                                />
+                                <div style={{ textAlign: 'center', fontSize: '12px', marginTop: '5px' }}>
+                                    {radarReturnIntensity}%
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ESM TAB */}
+                    {selectedSystemTab === 'esm' && (
+                        <div>
+                            {/* ESM ON/OFF Button */}
+                            <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                                <button
+                                    className={`control-btn ${esmEnabled ? 'primary' : 'danger'}`}
+                                    onClick={() => setEsmEnabled(!esmEnabled)}
+                                    style={{ width: '100%' }}
+                                >
+                                    {esmEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+
+                            {/* ESM Contacts List */}
+                            <div style={{ marginBottom: '10px', fontSize: '10px', fontWeight: 'bold', opacity: 0.7 }}>
+                                CONTACTS
+                            </div>
+                            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                                {detectedEmitters.filter(e => !e.isManualLine).map((emitter) => (
+                                    <div
+                                        key={emitter.id}
+                                        onClick={() => setSelectedEsmId(emitter.id)}
+                                        style={{
+                                            padding: '8px',
+                                            marginBottom: '5px',
+                                            background: selectedEsmId === emitter.id ? '#00FF0033' : '#2a2a2a',
+                                            borderRadius: '3px',
+                                            cursor: 'pointer',
+                                            border: selectedEsmId === emitter.id ? '1px solid #00FF00' : '1px solid transparent'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                                            <span style={{ fontSize: '11px', fontWeight: 'bold' }}>{emitter.label}</span>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '9px' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={emitter.visible !== false}
+                                                    onChange={(e) => {
+                                                        e.stopPropagation();
+                                                        setDetectedEmitters(prev =>
+                                                            prev.map(em =>
+                                                                em.id === emitter.id ? { ...em, visible: e.target.checked } : em
+                                                            )
+                                                        );
+                                                    }}
+                                                />
+                                                VIS
+                                            </label>
+                                        </div>
+                                        <div style={{ fontSize: '9px', opacity: 0.7 }}>
+                                            {emitter.assetName} - {emitter.emitterName}
+                                        </div>
+                                        <div style={{ fontSize: '9px', opacity: 0.7, marginTop: '3px' }}>
+                                            BRG: {Math.round(emitter.bearing)}° | AGE: {emitter.age}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Manual Bearing Lines */}
+                            {manualBearingLines.length > 0 && (
+                                <>
+                                    <div style={{ marginTop: '15px', marginBottom: '10px', fontSize: '10px', fontWeight: 'bold', opacity: 0.7 }}>
+                                        MANUAL LINES
+                                    </div>
+                                    <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                                        {manualBearingLines.map((line) => (
+                                            <div
+                                                key={line.id}
+                                                onClick={() => setSelectedEsmId(line.id)}
+                                                style={{
+                                                    padding: '8px',
+                                                    marginBottom: '5px',
+                                                    background: selectedEsmId === line.id ? '#00BFFF33' : '#2a2a2a',
+                                                    borderRadius: '3px',
+                                                    cursor: 'pointer',
+                                                    border: selectedEsmId === line.id ? '1px solid #00BFFF' : '1px solid transparent'
+                                                }}
+                                            >
+                                                <div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '3px' }}>{line.label}</div>
+                                                <div style={{ fontSize: '9px', opacity: 0.7 }}>
+                                                    BRG: {Math.round(line.bearing)}°
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {/* IFF TAB */}
+                    {selectedSystemTab === 'iff' && (
+                        <div>
+                            {/* IFF ON/OFF Button */}
+                            <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                                <button
+                                    className={`control-btn ${iffEnabled ? 'primary' : 'danger'}`}
+                                    onClick={() => setIffEnabled(!iffEnabled)}
+                                    style={{ width: '100%' }}
+                                >
+                                    {iffEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+
+                            {/* Ownship IFF Codes */}
+                            <div style={{ marginBottom: '15px', padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                                <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '10px', opacity: 0.7 }}>
+                                    OWNSHIP CODES
+                                </div>
+
+                                {/* MODE I */}
+                                <div className="input-group" style={{ marginBottom: '10px' }}>
+                                    <label className="input-label">MODE I (2 digit octal)</label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={iffOwnshipModeI}
+                                        key={`mode1-${iffOwnshipModeI}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^[0-7]{0,2}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^[0-7]{0,2}$/.test(val)) {
+                                                    const padded = val.padStart(2, '0');
+                                                    setIffOwnshipModeI(padded);
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="00 (press Enter)"
+                                        maxLength="2"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* MODE II */}
+                                <div className="input-group" style={{ marginBottom: '10px' }}>
+                                    <label className="input-label">MODE II (4 digit octal)</label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={iffOwnshipModeII}
+                                        key={`mode2-${iffOwnshipModeII}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^[0-7]{0,4}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^[0-7]{0,4}$/.test(val)) {
+                                                    const padded = val.padStart(4, '0');
+                                                    setIffOwnshipModeII(padded);
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="0000 (press Enter)"
+                                        maxLength="4"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* MODE III */}
+                                <div className="input-group" style={{ marginBottom: '10px' }}>
+                                    <label className="input-label">MODE III (4 digit octal)</label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={iffOwnshipModeIII}
+                                        key={`mode3-${iffOwnshipModeIII}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^[0-7]{0,4}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^[0-7]{0,4}$/.test(val)) {
+                                                    const padded = val.padStart(4, '0');
+                                                    setIffOwnshipModeIII(padded);
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="0000 (press Enter)"
+                                        maxLength="4"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* MODE IV */}
+                                <div className="input-group">
+                                    <label className="input-label">MODE IV</label>
+                                    <button
+                                        className={`control-btn ${iffOwnshipModeIV ? 'primary' : 'danger'}`}
+                                        onClick={() => setIffOwnshipModeIV(!iffOwnshipModeIV)}
+                                        style={{ width: '100%' }}
+                                    >
+                                        {iffOwnshipModeIV ? 'ON' : 'OFF'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* IFF Return Intensity */}
+                            <div className="input-group">
+                                <label className="input-label">Return Intensity (%)</label>
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="100"
+                                    value={iffReturnIntensity}
+                                    onChange={(e) => setIffReturnIntensity(Number(e.target.value))}
+                                    className="slider"
+                                />
+                                <div style={{ textAlign: 'center', fontSize: '12px', marginTop: '5px' }}>
+                                    {iffReturnIntensity}%
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* DATALINK TAB */}
+                    {selectedSystemTab === 'datalink' && (
+                        <div>
+                            {/* Datalink ON/OFF Button */}
+                            <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                                <button
+                                    className={`control-btn ${datalinkEnabled ? 'primary' : 'danger'}`}
+                                    onClick={() => setDatalinkEnabled(!datalinkEnabled)}
+                                    style={{ width: '100%' }}
+                                >
+                                    {datalinkEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+
+                            {/* Datalink Configuration */}
+                            <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                                {/* NET */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        NET (1-127)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={datalinkNet}
+                                        key={`net-${datalinkNet}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^\d{0,3}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                const num = parseInt(val);
+                                                if (val !== '' && num >= 1 && num <= 127) {
+                                                    setDatalinkNet(val);
+                                                    e.target.style.color = '#00FF00';
+                                                } else {
+                                                    e.target.value = '';
+                                                    setDatalinkNet('');
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="1 (press Enter)"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* JU Code */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        JU (5 digits)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        defaultValue={datalinkJU}
+                                        key={`ju-${datalinkJU}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^\d{0,5}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^\d{1,5}$/.test(val)) {
+                                                    setDatalinkJU(val.padStart(5, '0'));
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="00000 (press Enter)"
+                                        maxLength="5"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* Track Block Start */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        TRACK BLOCK START (5 digits)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        defaultValue={datalinkTrackBlockStart}
+                                        key={`start-${datalinkTrackBlockStart}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^\d{0,5}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^\d{1,5}$/.test(val)) {
+                                                    setDatalinkTrackBlockStart(val);
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="60100 (press Enter)"
+                                        maxLength="5"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* Track Block End */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        TRACK BLOCK END (5 digits)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        defaultValue={datalinkTrackBlockEnd}
+                                        key={`end-${datalinkTrackBlockEnd}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^\d{0,5}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                const num = parseInt(val);
+                                                const startNum = parseInt(datalinkTrackBlockStart);
+                                                if (/^\d{1,5}$/.test(val) && num > startNum) {
+                                                    setDatalinkTrackBlockEnd(val);
+                                                    e.target.style.color = '#00FF00';
+                                                } else {
+                                                    e.target.value = '';
+                                                    setDatalinkTrackBlockEnd('');
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="60200 (press Enter)"
+                                        maxLength="5"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
