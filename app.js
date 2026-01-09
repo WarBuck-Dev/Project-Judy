@@ -625,11 +625,11 @@ function AICSimulator() {
                 const userNet = String(datalinkNet);
                 const assetNet = String(asset.datalinkNet);
 
-                // Check if asset is participating in datalink on same NET
+                // Check if asset is participating in datalink on same NET (5 digits for JU now)
                 const assetInDatalink = (assetNet === userNet &&
                                         assetNet !== '' && // Must have a NET set
                                         !!asset.datalinkJU &&
-                                        asset.datalinkJU.length === 6 &&
+                                        asset.datalinkJU.length === 5 &&
                                         !!asset.datalinkTrackBlockStart &&
                                         !!asset.datalinkTrackBlockEnd);
 
@@ -690,7 +690,7 @@ function AICSimulator() {
                 const assetInDatalink = (assetNet === userNet &&
                                         assetNet !== '' &&
                                         !!asset.datalinkJU &&
-                                        asset.datalinkJU.length === 6 &&
+                                        asset.datalinkJU.length === 5 &&
                                         !!asset.datalinkTrackBlockStart &&
                                         !!asset.datalinkTrackBlockEnd);
 
@@ -993,10 +993,10 @@ function AICSimulator() {
             return;
         }
 
-        // Check if datalink is active
+        // Check if datalink is active (5 digits for JU now)
         const datalinkActive = datalinkEnabled &&
                                datalinkNet &&
-                               datalinkJU.length === 6 &&
+                               datalinkJU.length === 5 &&
                                datalinkTrackBlockStart &&
                                datalinkTrackBlockEnd;
 
@@ -1005,14 +1005,13 @@ function AICSimulator() {
             return;
         }
 
-        // Check if asset is already in datalink with same NET
+        // Check if asset is already in datalink with same NET - silently skip
         if (asset.datalinkNet === datalinkNet &&
             asset.datalinkJU &&
-            asset.datalinkJU.length === 6 &&
+            asset.datalinkJU.length === 5 &&
             asset.datalinkTrackBlockStart &&
             asset.datalinkTrackBlockEnd) {
-            alert('Asset is already participating in datalink on same NET. Friendly assets use their JU as track number.');
-            return;
+            return; // Removed alert - just silently ignore
         }
 
         // Check if we have tracks available in the block
@@ -4951,43 +4950,58 @@ function ControlPanel({
                             <label className="input-label">NET (1-127)</label>
                             <input
                                 className="input-field"
-                                type="number"
-                                min="1"
-                                max="127"
+                                type="text"
                                 value={datalinkNet}
                                 onChange={(e) => {
-                                    const val = parseInt(e.target.value);
-                                    if (val >= 1 && val <= 127 || e.target.value === '') {
-                                        setDatalinkNet(e.target.value);
+                                    const val = e.target.value;
+                                    // Only allow digits and validate range
+                                    if (/^\d{0,3}$/.test(val)) {
+                                        const num = parseInt(val);
+                                        if (val === '' || (num >= 1 && num <= 127)) {
+                                            // Temporarily store - won't apply until Enter
+                                        }
                                     }
                                 }}
-                                placeholder="1"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        const num = parseInt(val);
+                                        if (val !== '' && num >= 1 && num <= 127) {
+                                            setDatalinkNet(val);
+                                        } else {
+                                            e.target.value = '';
+                                        }
+                                    }
+                                }}
+                                placeholder="1 (press Enter)"
                                 style={{ fontFamily: 'monospace', fontSize: '12px' }}
                             />
                         </div>
 
                         {/* JU Code */}
                         <div className="input-group" style={{ marginBottom: '10px' }}>
-                            <label className="input-label">JU (6 digits)</label>
+                            <label className="input-label">JU (5 digits)</label>
                             <input
                                 className="input-field"
                                 type="text"
                                 value={datalinkJU}
                                 onChange={(e) => {
-                                    const val = e.target.value;
-                                    // Only allow digits and max 6 chars
-                                    if (/^\d{0,6}$/.test(val)) {
-                                        setDatalinkJU(val);
+                                    // Allow typing but don't update state
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        if (/^\d{1,5}$/.test(val)) {
+                                            // Pad to 5 digits
+                                            setDatalinkJU(val.padStart(5, '0'));
+                                        } else {
+                                            e.target.value = '';
+                                            setDatalinkJU('');
+                                        }
                                     }
                                 }}
-                                onBlur={() => {
-                                    // Add leading zeros on blur
-                                    if (datalinkJU.length > 0 && datalinkJU.length < 6) {
-                                        setDatalinkJU(datalinkJU.padStart(6, '0'));
-                                    }
-                                }}
-                                placeholder="000000"
-                                maxLength="6"
+                                placeholder="00000 (press Enter)"
+                                maxLength="5"
                                 style={{ fontFamily: 'monospace', fontSize: '12px' }}
                             />
                         </div>
@@ -5000,18 +5014,22 @@ function ControlPanel({
                                 type="text"
                                 value={datalinkTrackBlockStart}
                                 onChange={(e) => {
-                                    const val = e.target.value;
-                                    // Only allow digits and max 6 chars
-                                    if (/^\d{0,6}$/.test(val)) {
-                                        setDatalinkTrackBlockStart(val);
-                                        // Initialize next track number when start is set
-                                        if (val.length > 0) {
+                                    // Allow typing but don't update state
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        if (/^\d{1,5}$/.test(val)) {
+                                            setDatalinkTrackBlockStart(val);
                                             setNextDatalinkTrackNumber(parseInt(val));
+                                        } else {
+                                            e.target.value = '';
+                                            setDatalinkTrackBlockStart('');
                                         }
                                     }
                                 }}
-                                placeholder="6000"
-                                maxLength="6"
+                                placeholder="60000 (press Enter)"
+                                maxLength="5"
                                 style={{ fontFamily: 'monospace', fontSize: '12px' }}
                             />
                         </div>
@@ -5024,14 +5042,23 @@ function ControlPanel({
                                 type="text"
                                 value={datalinkTrackBlockEnd}
                                 onChange={(e) => {
-                                    const val = e.target.value;
-                                    // Only allow digits and max 6 chars
-                                    if (/^\d{0,6}$/.test(val)) {
-                                        setDatalinkTrackBlockEnd(val);
+                                    // Allow typing but don't update state
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        const num = parseInt(val);
+                                        const startNum = parseInt(datalinkTrackBlockStart);
+                                        if (/^\d{1,5}$/.test(val) && num > startNum) {
+                                            setDatalinkTrackBlockEnd(val);
+                                        } else {
+                                            e.target.value = '';
+                                            setDatalinkTrackBlockEnd('');
+                                        }
                                     }
                                 }}
-                                placeholder="6200"
-                                maxLength="6"
+                                placeholder="60200 (press Enter)"
+                                maxLength="5"
                                 style={{ fontFamily: 'monospace', fontSize: '12px' }}
                             />
                         </div>
@@ -5039,7 +5066,7 @@ function ControlPanel({
 
                     {/* Status Info */}
                     <div style={{ fontSize: '9px', opacity: 0.7, padding: '10px', background: '#1a1a1a', borderRadius: '3px' }}>
-                        <div>Status: {datalinkEnabled && datalinkNet && datalinkJU.length === 6 && datalinkTrackBlockStart && datalinkTrackBlockEnd ? 'ACTIVE' : 'INACTIVE'}</div>
+                        <div>Status: {datalinkEnabled && datalinkNet && datalinkJU.length === 5 && datalinkTrackBlockStart && datalinkTrackBlockEnd ? 'ACTIVE' : 'INACTIVE'}</div>
                         {nextDatalinkTrackNumber !== null && (
                             <div style={{ marginTop: '5px' }}>Next Track: {nextDatalinkTrackNumber}</div>
                         )}
@@ -5339,17 +5366,21 @@ function ControlPanel({
                                     </label>
                                     <input
                                         className="input-field"
-                                        type="number"
-                                        min="1"
-                                        max="127"
-                                        value={selectedAsset.datalinkNet || ''}
-                                        onChange={(e) => {
-                                            const val = parseInt(e.target.value);
-                                            if (val >= 1 && val <= 127 || e.target.value === '') {
-                                                updateAsset(selectedAsset.id, { datalinkNet: e.target.value });
+                                        type="text"
+                                        defaultValue={selectedAsset.datalinkNet || ''}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                const num = parseInt(val);
+                                                if (val !== '' && num >= 1 && num <= 127) {
+                                                    updateAsset(selectedAsset.id, { datalinkNet: val });
+                                                } else {
+                                                    e.target.value = '';
+                                                    updateAsset(selectedAsset.id, { datalinkNet: '' });
+                                                }
                                             }
                                         }}
-                                        placeholder="1"
+                                        placeholder="1 (press Enter)"
                                         style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
                                     />
                                 </div>
@@ -5357,26 +5388,25 @@ function ControlPanel({
                                 {/* JU Code */}
                                 <div style={{ marginBottom: '8px' }}>
                                     <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
-                                        JU (6 digits)
+                                        JU (5 digits)
                                     </label>
                                     <input
                                         className="input-field"
                                         type="text"
-                                        value={selectedAsset.datalinkJU || ''}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            if (/^\d{0,6}$/.test(val)) {
-                                                updateAsset(selectedAsset.id, { datalinkJU: val });
+                                        defaultValue={selectedAsset.datalinkJU || ''}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^\d{1,5}$/.test(val)) {
+                                                    updateAsset(selectedAsset.id, { datalinkJU: val.padStart(5, '0') });
+                                                } else {
+                                                    e.target.value = '';
+                                                    updateAsset(selectedAsset.id, { datalinkJU: '' });
+                                                }
                                             }
                                         }}
-                                        onBlur={() => {
-                                            // Add leading zeros on blur
-                                            if (selectedAsset.datalinkJU && selectedAsset.datalinkJU.length > 0 && selectedAsset.datalinkJU.length < 6) {
-                                                updateAsset(selectedAsset.id, { datalinkJU: selectedAsset.datalinkJU.padStart(6, '0') });
-                                            }
-                                        }}
-                                        placeholder="000000"
-                                        maxLength="6"
+                                        placeholder="00000 (press Enter)"
+                                        maxLength="5"
                                         style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
                                     />
                                 </div>
@@ -5389,15 +5419,20 @@ function ControlPanel({
                                     <input
                                         className="input-field"
                                         type="text"
-                                        value={selectedAsset.datalinkTrackBlockStart || ''}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            if (/^\d{0,6}$/.test(val)) {
-                                                updateAsset(selectedAsset.id, { datalinkTrackBlockStart: val });
+                                        defaultValue={selectedAsset.datalinkTrackBlockStart || ''}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^\d{1,5}$/.test(val)) {
+                                                    updateAsset(selectedAsset.id, { datalinkTrackBlockStart: val });
+                                                } else {
+                                                    e.target.value = '';
+                                                    updateAsset(selectedAsset.id, { datalinkTrackBlockStart: '' });
+                                                }
                                             }
                                         }}
-                                        placeholder="6000"
-                                        maxLength="6"
+                                        placeholder="60000 (press Enter)"
+                                        maxLength="5"
                                         style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
                                     />
                                 </div>
@@ -5410,15 +5445,22 @@ function ControlPanel({
                                     <input
                                         className="input-field"
                                         type="text"
-                                        value={selectedAsset.datalinkTrackBlockEnd || ''}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            if (/^\d{0,6}$/.test(val)) {
-                                                updateAsset(selectedAsset.id, { datalinkTrackBlockEnd: val });
+                                        defaultValue={selectedAsset.datalinkTrackBlockEnd || ''}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                const num = parseInt(val);
+                                                const startNum = parseInt(selectedAsset.datalinkTrackBlockStart);
+                                                if (/^\d{1,5}$/.test(val) && num > startNum) {
+                                                    updateAsset(selectedAsset.id, { datalinkTrackBlockEnd: val });
+                                                } else {
+                                                    e.target.value = '';
+                                                    updateAsset(selectedAsset.id, { datalinkTrackBlockEnd: '' });
+                                                }
                                             }
                                         }}
-                                        placeholder="6200"
-                                        maxLength="6"
+                                        placeholder="60200 (press Enter)"
+                                        maxLength="5"
                                         style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
                                     />
                                 </div>
@@ -5430,7 +5472,7 @@ function ControlPanel({
                                         {selectedAsset.datalinkAssignedTrack && (
                                             <div>Track: {selectedAsset.datalinkAssignedTrack}</div>
                                         )}
-                                        {selectedAsset.datalinkJU && selectedAsset.datalinkJU.length === 6 && (
+                                        {selectedAsset.datalinkJU && selectedAsset.datalinkJU.length === 5 && (
                                             <div>JU: {selectedAsset.datalinkJU}</div>
                                         )}
                                     </div>
