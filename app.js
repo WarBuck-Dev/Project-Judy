@@ -620,8 +620,12 @@ function AICSimulator() {
             // Skip ownship
             if (asset.type === 'ownship') return;
 
+            // Convert both to strings for comparison to handle number vs string
+            const userNet = String(datalinkNet);
+            const assetNet = String(asset.datalinkNet);
+
             // Check if asset is participating in datalink on same NET
-            const assetInDatalink = asset.datalinkNet === datalinkNet &&
+            const assetInDatalink = assetNet === userNet &&
                                    asset.datalinkJU &&
                                    asset.datalinkJU.length === 6 &&
                                    asset.datalinkTrackBlockStart &&
