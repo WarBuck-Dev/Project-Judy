@@ -238,6 +238,7 @@ function AICSimulator() {
         }
     ]);
     const [selectedAssetId, setSelectedAssetId] = useState(null);
+    const [selectedAssetTab, setSelectedAssetTab] = useState('general');
     const [isRunning, setIsRunning] = useState(false);
     const [scale, setScale] = useState(INITIAL_SCALE);
     const [mapCenter, setMapCenter] = useState({ lat: 26.5, lon: 54.0 });
@@ -5183,150 +5184,382 @@ function ControlPanel({
                 <div className="control-section">
                     <div className="section-header">SELECTED ASSET</div>
 
-                    <div className="input-group">
-                        <label className="input-label">Name</label>
-                        <input
-                            className="input-field"
-                            type="text"
-                            value={editValues.name || ''}
-                            onChange={(e) => handleUpdate('name', e.target.value)}
-                        />
-                    </div>
-
-                    <div className="input-group">
-                        <label className="input-label">Identity</label>
-                        <select
-                            className="input-field"
-                            value={selectedAsset.identity || 'unknown'}
-                            onChange={(e) => updateAsset(selectedAsset.id, { identity: e.target.value })}
-                            disabled={selectedAsset.type === 'ownship'}
-                        >
-                            {selectedAsset.type === 'ownship' && <option value="ownship">Ownship</option>}
-                            <option value="friendly">Friendly</option>
-                            <option value="hostile">Hostile</option>
-                            <option value="neutral">Neutral</option>
-                            <option value="unknown">Unknown</option>
-                            <option value="unknownUnevaluated">Unknown Unevaluated</option>
-                        </select>
-                    </div>
-
-                    <div className="input-group">
-                        <label className="input-label">Domain</label>
-                        <select
-                            className="input-field"
-                            value={selectedAsset.domain || 'air'}
-                            onChange={(e) => {
-                                const newDomain = e.target.value;
-                                const domainConfig = DOMAIN_TYPES[newDomain];
-                                const updates = {
-                                    domain: newDomain,
-                                    platform: null, // Clear platform when changing domain
-                                    altitude: domainConfig.hasAltitude ? selectedAsset.altitude : 0,
-                                    depth: domainConfig.hasDepth ? (selectedAsset.depth || 50) : null,
-                                    targetAltitude: domainConfig.hasAltitude ? selectedAsset.targetAltitude : null,
-                                    targetDepth: domainConfig.hasDepth ? selectedAsset.targetDepth : null
-                                };
-                                // Apply speed limit if changing to surface/subsurface
-                                if (selectedAsset.speed > domainConfig.maxSpeed) {
-                                    updates.speed = domainConfig.maxSpeed;
-                                    updates.targetSpeed = null;
-                                }
-                                updateAsset(selectedAsset.id, updates);
+                    {/* Tab Navigation */}
+                    <div style={{ display: 'flex', gap: '5px', marginBottom: '15px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
+                        <button
+                            onClick={() => setSelectedAssetTab('general')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedAssetTab === 'general' ? '#00FF00' : 'transparent',
+                                color: selectedAssetTab === 'general' ? '#000' : '#00FF00',
+                                border: 'none',
+                                borderBottom: selectedAssetTab === 'general' ? '2px solid #00FF00' : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
                             }}
-                            disabled={selectedAsset.type === 'ownship'}
                         >
-                            <option value="air">Air</option>
-                            <option value="surface">Surface</option>
-                            <option value="subSurface">Sub-Surface</option>
-                        </select>
+                            GENERAL
+                        </button>
+                        {selectedAsset.type !== 'ownship' && (
+                            <>
+                                <button
+                                    onClick={() => setSelectedAssetTab('iff')}
+                                    style={{
+                                        flex: 1,
+                                        padding: '8px',
+                                        background: selectedAssetTab === 'iff' ? '#00FF00' : 'transparent',
+                                        color: selectedAssetTab === 'iff' ? '#000' : '#00FF00',
+                                        border: 'none',
+                                        borderBottom: selectedAssetTab === 'iff' ? '2px solid #00FF00' : '2px solid transparent',
+                                        cursor: 'pointer',
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    IFF
+                                </button>
+                                <button
+                                    onClick={() => setSelectedAssetTab('datalink')}
+                                    style={{
+                                        flex: 1,
+                                        padding: '8px',
+                                        background: selectedAssetTab === 'datalink' ? '#00FF00' : 'transparent',
+                                        color: selectedAssetTab === 'datalink' ? '#000' : '#00FF00',
+                                        border: 'none',
+                                        borderBottom: selectedAssetTab === 'datalink' ? '2px solid #00FF00' : '2px solid transparent',
+                                        cursor: 'pointer',
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    DATALINK
+                                </button>
+                                {selectedAsset.platform && selectedAsset.platform.emitters && selectedAsset.platform.emitters.length > 0 && (
+                                    <button
+                                        onClick={() => setSelectedAssetTab('emitter')}
+                                        style={{
+                                            flex: 1,
+                                            padding: '8px',
+                                            background: selectedAssetTab === 'emitter' ? '#00FF00' : 'transparent',
+                                            color: selectedAssetTab === 'emitter' ? '#000' : '#00FF00',
+                                            border: 'none',
+                                            borderBottom: selectedAssetTab === 'emitter' ? '2px solid #00FF00' : '2px solid transparent',
+                                            cursor: 'pointer',
+                                            fontSize: '10px',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        EMITTER
+                                    </button>
+                                )}
+                            </>
+                        )}
                     </div>
 
-                    {selectedAsset.hasOwnProperty('platform') && selectedAsset.type !== 'ownship' && (
-                        <div className="input-group">
-                            <label className="input-label">Platform</label>
-                            <select
-                                className="input-field"
-                                value={selectedAsset.platform && selectedAsset.platform.name ? selectedAsset.platform.name : ''}
-                                onChange={(e) => {
-                                    const platformName = e.target.value;
-                                    const domain = selectedAsset.domain || 'air';
-                                    const domainPlatforms = (platforms && platforms[domain]) ? platforms[domain] : [];
-                                    const platform = platformName ? domainPlatforms.find(p => p.name === platformName) : null;
+                    {/* GENERAL TAB */}
+                    {selectedAssetTab === 'general' && (
+                        <>
+                            <div className="input-group">
+                                <label className="input-label">Name</label>
+                                <input
+                                    className="input-field"
+                                    type="text"
+                                    value={editValues.name || ''}
+                                    onChange={(e) => handleUpdate('name', e.target.value)}
+                                />
+                            </div>
 
-                                    const updates = { platform };
+                            <div className="input-group">
+                                <label className="input-label">Identity</label>
+                                <select
+                                    className="input-field"
+                                    value={selectedAsset.identity || 'unknown'}
+                                    onChange={(e) => updateAsset(selectedAsset.id, { identity: e.target.value })}
+                                    disabled={selectedAsset.type === 'ownship'}
+                                >
+                                    {selectedAsset.type === 'ownship' && <option value="ownship">Ownship</option>}
+                                    <option value="friendly">Friendly</option>
+                                    <option value="hostile">Hostile</option>
+                                    <option value="neutral">Neutral</option>
+                                    <option value="unknown">Unknown</option>
+                                    <option value="unknownUnevaluated">Unknown Unevaluated</option>
+                                </select>
+                            </div>
 
-                                    // Initialize emitter states for new platform
-                                    const emitterStates = {};
-                                    if (platform && platform.emitters && platform.emitters.length > 0) {
-                                        platform.emitters.forEach(emitter => {
-                                            emitterStates[emitter] = false; // default: off
-                                        });
-                                    }
-                                    updates.emitterStates = emitterStates;
-
-                                    // Apply platform-specific limits if platform is assigned
-                                    if (platform) {
-                                        const domainConfig = DOMAIN_TYPES[domain];
-                                        if (selectedAsset.speed > platform.maxSpeed) {
-                                            updates.speed = platform.maxSpeed;
+                            <div className="input-group">
+                                <label className="input-label">Domain</label>
+                                <select
+                                    className="input-field"
+                                    value={selectedAsset.domain || 'air'}
+                                    onChange={(e) => {
+                                        const newDomain = e.target.value;
+                                        const domainConfig = DOMAIN_TYPES[newDomain];
+                                        const updates = {
+                                            domain: newDomain,
+                                            platform: null,
+                                            altitude: domainConfig.hasAltitude ? selectedAsset.altitude : 0,
+                                            depth: domainConfig.hasDepth ? (selectedAsset.depth || 50) : null,
+                                            targetAltitude: domainConfig.hasAltitude ? selectedAsset.targetAltitude : null,
+                                            targetDepth: domainConfig.hasDepth ? selectedAsset.targetDepth : null
+                                        };
+                                        if (selectedAsset.speed > domainConfig.maxSpeed) {
+                                            updates.speed = domainConfig.maxSpeed;
                                             updates.targetSpeed = null;
                                         }
-                                        if (domainConfig.hasAltitude && selectedAsset.altitude > platform.maxAltitude) {
-                                            updates.altitude = platform.maxAltitude;
-                                            updates.targetAltitude = null;
-                                        }
-                                    }
+                                        updateAsset(selectedAsset.id, updates);
+                                    }}
+                                    disabled={selectedAsset.type === 'ownship'}
+                                >
+                                    <option value="air">Air</option>
+                                    <option value="surface">Surface</option>
+                                    <option value="subSurface">Sub-Surface</option>
+                                </select>
+                            </div>
 
-                                    updateAsset(selectedAsset.id, updates);
-                                }}
-                            >
-                                <option value="">None (Generic)</option>
-                                {(platforms && platforms[selectedAsset.domain || 'air'] ? platforms[selectedAsset.domain || 'air'] : []).map((platform, idx) => (
-                                    <option key={idx} value={platform.name}>{platform.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
+                            {selectedAsset.hasOwnProperty('platform') && selectedAsset.type !== 'ownship' && (
+                                <div className="input-group">
+                                    <label className="input-label">Platform</label>
+                                    <select
+                                        className="input-field"
+                                        value={selectedAsset.platform && selectedAsset.platform.name ? selectedAsset.platform.name : ''}
+                                        onChange={(e) => {
+                                            const platformName = e.target.value;
+                                            const domain = selectedAsset.domain || 'air';
+                                            const domainPlatforms = (platforms && platforms[domain]) ? platforms[domain] : [];
+                                            const platform = platformName ? domainPlatforms.find(p => p.name === platformName) : null;
 
-                    {/* Emitter Controls */}
-                    {selectedAsset.type !== 'ownship' && selectedAsset.platform && selectedAsset.platform.emitters && selectedAsset.platform.emitters.length > 0 && (
-                        <div className="input-group">
-                            <label className="input-label">Emitters</label>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {selectedAsset.platform.emitters.map((emitter, idx) => (
-                                    <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px', background: '#2a2a2a', borderRadius: '3px', gap: '10px' }}>
-                                        <span style={{ fontSize: '10px', opacity: 0.8, flex: 1 }}>{emitter}</span>
+                                            const updates = { platform };
+
+                                            const emitterStates = {};
+                                            if (platform && platform.emitters && platform.emitters.length > 0) {
+                                                platform.emitters.forEach(emitter => {
+                                                    emitterStates[emitter] = false;
+                                                });
+                                            }
+                                            updates.emitterStates = emitterStates;
+
+                                            if (platform) {
+                                                const domainConfig = DOMAIN_TYPES[domain];
+                                                if (selectedAsset.speed > platform.maxSpeed) {
+                                                    updates.speed = platform.maxSpeed;
+                                                    updates.targetSpeed = null;
+                                                }
+                                                if (domainConfig.hasAltitude && selectedAsset.altitude > platform.maxAltitude) {
+                                                    updates.altitude = platform.maxAltitude;
+                                                    updates.targetAltitude = null;
+                                                }
+                                            }
+
+                                            updateAsset(selectedAsset.id, updates);
+                                        }}
+                                    >
+                                        <option value="">None (Generic)</option>
+                                        {(platforms && platforms[selectedAsset.domain || 'air'] ? platforms[selectedAsset.domain || 'air'] : []).map((platform, idx) => (
+                                            <option key={idx} value={platform.name}>{platform.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            <div className="input-group">
+                                <label className="input-label">
+                                    Heading (degrees)
+                                    {selectedAsset && (
+                                        <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                            Current: {Math.round(selectedAsset.heading)}°
+                                            {selectedAsset.targetHeading !== null && ` → ${Math.round(selectedAsset.targetHeading)}°`}
+                                        </span>
+                                    )}
+                                </label>
+                                <div style={{ display: 'flex', gap: '5px' }}>
+                                    <input
+                                        className="input-field"
+                                        type="number"
+                                        min="0"
+                                        max="359"
+                                        value={editValues.heading || 0}
+                                        onChange={(e) => {
+                                            handleUpdate('heading', e.target.value);
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                applyTarget('heading');
+                                                e.target.style.color = '#00FF00';
+                                            }
+                                        }}
+                                        style={{ flex: 1, color: '#00FF00' }}
+                                    />
+                                    <button
+                                        className="control-btn"
+                                        onClick={() => applyTarget('heading')}
+                                        style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                    >
+                                        SET
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="input-group">
+                                <label className="input-label">
+                                    Speed (KTAS)
+                                    {selectedAsset && (
+                                        <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                            Current: {Math.round(selectedAsset.speed)} kts
+                                            {selectedAsset.targetSpeed !== null && ` → ${Math.round(selectedAsset.targetSpeed)} kts`}
+                                        </span>
+                                    )}
+                                </label>
+                                <div style={{ display: 'flex', gap: '5px' }}>
+                                    <input
+                                        className="input-field"
+                                        type="number"
+                                        min="0"
+                                        value={editValues.speed || 0}
+                                        onChange={(e) => {
+                                            handleUpdate('speed', e.target.value);
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                applyTarget('speed');
+                                                e.target.style.color = '#00FF00';
+                                            }
+                                        }}
+                                        style={{ flex: 1, color: '#00FF00' }}
+                                    />
+                                    <button
+                                        className="control-btn"
+                                        onClick={() => applyTarget('speed')}
+                                        style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                    >
+                                        SET
+                                    </button>
+                                </div>
+                            </div>
+
+                            {(selectedAsset.domain === 'air' || !selectedAsset.domain) && (
+                                <div className="input-group">
+                                    <label className="input-label">
+                                        Altitude (feet)
+                                        {selectedAsset && (
+                                            <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                                Current: FL{Math.round(selectedAsset.altitude / 100)}
+                                                {selectedAsset.targetAltitude !== null && ` → FL${Math.round(selectedAsset.targetAltitude / 100)}`}
+                                            </span>
+                                        )}
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '5px' }}>
+                                        <input
+                                            className="input-field"
+                                            type="number"
+                                            min="0"
+                                            value={editValues.altitude || 0}
+                                            onChange={(e) => {
+                                                handleUpdate('altitude', e.target.value);
+                                                e.target.style.color = '#00BFFF';
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    applyTarget('altitude');
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }}
+                                            style={{ flex: 1, color: '#00FF00' }}
+                                        />
                                         <button
                                             className="control-btn"
-                                            style={{
-                                                padding: '6px 8px',
-                                                fontSize: '9px',
-                                                minWidth: '45px',
-                                                width: '45px',
-                                                height: '28px',
-                                                background: selectedAsset.emitterStates && selectedAsset.emitterStates[emitter] ? '#00FF00' : '#FF0000',
-                                                color: '#000',
-                                                fontWeight: 'bold',
-                                                flexShrink: 0
-                                            }}
-                                            onClick={() => {
-                                                const newEmitterStates = {
-                                                    ...(selectedAsset.emitterStates || {}),
-                                                    [emitter]: !(selectedAsset.emitterStates && selectedAsset.emitterStates[emitter])
-                                                };
-                                                updateAsset(selectedAsset.id, { emitterStates: newEmitterStates });
-                                            }}
+                                            onClick={() => applyTarget('altitude')}
+                                            style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
                                         >
-                                            {selectedAsset.emitterStates && selectedAsset.emitterStates[emitter] ? 'ON' : 'OFF'}
+                                            SET
                                         </button>
                                     </div>
-                                ))}
+                                </div>
+                            )}
+
+                            <div className="input-group">
+                                <label className="input-label">Latitude</label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    value={editValues.lat || ''}
+                                    onChange={(e) => setEditValues(prev => ({ ...prev, lat: e.target.value.toUpperCase() }))}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            applyAssetCoordinate('lat');
+                                        }
+                                    }}
+                                    placeholder="N26 30.0"
+                                />
                             </div>
-                        </div>
+
+                            <div className="input-group">
+                                <label className="input-label">Longitude</label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    value={editValues.lon || ''}
+                                    onChange={(e) => setEditValues(prev => ({ ...prev, lon: e.target.value.toUpperCase() }))}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            applyAssetCoordinate('lon');
+                                        }
+                                    }}
+                                    placeholder="E054 00.0"
+                                />
+                            </div>
+
+                            {selectedAsset.domain === 'subSurface' && (
+                                <div className="input-group">
+                                    <label className="input-label">
+                                        Depth (feet)
+                                        {selectedAsset && (
+                                            <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                                Current: {Math.round(selectedAsset.depth || 0)}ft
+                                                {selectedAsset.targetDepth !== null && ` → ${Math.round(selectedAsset.targetDepth)}ft`}
+                                            </span>
+                                        )}
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '5px' }}>
+                                        <input
+                                            className="input-field"
+                                            type="number"
+                                            min="0"
+                                            value={editValues.depth || 0}
+                                            onChange={(e) => {
+                                                handleUpdate('depth', e.target.value);
+                                                e.target.style.color = '#00BFFF';
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    applyTarget('depth');
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }}
+                                            style={{ flex: 1, color: '#00FF00' }}
+                                        />
+                                        <button
+                                            className="control-btn"
+                                            onClick={() => applyTarget('depth')}
+                                            style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                        >
+                                            SET
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     )}
 
-                    {/* IFF Codes - Only for non-ownship assets */}
-                    {selectedAsset.type !== 'ownship' && (
+                    {/* IFF TAB */}
+                    {selectedAssetTab === 'iff' && (
                         <div className="input-group">
                             <label className="input-label">IFF Codes</label>
                             <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
@@ -5450,8 +5683,8 @@ function ControlPanel({
                         </div>
                     )}
 
-                    {/* Datalink Configuration - Not for ownship */}
-                    {selectedAsset.type !== 'ownship' && (
+                    {/* DATALINK TAB */}
+                    {selectedAssetTab === 'datalink' && (
                         <div className="input-group">
                             <label className="input-label">Datalink</label>
                             <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
@@ -5597,195 +5830,39 @@ function ControlPanel({
                         </div>
                     )}
 
-                    <div className="input-group">
-                        <label className="input-label">
-                            Heading (degrees)
-                            {selectedAsset && (
-                                <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
-                                    Current: {Math.round(selectedAsset.heading)}°
-                                    {selectedAsset.targetHeading !== null && ` → ${Math.round(selectedAsset.targetHeading)}°`}
-                                </span>
-                            )}
-                        </label>
-                        <div style={{ display: 'flex', gap: '5px' }}>
-                            <input
-                                className="input-field"
-                                type="number"
-                                min="0"
-                                max="359"
-                                value={editValues.heading || 0}
-                                onChange={(e) => {
-                                    handleUpdate('heading', e.target.value);
-                                    e.target.style.color = '#00BFFF';
-                                }}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        applyTarget('heading');
-                                        e.target.style.color = '#00FF00';
-                                    }
-                                }}
-                                style={{ flex: 1, color: '#00FF00' }}
-                            />
-                            <button
-                                className="control-btn"
-                                onClick={() => applyTarget('heading')}
-                                style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
-                            >
-                                SET
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="input-group">
-                        <label className="input-label">
-                            Speed (KTAS)
-                            {selectedAsset && (
-                                <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
-                                    Current: {Math.round(selectedAsset.speed)} kts
-                                    {selectedAsset.targetSpeed !== null && ` → ${Math.round(selectedAsset.targetSpeed)} kts`}
-                                </span>
-                            )}
-                        </label>
-                        <div style={{ display: 'flex', gap: '5px' }}>
-                            <input
-                                className="input-field"
-                                type="number"
-                                min="0"
-                                value={editValues.speed || 0}
-                                onChange={(e) => {
-                                    handleUpdate('speed', e.target.value);
-                                    e.target.style.color = '#00BFFF';
-                                }}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        applyTarget('speed');
-                                        e.target.style.color = '#00FF00';
-                                    }
-                                }}
-                                style={{ flex: 1, color: '#00FF00' }}
-                            />
-                            <button
-                                className="control-btn"
-                                onClick={() => applyTarget('speed')}
-                                style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
-                            >
-                                SET
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Altitude input - only for air domain */}
-                    {(selectedAsset.domain === 'air' || !selectedAsset.domain) && (
+                    {/* EMITTER TAB */}
+                    {selectedAssetTab === 'emitter' && (
                         <div className="input-group">
-                            <label className="input-label">
-                                Altitude (feet)
-                                {selectedAsset && (
-                                    <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
-                                        Current: FL{Math.round(selectedAsset.altitude / 100)}
-                                        {selectedAsset.targetAltitude !== null && ` → FL${Math.round(selectedAsset.targetAltitude / 100)}`}
-                                    </span>
-                                )}
-                            </label>
-                            <div style={{ display: 'flex', gap: '5px' }}>
-                                <input
-                                    className="input-field"
-                                    type="number"
-                                    min="0"
-                                    value={editValues.altitude || 0}
-                                    onChange={(e) => {
-                                        handleUpdate('altitude', e.target.value);
-                                        e.target.style.color = '#00BFFF';
-                                    }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            applyTarget('altitude');
-                                            e.target.style.color = '#00FF00';
-                                        }
-                                    }}
-                                    style={{ flex: 1, color: '#00FF00' }}
-                                />
-                                <button
-                                    className="control-btn"
-                                    onClick={() => applyTarget('altitude')}
-                                    style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
-                                >
-                                    SET
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Latitude input */}
-                    <div className="input-group">
-                        <label className="input-label">Latitude</label>
-                        <input
-                            type="text"
-                            className="input-field"
-                            value={editValues.lat || ''}
-                            onChange={(e) => setEditValues(prev => ({ ...prev, lat: e.target.value.toUpperCase() }))}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    applyAssetCoordinate('lat');
-                                }
-                            }}
-                            placeholder="N26 30.0"
-                        />
-                    </div>
-
-                    {/* Longitude input */}
-                    <div className="input-group">
-                        <label className="input-label">Longitude</label>
-                        <input
-                            type="text"
-                            className="input-field"
-                            value={editValues.lon || ''}
-                            onChange={(e) => setEditValues(prev => ({ ...prev, lon: e.target.value.toUpperCase() }))}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    applyAssetCoordinate('lon');
-                                }
-                            }}
-                            placeholder="E054 00.0"
-                        />
-                    </div>
-
-                    {/* Depth input - only for sub-surface domain */}
-                    {selectedAsset.domain === 'subSurface' && (
-                        <div className="input-group">
-                            <label className="input-label">
-                                Depth (feet)
-                                {selectedAsset && (
-                                    <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
-                                        Current: {Math.round(selectedAsset.depth || 0)}ft
-                                        {selectedAsset.targetDepth !== null && ` → ${Math.round(selectedAsset.targetDepth)}ft`}
-                                    </span>
-                                )}
-                            </label>
-                            <div style={{ display: 'flex', gap: '5px' }}>
-                                <input
-                                    className="input-field"
-                                    type="number"
-                                    min="0"
-                                    value={editValues.depth || 0}
-                                    onChange={(e) => {
-                                        handleUpdate('depth', e.target.value);
-                                        e.target.style.color = '#00BFFF';
-                                    }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            applyTarget('depth');
-                                            e.target.style.color = '#00FF00';
-                                        }
-                                    }}
-                                    style={{ flex: 1, color: '#00FF00' }}
-                                />
-                                <button
-                                    className="control-btn"
-                                    onClick={() => applyTarget('depth')}
-                                    style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
-                                >
-                                    SET
-                                </button>
+                            <label className="input-label">Emitters</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {selectedAsset.platform.emitters.map((emitter, idx) => (
+                                    <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px', background: '#2a2a2a', borderRadius: '3px', gap: '10px' }}>
+                                        <span style={{ fontSize: '10px', opacity: 0.8, flex: 1 }}>{emitter}</span>
+                                        <button
+                                            className="control-btn"
+                                            style={{
+                                                padding: '6px 8px',
+                                                fontSize: '9px',
+                                                minWidth: '45px',
+                                                width: '45px',
+                                                height: '28px',
+                                                background: selectedAsset.emitterStates && selectedAsset.emitterStates[emitter] ? '#00FF00' : '#FF0000',
+                                                color: '#000',
+                                                fontWeight: 'bold',
+                                                flexShrink: 0
+                                            }}
+                                            onClick={() => {
+                                                const newEmitterStates = {
+                                                    ...(selectedAsset.emitterStates || {}),
+                                                    [emitter]: !(selectedAsset.emitterStates && selectedAsset.emitterStates[emitter])
+                                                };
+                                                updateAsset(selectedAsset.id, { emitterStates: newEmitterStates });
+                                            }}
+                                        >
+                                            {selectedAsset.emitterStates && selectedAsset.emitterStates[emitter] ? 'ON' : 'OFF'}
+                                        </button>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     )}
