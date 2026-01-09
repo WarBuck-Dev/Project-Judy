@@ -4959,6 +4959,8 @@ function ControlPanel({
                                     if (!/^\d{0,3}$/.test(val)) {
                                         e.target.value = e.target.value.slice(0, -1);
                                     }
+                                    // Blue text for uncommitted value
+                                    e.target.style.color = '#00BFFF';
                                 }}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
@@ -4966,14 +4968,16 @@ function ControlPanel({
                                         const num = parseInt(val);
                                         if (val !== '' && num >= 1 && num <= 127) {
                                             setDatalinkNet(val);
+                                            e.target.style.color = '#00FF00';
                                         } else {
                                             e.target.value = '';
                                             setDatalinkNet('');
+                                            e.target.style.color = '#00FF00';
                                         }
                                     }
                                 }}
                                 placeholder="1 (press Enter)"
-                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
                             />
                         </div>
 
@@ -4991,6 +4995,8 @@ function ControlPanel({
                                     if (!/^\d{0,5}$/.test(val)) {
                                         e.target.value = e.target.value.slice(0, -1);
                                     }
+                                    // Blue text for uncommitted value
+                                    e.target.style.color = '#00BFFF';
                                 }}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
@@ -4998,15 +5004,17 @@ function ControlPanel({
                                         if (/^\d{1,5}$/.test(val)) {
                                             // Pad to 5 digits
                                             setDatalinkJU(val.padStart(5, '0'));
+                                            e.target.style.color = '#00FF00';
                                         } else {
                                             e.target.value = '';
                                             setDatalinkJU('');
+                                            e.target.style.color = '#00FF00';
                                         }
                                     }
                                 }}
                                 placeholder="00000 (press Enter)"
                                 maxLength="5"
-                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
                             />
                         </div>
 
@@ -5024,6 +5032,8 @@ function ControlPanel({
                                     if (!/^\d{0,5}$/.test(val)) {
                                         e.target.value = e.target.value.slice(0, -1);
                                     }
+                                    // Blue text for uncommitted value
+                                    e.target.style.color = '#00BFFF';
                                 }}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
@@ -5031,15 +5041,17 @@ function ControlPanel({
                                         if (/^\d{1,5}$/.test(val)) {
                                             setDatalinkTrackBlockStart(val);
                                             setNextDatalinkTrackNumber(parseInt(val));
+                                            e.target.style.color = '#00FF00';
                                         } else {
                                             e.target.value = '';
                                             setDatalinkTrackBlockStart('');
+                                            e.target.style.color = '#00FF00';
                                         }
                                     }
                                 }}
                                 placeholder="60000 (press Enter)"
                                 maxLength="5"
-                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
                             />
                         </div>
 
@@ -5057,6 +5069,8 @@ function ControlPanel({
                                     if (!/^\d{0,5}$/.test(val)) {
                                         e.target.value = e.target.value.slice(0, -1);
                                     }
+                                    // Blue text for uncommitted value
+                                    e.target.style.color = '#00BFFF';
                                 }}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
@@ -5065,15 +5079,17 @@ function ControlPanel({
                                         const startNum = parseInt(datalinkTrackBlockStart);
                                         if (/^\d{1,5}$/.test(val) && num > startNum) {
                                             setDatalinkTrackBlockEnd(val);
+                                            e.target.style.color = '#00FF00';
                                         } else {
                                             e.target.value = '';
                                             setDatalinkTrackBlockEnd('');
+                                            e.target.style.color = '#00FF00';
                                         }
                                     }
                                 }}
                                 placeholder="60200 (press Enter)"
                                 maxLength="5"
-                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
                             />
                         </div>
                     </div>
@@ -5382,20 +5398,25 @@ function ControlPanel({
                                         className="input-field"
                                         type="text"
                                         defaultValue={selectedAsset.datalinkNet || ''}
+                                        onChange={(e) => {
+                                            e.target.style.color = '#00BFFF';
+                                        }}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
                                                 const val = e.target.value;
                                                 const num = parseInt(val);
                                                 if (val !== '' && num >= 1 && num <= 127) {
                                                     updateAsset(selectedAsset.id, { datalinkNet: val });
+                                                    e.target.style.color = '#00FF00';
                                                 } else {
                                                     e.target.value = '';
                                                     updateAsset(selectedAsset.id, { datalinkNet: '' });
+                                                    e.target.style.color = '#00FF00';
                                                 }
                                             }
                                         }}
                                         placeholder="1 (press Enter)"
-                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
                                     />
                                 </div>
 
@@ -5408,20 +5429,25 @@ function ControlPanel({
                                         className="input-field"
                                         type="text"
                                         defaultValue={selectedAsset.datalinkJU || ''}
+                                        onChange={(e) => {
+                                            e.target.style.color = '#00BFFF';
+                                        }}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
                                                 const val = e.target.value;
                                                 if (/^\d{1,5}$/.test(val)) {
                                                     updateAsset(selectedAsset.id, { datalinkJU: val.padStart(5, '0') });
+                                                    e.target.style.color = '#00FF00';
                                                 } else {
                                                     e.target.value = '';
                                                     updateAsset(selectedAsset.id, { datalinkJU: '' });
+                                                    e.target.style.color = '#00FF00';
                                                 }
                                             }
                                         }}
                                         placeholder="00000 (press Enter)"
                                         maxLength="5"
-                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
                                     />
                                 </div>
 
@@ -5434,20 +5460,25 @@ function ControlPanel({
                                         className="input-field"
                                         type="text"
                                         defaultValue={selectedAsset.datalinkTrackBlockStart || ''}
+                                        onChange={(e) => {
+                                            e.target.style.color = '#00BFFF';
+                                        }}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
                                                 const val = e.target.value;
                                                 if (/^\d{1,5}$/.test(val)) {
                                                     updateAsset(selectedAsset.id, { datalinkTrackBlockStart: val });
+                                                    e.target.style.color = '#00FF00';
                                                 } else {
                                                     e.target.value = '';
                                                     updateAsset(selectedAsset.id, { datalinkTrackBlockStart: '' });
+                                                    e.target.style.color = '#00FF00';
                                                 }
                                             }
                                         }}
                                         placeholder="60000 (press Enter)"
                                         maxLength="5"
-                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
                                     />
                                 </div>
 
@@ -5460,6 +5491,9 @@ function ControlPanel({
                                         className="input-field"
                                         type="text"
                                         defaultValue={selectedAsset.datalinkTrackBlockEnd || ''}
+                                        onChange={(e) => {
+                                            e.target.style.color = '#00BFFF';
+                                        }}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
                                                 const val = e.target.value;
@@ -5467,15 +5501,17 @@ function ControlPanel({
                                                 const startNum = parseInt(selectedAsset.datalinkTrackBlockStart);
                                                 if (/^\d{1,5}$/.test(val) && num > startNum) {
                                                     updateAsset(selectedAsset.id, { datalinkTrackBlockEnd: val });
+                                                    e.target.style.color = '#00FF00';
                                                 } else {
                                                     e.target.value = '';
                                                     updateAsset(selectedAsset.id, { datalinkTrackBlockEnd: '' });
+                                                    e.target.style.color = '#00FF00';
                                                 }
                                             }
                                         }}
                                         placeholder="60200 (press Enter)"
                                         maxLength="5"
-                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
                                     />
                                 </div>
 
@@ -5512,9 +5548,17 @@ function ControlPanel({
                                 min="0"
                                 max="359"
                                 value={editValues.heading || 0}
-                                onChange={(e) => handleUpdate('heading', e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && applyTarget('heading')}
-                                style={{ flex: 1 }}
+                                onChange={(e) => {
+                                    handleUpdate('heading', e.target.value);
+                                    e.target.style.color = '#00BFFF';
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        applyTarget('heading');
+                                        e.target.style.color = '#00FF00';
+                                    }
+                                }}
+                                style={{ flex: 1, color: '#00FF00' }}
                             />
                             <button
                                 className="control-btn"
@@ -5542,9 +5586,17 @@ function ControlPanel({
                                 type="number"
                                 min="0"
                                 value={editValues.speed || 0}
-                                onChange={(e) => handleUpdate('speed', e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && applyTarget('speed')}
-                                style={{ flex: 1 }}
+                                onChange={(e) => {
+                                    handleUpdate('speed', e.target.value);
+                                    e.target.style.color = '#00BFFF';
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        applyTarget('speed');
+                                        e.target.style.color = '#00FF00';
+                                    }
+                                }}
+                                style={{ flex: 1, color: '#00FF00' }}
                             />
                             <button
                                 className="control-btn"
@@ -5574,9 +5626,17 @@ function ControlPanel({
                                     type="number"
                                     min="0"
                                     value={editValues.altitude || 0}
-                                    onChange={(e) => handleUpdate('altitude', e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && applyTarget('altitude')}
-                                    style={{ flex: 1 }}
+                                    onChange={(e) => {
+                                        handleUpdate('altitude', e.target.value);
+                                        e.target.style.color = '#00BFFF';
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            applyTarget('altitude');
+                                            e.target.style.color = '#00FF00';
+                                        }
+                                    }}
+                                    style={{ flex: 1, color: '#00FF00' }}
                                 />
                                 <button
                                     className="control-btn"
@@ -5641,9 +5701,17 @@ function ControlPanel({
                                     type="number"
                                     min="0"
                                     value={editValues.depth || 0}
-                                    onChange={(e) => handleUpdate('depth', e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && applyTarget('depth')}
-                                    style={{ flex: 1 }}
+                                    onChange={(e) => {
+                                        handleUpdate('depth', e.target.value);
+                                        e.target.style.color = '#00BFFF';
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            applyTarget('depth');
+                                            e.target.style.color = '#00FF00';
+                                        }
+                                    }}
+                                    style={{ flex: 1, color: '#00FF00' }}
                                 />
                                 <button
                                     className="control-btn"
