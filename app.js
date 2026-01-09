@@ -3682,11 +3682,17 @@ function ControlPanel({
         }
     }, [selectedAsset?.id]); // Only depend on ID, not the whole asset object
 
-    // Update geo-point edit values when geo-point is first selected or when switching geo-points
+    // Update geo-point edit values when geo-point is first selected, when switching geo-points, or when position changes
     useEffect(() => {
         const selectedGeoPoint = geoPoints.find(gp => gp.id === selectedGeoPointId);
-        if (selectedGeoPoint && selectedGeoPoint.id !== selectedGeoPointIdRef.current) {
-            selectedGeoPointIdRef.current = selectedGeoPoint.id;
+        if (selectedGeoPoint) {
+            // Update if switching to a different geo-point OR if the same geo-point's position changed
+            const isDifferentGeoPoint = selectedGeoPoint.id !== selectedGeoPointIdRef.current;
+            if (isDifferentGeoPoint) {
+                selectedGeoPointIdRef.current = selectedGeoPoint.id;
+            }
+
+            // Always update the display values to reflect current position
             setGeoPointEditValues({
                 lat: decimalToDMM(selectedGeoPoint.lat, true),
                 lon: decimalToDMM(selectedGeoPoint.lon, false)
