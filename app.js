@@ -5491,13 +5491,15 @@ function ControlPanel({
                     )}
 
                     <div className="playback-controls" style={{ marginTop: '10px' }}>
-                        <button className="control-btn" onClick={() => reportTrack(selectedAsset.id)}>
-                            REPORT TRACK
-                        </button>
                         {selectedAsset.type !== 'ownship' && (
-                            <button className="control-btn danger" onClick={() => deleteAsset(selectedAsset.id)}>
-                                DELETE
-                            </button>
+                            <>
+                                <button className="control-btn" onClick={() => reportTrack(selectedAsset.id)}>
+                                    REPORT TRACK
+                                </button>
+                                <button className="control-btn danger" onClick={() => deleteAsset(selectedAsset.id)}>
+                                    DELETE
+                                </button>
+                            </>
                         )}
                     </div>
                 </div>
