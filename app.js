@@ -626,12 +626,12 @@ function AICSimulator() {
                 const assetNet = String(asset.datalinkNet);
 
                 // Check if asset is participating in datalink on same NET
-                const assetInDatalink = assetNet === userNet &&
-                                       assetNet !== '' && // Must have a NET set
-                                       asset.datalinkJU &&
-                                       asset.datalinkJU.length === 6 &&
-                                       asset.datalinkTrackBlockStart &&
-                                       asset.datalinkTrackBlockEnd;
+                const assetInDatalink = (assetNet === userNet &&
+                                        assetNet !== '' && // Must have a NET set
+                                        !!asset.datalinkJU &&
+                                        asset.datalinkJU.length === 6 &&
+                                        !!asset.datalinkTrackBlockStart &&
+                                        !!asset.datalinkTrackBlockEnd);
 
                 if (assetInDatalink) {
                     // Mark asset as active in datalink and set identity to friendly
@@ -658,42 +658,66 @@ function AICSimulator() {
         });
     }, [datalinkEnabled, datalinkNet]);
 
-    // Check asset datalink configuration changes and update accordingly
+    // Check asset datalink configuration changes and update identity accordingly
+    // Track previous asset datalink state to detect changes
+    const prevAssetDatalinkRef = useRef(new Map());
+
     useEffect(() => {
         if (!datalinkEnabled || !datalinkNet) return;
 
-        // This runs whenever assets change (including their datalink fields)
         const userNet = String(datalinkNet);
+        const currentAssetDatalink = new Map();
 
         setAssets(prevAssets => {
             let hasChanges = false;
             const updatedAssets = prevAssets.map(asset => {
                 if (asset.type === 'ownship') return asset;
 
-                const assetNet = String(asset.datalinkNet);
-                const assetInDatalink = assetNet === userNet &&
-                                       assetNet !== '' &&
-                                       asset.datalinkJU &&
-                                       asset.datalinkJU.length === 6 &&
-                                       asset.datalinkTrackBlockStart &&
-                                       asset.datalinkTrackBlockEnd;
+                // Ensure old assets have identity field
+                const currentIdentity = asset.identity || 'unknown';
 
-                // Debug logging
-                if (asset.name && asset.datalinkNet) {
+                // Track current state
+                const stateKey = `${asset.id}`;
+                const currentState = {
+                    net: asset.datalinkNet,
+                    ju: asset.datalinkJU,
+                    start: asset.datalinkTrackBlockStart,
+                    end: asset.datalinkTrackBlockEnd
+                };
+                currentAssetDatalink.set(stateKey, currentState);
+
+                const assetNet = String(asset.datalinkNet);
+                const assetInDatalink = (assetNet === userNet &&
+                                        assetNet !== '' &&
+                                        !!asset.datalinkJU &&
+                                        asset.datalinkJU.length === 6 &&
+                                        !!asset.datalinkTrackBlockStart &&
+                                        !!asset.datalinkTrackBlockEnd);
+
+                // Only log if state changed
+                const prevState = prevAssetDatalinkRef.current.get(stateKey);
+                const stateChanged = !prevState ||
+                    prevState.net !== currentState.net ||
+                    prevState.ju !== currentState.ju ||
+                    prevState.start !== currentState.start ||
+                    prevState.end !== currentState.end;
+
+                if (asset.name && asset.datalinkNet && stateChanged) {
                     console.log('Datalink Check:', {
                         name: asset.name,
                         userNet: userNet,
                         assetNet: assetNet,
                         assetInDatalink: assetInDatalink,
-                        currentIdentity: asset.identity,
+                        currentIdentity: currentIdentity,
                         datalinkJU: asset.datalinkJU,
+                        datalinkJULength: asset.datalinkJU?.length,
                         trackBlockStart: asset.datalinkTrackBlockStart,
                         trackBlockEnd: asset.datalinkTrackBlockEnd
                     });
                 }
 
-                if (assetInDatalink && (asset.identity !== 'friendly' || !asset.datalinkActive || asset.trackNumber !== asset.datalinkJU)) {
-                    console.log('Setting asset to friendly:', asset.name);
+                if (assetInDatalink && (currentIdentity !== 'friendly' || !asset.datalinkActive || asset.trackNumber !== asset.datalinkJU)) {
+                    console.log('✓ Setting asset to friendly:', asset.name);
                     hasChanges = true;
                     return {
                         ...asset,
@@ -707,12 +731,26 @@ function AICSimulator() {
                         ...asset,
                         datalinkActive: false
                     };
+                } else if (asset.identity === undefined) {
+                    // Fix old assets missing identity field
+                    hasChanges = true;
+                    return {
+                        ...asset,
+                        identity: 'unknown'
+                    };
                 }
 
                 return asset;
             });
 
-            return hasChanges ? updatedAssets : prevAssets;
+            // Update ref for next comparison
+            prevAssetDatalinkRef.current = currentAssetDatalink;
+
+            if (hasChanges) {
+                console.log('Updating assets with new datalink identities');
+                return updatedAssets;
+            }
+            return prevAssets;
         });
     }, [assets, datalinkEnabled, datalinkNet]);
 
@@ -856,6 +894,7 @@ function AICSimulator() {
             id: nextAssetId,
             name: assetData.name || `Asset ${nextAssetId}`,
             type: assetData.type || 'unknown',
+            identity: assetData.identity || 'unknown', // friendly, hostile, neutral, unknown, unknownUnevaluated
             domain: domain,
             platform: platform,
             lat: assetData.lat || bullseyePosition.lat,
