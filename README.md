@@ -546,11 +546,20 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - SYSTEMS section auto-hides when geo-point or shape selected for cleaner UI
 
 ### Version 2.0 (January 2026)
+
+#### Core Systems
 - **Ownship Asset**: Dedicated ownship aircraft (gray circle with crosshair symbol)
   - Spawns 50 NM south of bullseye on initial load
   - Maximum speed: 220 knots, Maximum altitude: 27,000 feet
   - Cannot be deleted or created by user (always present)
   - Full waypoint and control support like other assets
+- **MIL-STD-2525 Symbology**: Aircraft symbols now use military standard (top-half only)
+- **Bullseye Customization**: Click bullseye to set custom name (e.g., "VEGAS")
+- **Mission Time Clock**: HH:MM:SS display shows elapsed mission time
+- **Improved Asset Dragging**: Drag selected assets to reposition on map
+- **Selection Indicators**: Visual feedback when bullseye or assets are selected
+
+#### Sensor Systems
 - **Radar Sweep System**: Realistic rotating radar sweep from ownship
   - 360° rotation every 10 seconds
   - 320 NM maximum range
@@ -588,6 +597,8 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - Click manual line to select and open ESM control panel
   - ESM list displays both auto-detected emitters and manual lines
   - Bearing lines dynamically recalculate as ownship moves
+
+#### Communications & Identification Systems
 - **IFF (Identify Friend or Foe) System**: Interrogation and identification system
   - ON/OFF toggle for IFF system (OFF by default)
   - Ownship IFF code configuration (MODE I, II, III, IV)
@@ -615,11 +626,6 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - Track numbers displayed on map (TN#XXXXX)
   - Report track function to add assets to datalink
   - Access via DATALINK button in SYSTEMS section
-- **Bullseye Customization**: Click bullseye to set custom name (e.g., "VEGAS")
-- **Mission Time Clock**: HH:MM:SS display shows elapsed mission time
-- **MIL-STD-2525 Symbology**: Aircraft symbols now use military standard (top-half only)
-- **Improved Asset Dragging**: Drag selected assets to reposition on map
-- **Selection Indicators**: Visual feedback when bullseye or assets are selected
 
 ### UI Improvements
 - SYSTEMS section added under PLAYBACK controls
