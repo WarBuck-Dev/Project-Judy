@@ -288,6 +288,13 @@ function AICSimulator() {
     const [iffOwnshipModeIV, setIffOwnshipModeIV] = useState(false); // Ownship MODE IV ON/OFF
     const [iffReturns, setIffReturns] = useState([]); // IFF returns similar to radar returns
     const [iffReturnIntensity, setIffReturnIntensity] = useState(10); // IFF return intensity (1-100%) - default 10%
+    const [datalinkEnabled, setDatalinkEnabled] = useState(false); // Datalink ON/OFF state (OFF by default)
+    const [datalinkControlsSelected, setDatalinkControlsSelected] = useState(false); // Datalink controls page selected
+    const [datalinkNet, setDatalinkNet] = useState(''); // User's NET (1-127)
+    const [datalinkJU, setDatalinkJU] = useState(''); // User's 6 digit JU code
+    const [datalinkTrackBlockStart, setDatalinkTrackBlockStart] = useState(''); // Track block start (e.g., 6000)
+    const [datalinkTrackBlockEnd, setDatalinkTrackBlockEnd] = useState(''); // Track block end (e.g., 6200)
+    const [nextDatalinkTrackNumber, setNextDatalinkTrackNumber] = useState(null); // Next track number to assign
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
@@ -602,6 +609,45 @@ function AICSimulator() {
     }, [missionTime, isRunning, radarReturnDecay]);
 
     // ========================================================================
+    // DATALINK SYSTEM - Automatic friendly identity for same NET assets
+    // ========================================================================
+
+    useEffect(() => {
+        if (!datalinkEnabled || !datalinkNet) return;
+
+        // Check all assets and update identity based on datalink participation
+        assets.forEach(asset => {
+            // Skip ownship
+            if (asset.type === 'ownship') return;
+
+            // Check if asset is participating in datalink on same NET
+            const assetInDatalink = asset.datalinkNet === datalinkNet &&
+                                   asset.datalinkJU &&
+                                   asset.datalinkJU.length === 6 &&
+                                   asset.datalinkTrackBlockStart &&
+                                   asset.datalinkTrackBlockEnd;
+
+            if (assetInDatalink) {
+                // Mark asset as active in datalink and set identity to friendly
+                if (asset.identity !== 'friendly' || !asset.datalinkActive) {
+                    updateAsset(asset.id, {
+                        identity: 'friendly',
+                        datalinkActive: true,
+                        trackNumber: asset.datalinkJU // Use JU as track number
+                    });
+                }
+            } else {
+                // Asset not in datalink on same NET, mark as inactive
+                if (asset.datalinkActive) {
+                    updateAsset(asset.id, {
+                        datalinkActive: false
+                    });
+                }
+            }
+        });
+    }, [datalinkEnabled, datalinkNet, assets, updateAsset]);
+
+    // ========================================================================
     // ESM SYSTEM - Detect active emitters
     // ========================================================================
 
@@ -759,7 +805,13 @@ function AICSimulator() {
             iffModeI: assetData.iffModeI || '',
             iffModeII: assetData.iffModeII || '',
             iffModeIII: assetData.iffModeIII || '',
-            iffSquawking: assetData.iffSquawking !== undefined ? assetData.iffSquawking : false
+            iffSquawking: assetData.iffSquawking !== undefined ? assetData.iffSquawking : false,
+            datalinkNet: assetData.datalinkNet || '',
+            datalinkJU: assetData.datalinkJU || '',
+            datalinkTrackBlockStart: assetData.datalinkTrackBlockStart || '',
+            datalinkTrackBlockEnd: assetData.datalinkTrackBlockEnd || '',
+            datalinkActive: false, // Whether asset is active in datalink
+            datalinkAssignedTrack: null // Track number assigned when reported to datalink
         };
 
         setAssets(prev => [...prev, newAsset]);
@@ -825,12 +877,57 @@ function AICSimulator() {
 
     const reportTrack = useCallback((assetId) => {
         const asset = assets.find(a => a.id === assetId);
-        // Only assign a track number if the asset doesn't already have one
-        if (asset && asset.trackNumber === null) {
-            updateAsset(assetId, { trackNumber: nextTrackNumber });
-            setNextTrackNumber(prev => prev + 1);
+        if (!asset) return;
+
+        // Don't allow reporting ownship
+        if (asset.type === 'ownship') {
+            alert('Cannot report ownship track');
+            return;
         }
-    }, [nextTrackNumber, updateAsset, assets]);
+
+        // Check if datalink is active
+        const datalinkActive = datalinkEnabled &&
+                               datalinkNet &&
+                               datalinkJU.length === 6 &&
+                               datalinkTrackBlockStart &&
+                               datalinkTrackBlockEnd;
+
+        if (!datalinkActive) {
+            alert('Datalink must be powered on with NET, JU, and Track Block configured');
+            return;
+        }
+
+        // Check if asset is already in datalink with same NET
+        if (asset.datalinkNet === datalinkNet &&
+            asset.datalinkJU &&
+            asset.datalinkJU.length === 6 &&
+            asset.datalinkTrackBlockStart &&
+            asset.datalinkTrackBlockEnd) {
+            alert('Asset is already participating in datalink on same NET. Friendly assets use their JU as track number.');
+            return;
+        }
+
+        // Check if we have tracks available in the block
+        if (nextDatalinkTrackNumber === null) {
+            alert('Track block start must be configured');
+            return;
+        }
+
+        const trackBlockEnd = parseInt(datalinkTrackBlockEnd);
+        if (nextDatalinkTrackNumber > trackBlockEnd) {
+            alert('Track block exhausted. No more tracks available.');
+            return;
+        }
+
+        // Assign track number from datalink track block
+        updateAsset(assetId, {
+            trackNumber: nextDatalinkTrackNumber,
+            datalinkAssignedTrack: nextDatalinkTrackNumber
+        });
+
+        // Increment to next track number
+        setNextDatalinkTrackNumber(prev => prev + 1);
+    }, [assets, updateAsset, datalinkEnabled, datalinkNet, datalinkJU, datalinkTrackBlockStart, datalinkTrackBlockEnd, nextDatalinkTrackNumber]);
 
     // ========================================================================
     // WAYPOINT MANAGEMENT
@@ -3533,6 +3630,20 @@ function AICSimulator() {
                 setManualBearingLines={setManualBearingLines}
                 nextManualLineSerialNumber={nextManualLineSerialNumber}
                 setNextManualLineSerialNumber={setNextManualLineSerialNumber}
+                datalinkControlsSelected={datalinkControlsSelected}
+                setDatalinkControlsSelected={setDatalinkControlsSelected}
+                datalinkEnabled={datalinkEnabled}
+                setDatalinkEnabled={setDatalinkEnabled}
+                datalinkNet={datalinkNet}
+                setDatalinkNet={setDatalinkNet}
+                datalinkJU={datalinkJU}
+                setDatalinkJU={setDatalinkJU}
+                datalinkTrackBlockStart={datalinkTrackBlockStart}
+                setDatalinkTrackBlockStart={setDatalinkTrackBlockStart}
+                datalinkTrackBlockEnd={datalinkTrackBlockEnd}
+                setDatalinkTrackBlockEnd={setDatalinkTrackBlockEnd}
+                nextDatalinkTrackNumber={nextDatalinkTrackNumber}
+                setNextDatalinkTrackNumber={setNextDatalinkTrackNumber}
             />
 
             {/* Context Menu */}
@@ -3660,7 +3771,14 @@ function ControlPanel({
     geoPoints, selectedGeoPointId, updateGeoPoint, deleteGeoPoint,
     shapes, selectedShapeId, updateShape, deleteShape,
     platforms, missionTime,
-    manualBearingLines, setManualBearingLines, nextManualLineSerialNumber, setNextManualLineSerialNumber
+    manualBearingLines, setManualBearingLines, nextManualLineSerialNumber, setNextManualLineSerialNumber,
+    datalinkControlsSelected, setDatalinkControlsSelected,
+    datalinkEnabled, setDatalinkEnabled,
+    datalinkNet, setDatalinkNet,
+    datalinkJU, setDatalinkJU,
+    datalinkTrackBlockStart, setDatalinkTrackBlockStart,
+    datalinkTrackBlockEnd, setDatalinkTrackBlockEnd,
+    nextDatalinkTrackNumber, setNextDatalinkTrackNumber
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
@@ -3872,6 +3990,12 @@ function ControlPanel({
                         onClick={() => setIffControlsSelected(true)}
                     >
                         IFF
+                    </button>
+                    <button
+                        className="control-btn full-width"
+                        onClick={() => setDatalinkControlsSelected(true)}
+                    >
+                        DATALINK
                     </button>
                 </div>
             )}
@@ -4662,8 +4786,159 @@ function ControlPanel({
                 </div>
             )}
 
-            {/* Asset List - Only show when no asset is selected, bullseye is not selected, geo-point is not selected, and radar/ESM/IFF controls are not selected */}
-            {!selectedAsset && !bullseyeSelected && !selectedGeoPointId && !selectedShapeId && !radarControlsSelected && !esmControlsSelected && !iffControlsSelected && (
+            {/* Datalink Controls Panel */}
+            {datalinkControlsSelected && (
+                <div className="control-section">
+                    <div className="section-header" style={{ position: 'relative' }}>
+                        DATALINK
+                        {/* Close Button */}
+                        <button
+                            onClick={() => setDatalinkControlsSelected(false)}
+                            style={{
+                                position: 'absolute',
+                                right: '0',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'none',
+                                border: 'none',
+                                color: '#00FF00',
+                                fontSize: '18px',
+                                cursor: 'pointer',
+                                padding: '0',
+                                width: '20px',
+                                height: '20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: '0.7'
+                            }}
+                            onMouseEnter={(e) => e.target.style.opacity = '1'}
+                            onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                        >
+                            ✕
+                        </button>
+                    </div>
+
+                    {/* Datalink ON/OFF Button */}
+                    <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                        <button
+                            className={`control-btn ${datalinkEnabled ? 'primary' : 'danger'}`}
+                            onClick={() => setDatalinkEnabled(!datalinkEnabled)}
+                            style={{ width: '100%' }}
+                        >
+                            {datalinkEnabled ? 'ON' : 'OFF'}
+                        </button>
+                    </div>
+
+                    {/* Datalink Configuration */}
+                    <div style={{ marginBottom: '15px', padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '10px', opacity: 0.7 }}>
+                            CONFIGURATION
+                        </div>
+
+                        {/* NET */}
+                        <div className="input-group" style={{ marginBottom: '10px' }}>
+                            <label className="input-label">NET (1-127)</label>
+                            <input
+                                className="input-field"
+                                type="number"
+                                min="1"
+                                max="127"
+                                value={datalinkNet}
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    if (val >= 1 && val <= 127 || e.target.value === '') {
+                                        setDatalinkNet(e.target.value);
+                                    }
+                                }}
+                                placeholder="1"
+                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                        </div>
+
+                        {/* JU Code */}
+                        <div className="input-group" style={{ marginBottom: '10px' }}>
+                            <label className="input-label">JU (6 digits)</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                value={datalinkJU}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    // Only allow digits and max 6 chars
+                                    if (/^\d{0,6}$/.test(val)) {
+                                        setDatalinkJU(val);
+                                    }
+                                }}
+                                onBlur={() => {
+                                    // Add leading zeros on blur
+                                    if (datalinkJU.length > 0 && datalinkJU.length < 6) {
+                                        setDatalinkJU(datalinkJU.padStart(6, '0'));
+                                    }
+                                }}
+                                placeholder="000000"
+                                maxLength="6"
+                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                        </div>
+
+                        {/* Track Block Start */}
+                        <div className="input-group" style={{ marginBottom: '10px' }}>
+                            <label className="input-label">Track Block Start</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                value={datalinkTrackBlockStart}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    // Only allow digits and max 6 chars
+                                    if (/^\d{0,6}$/.test(val)) {
+                                        setDatalinkTrackBlockStart(val);
+                                        // Initialize next track number when start is set
+                                        if (val.length > 0) {
+                                            setNextDatalinkTrackNumber(parseInt(val));
+                                        }
+                                    }
+                                }}
+                                placeholder="6000"
+                                maxLength="6"
+                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                        </div>
+
+                        {/* Track Block End */}
+                        <div className="input-group">
+                            <label className="input-label">Track Block End</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                value={datalinkTrackBlockEnd}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    // Only allow digits and max 6 chars
+                                    if (/^\d{0,6}$/.test(val)) {
+                                        setDatalinkTrackBlockEnd(val);
+                                    }
+                                }}
+                                placeholder="6200"
+                                maxLength="6"
+                                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Status Info */}
+                    <div style={{ fontSize: '9px', opacity: 0.7, padding: '10px', background: '#1a1a1a', borderRadius: '3px' }}>
+                        <div>Status: {datalinkEnabled && datalinkNet && datalinkJU.length === 6 && datalinkTrackBlockStart && datalinkTrackBlockEnd ? 'ACTIVE' : 'INACTIVE'}</div>
+                        {nextDatalinkTrackNumber !== null && (
+                            <div style={{ marginTop: '5px' }}>Next Track: {nextDatalinkTrackNumber}</div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Asset List - Only show when no asset is selected, bullseye is not selected, geo-point is not selected, and radar/ESM/IFF/Datalink controls are not selected */}
+            {!selectedAsset && !bullseyeSelected && !selectedGeoPointId && !selectedShapeId && !radarControlsSelected && !esmControlsSelected && !iffControlsSelected && !datalinkControlsSelected && (
                 <div className="control-section">
                     <div className="section-header">ASSETS ({assets.length})</div>
                     <div className="asset-list">
@@ -4938,6 +5213,118 @@ function ControlPanel({
                                         style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
                                     />
                                 </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Datalink Configuration - Not for ownship */}
+                    {selectedAsset.type !== 'ownship' && (
+                        <div className="input-group">
+                            <label className="input-label">Datalink</label>
+                            <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                                {/* NET */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        NET (1-127)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="number"
+                                        min="1"
+                                        max="127"
+                                        value={selectedAsset.datalinkNet || ''}
+                                        onChange={(e) => {
+                                            const val = parseInt(e.target.value);
+                                            if (val >= 1 && val <= 127 || e.target.value === '') {
+                                                updateAsset(selectedAsset.id, { datalinkNet: e.target.value });
+                                            }
+                                        }}
+                                        placeholder="1"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                    />
+                                </div>
+
+                                {/* JU Code */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        JU (6 digits)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        value={selectedAsset.datalinkJU || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (/^\d{0,6}$/.test(val)) {
+                                                updateAsset(selectedAsset.id, { datalinkJU: val });
+                                            }
+                                        }}
+                                        onBlur={() => {
+                                            // Add leading zeros on blur
+                                            if (selectedAsset.datalinkJU && selectedAsset.datalinkJU.length > 0 && selectedAsset.datalinkJU.length < 6) {
+                                                updateAsset(selectedAsset.id, { datalinkJU: selectedAsset.datalinkJU.padStart(6, '0') });
+                                            }
+                                        }}
+                                        placeholder="000000"
+                                        maxLength="6"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                    />
+                                </div>
+
+                                {/* Track Block Start */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        Track Block Start
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        value={selectedAsset.datalinkTrackBlockStart || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (/^\d{0,6}$/.test(val)) {
+                                                updateAsset(selectedAsset.id, { datalinkTrackBlockStart: val });
+                                            }
+                                        }}
+                                        placeholder="6000"
+                                        maxLength="6"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                    />
+                                </div>
+
+                                {/* Track Block End */}
+                                <div>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        Track Block End
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        value={selectedAsset.datalinkTrackBlockEnd || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (/^\d{0,6}$/.test(val)) {
+                                                updateAsset(selectedAsset.id, { datalinkTrackBlockEnd: val });
+                                            }
+                                        }}
+                                        placeholder="6200"
+                                        maxLength="6"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%' }}
+                                    />
+                                </div>
+
+                                {/* Status */}
+                                {selectedAsset.datalinkActive && (
+                                    <div style={{ marginTop: '10px', fontSize: '9px', opacity: 0.7, padding: '5px', background: '#1a1a1a', borderRadius: '3px' }}>
+                                        <div>Status: ACTIVE</div>
+                                        {selectedAsset.datalinkAssignedTrack && (
+                                            <div>Track: {selectedAsset.datalinkAssignedTrack}</div>
+                                        )}
+                                        {selectedAsset.datalinkJU && selectedAsset.datalinkJU.length === 6 && (
+                                            <div>JU: {selectedAsset.datalinkJU}</div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
