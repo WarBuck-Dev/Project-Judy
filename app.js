@@ -3162,6 +3162,36 @@ function AICSimulator() {
                     </text>
                 )}
 
+                {/* IFF Codes - shown when squawking */}
+                {asset.iffSquawking && (
+                    <g>
+                        {asset.iffModeI && (
+                            <text x={pos.x} y={pos.y+size+39} fill={config.color} fontSize="8"
+                                  textAnchor="middle" fontWeight="700">
+                                M1: {asset.iffModeI}
+                            </text>
+                        )}
+                        {asset.iffModeII && (
+                            <text x={pos.x} y={pos.y+size+49} fill={config.color} fontSize="8"
+                                  textAnchor="middle" fontWeight="700">
+                                M2: {asset.iffModeII}
+                            </text>
+                        )}
+                        {asset.iffModeIII && (
+                            <text x={pos.x} y={pos.y+size+59} fill={config.color} fontSize="8"
+                                  textAnchor="middle" fontWeight="700">
+                                M3: {asset.iffModeIII}
+                            </text>
+                        )}
+                        {asset.domain === 'air' && (
+                            <text x={pos.x} y={pos.y+size+69} fill={config.color} fontSize="8"
+                                  textAnchor="middle" fontWeight="700">
+                                ALT: FL{Math.round(asset.altitude/100)}
+                            </text>
+                        )}
+                    </g>
+                )}
+
                 {/* Waypoints */}
                 {asset.waypoints.map((wp, i) => {
                     const wpPos = latLonToScreen(wp.lat, wp.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
