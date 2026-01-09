@@ -616,40 +616,90 @@ function AICSimulator() {
         if (!datalinkEnabled || !datalinkNet) return;
 
         // Check all assets and update identity based on datalink participation
-        assets.forEach(asset => {
-            // Skip ownship
-            if (asset.type === 'ownship') return;
+        setAssets(prevAssets => {
+            return prevAssets.map(asset => {
+                // Skip ownship
+                if (asset.type === 'ownship') return asset;
 
-            // Convert both to strings for comparison to handle number vs string
-            const userNet = String(datalinkNet);
-            const assetNet = String(asset.datalinkNet);
+                // Convert both to strings for comparison to handle number vs string
+                const userNet = String(datalinkNet);
+                const assetNet = String(asset.datalinkNet);
 
-            // Check if asset is participating in datalink on same NET
-            const assetInDatalink = assetNet === userNet &&
-                                   asset.datalinkJU &&
-                                   asset.datalinkJU.length === 6 &&
-                                   asset.datalinkTrackBlockStart &&
-                                   asset.datalinkTrackBlockEnd;
+                // Check if asset is participating in datalink on same NET
+                const assetInDatalink = assetNet === userNet &&
+                                       assetNet !== '' && // Must have a NET set
+                                       asset.datalinkJU &&
+                                       asset.datalinkJU.length === 6 &&
+                                       asset.datalinkTrackBlockStart &&
+                                       asset.datalinkTrackBlockEnd;
 
-            if (assetInDatalink) {
-                // Mark asset as active in datalink and set identity to friendly
-                if (asset.identity !== 'friendly' || !asset.datalinkActive) {
-                    updateAsset(asset.id, {
+                if (assetInDatalink) {
+                    // Mark asset as active in datalink and set identity to friendly
+                    if (asset.identity !== 'friendly' || !asset.datalinkActive || asset.trackNumber !== asset.datalinkJU) {
+                        return {
+                            ...asset,
+                            identity: 'friendly',
+                            datalinkActive: true,
+                            trackNumber: asset.datalinkJU // Use JU as track number
+                        };
+                    }
+                } else {
+                    // Asset not in datalink on same NET, mark as inactive
+                    if (asset.datalinkActive) {
+                        return {
+                            ...asset,
+                            datalinkActive: false
+                        };
+                    }
+                }
+
+                return asset;
+            });
+        });
+    }, [datalinkEnabled, datalinkNet]);
+
+    // Check asset datalink configuration changes and update accordingly
+    useEffect(() => {
+        if (!datalinkEnabled || !datalinkNet) return;
+
+        // This runs whenever assets change (including their datalink fields)
+        const userNet = String(datalinkNet);
+
+        setAssets(prevAssets => {
+            let hasChanges = false;
+            const updatedAssets = prevAssets.map(asset => {
+                if (asset.type === 'ownship') return asset;
+
+                const assetNet = String(asset.datalinkNet);
+                const assetInDatalink = assetNet === userNet &&
+                                       assetNet !== '' &&
+                                       asset.datalinkJU &&
+                                       asset.datalinkJU.length === 6 &&
+                                       asset.datalinkTrackBlockStart &&
+                                       asset.datalinkTrackBlockEnd;
+
+                if (assetInDatalink && (asset.identity !== 'friendly' || !asset.datalinkActive || asset.trackNumber !== asset.datalinkJU)) {
+                    hasChanges = true;
+                    return {
+                        ...asset,
                         identity: 'friendly',
                         datalinkActive: true,
-                        trackNumber: asset.datalinkJU // Use JU as track number
-                    });
-                }
-            } else {
-                // Asset not in datalink on same NET, mark as inactive
-                if (asset.datalinkActive) {
-                    updateAsset(asset.id, {
+                        trackNumber: asset.datalinkJU
+                    };
+                } else if (!assetInDatalink && asset.datalinkActive) {
+                    hasChanges = true;
+                    return {
+                        ...asset,
                         datalinkActive: false
-                    });
+                    };
                 }
-            }
+
+                return asset;
+            });
+
+            return hasChanges ? updatedAssets : prevAssets;
         });
-    }, [datalinkEnabled, datalinkNet, assets, updateAsset]);
+    }, [assets, datalinkEnabled, datalinkNet]);
 
     // ========================================================================
     // ESM SYSTEM - Detect active emitters
