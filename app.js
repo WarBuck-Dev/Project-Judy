@@ -73,7 +73,8 @@ const CLIMB_RATE = 100; // feet per second (6000 ft/min)
 // ============================================================================
 
 // Convert decimal degrees to DMM format (Degrees & Decimal Minutes)
-// Example: 26.5 -> "N26 30.0" or -26.5 -> "S26 30.0"
+// Format: NXX XX.X for latitude (2 digits), EXXX XX.X for longitude (3 digits)
+// Example: 26.5 -> "N26 30.0", 5.092 -> "E005 05.5"
 function decimalToDMM(decimal, isLatitude) {
     const isNegative = decimal < 0;
     const absDecimal = Math.abs(decimal);
@@ -87,7 +88,13 @@ function decimalToDMM(decimal, isLatitude) {
         direction = isNegative ? 'W' : 'E';
     }
 
-    return `${direction}${degrees} ${minutes.toFixed(1)}`;
+    // Format degrees: 2 digits for latitude, 3 digits for longitude
+    const degreesPadded = isLatitude ? degrees.toString().padStart(2, '0') : degrees.toString().padStart(3, '0');
+
+    // Format minutes: always 2 digits before decimal, 1 after (XX.X)
+    const minutesPadded = minutes.toFixed(1).padStart(4, '0');
+
+    return `${direction}${degreesPadded} ${minutesPadded}`;
 }
 
 // Convert DMM format to decimal degrees
@@ -256,7 +263,7 @@ function AICSimulator() {
     const [bullseyeName, setBullseyeName] = useState('');
     const [bullseyePosition, setBullseyePosition] = useState({ lat: 26.5, lon: 54.0 });
     const [bullseyeLatInput, setBullseyeLatInput] = useState('N26 30.0');
-    const [bullseyeLonInput, setBullseyeLonInput] = useState('E54 0.0');
+    const [bullseyeLonInput, setBullseyeLonInput] = useState('E054 00.0');
     const [bullseyeSelected, setBullseyeSelected] = useState(false);
     const [draggedBullseye, setDraggedBullseye] = useState(false);
     const [radarControlsSelected, setRadarControlsSelected] = useState(false);
@@ -3746,7 +3753,7 @@ function ControlPanel({
 
         // Validate the value
         if (value === null) {
-            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E54 0.0 or W54 0.0'}`);
+            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E054 00.0 or W054 00.0'}`);
             return;
         }
 
@@ -3761,7 +3768,7 @@ function ControlPanel({
 
         // Validate the value
         if (value === null) {
-            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E54 0.0 or W54 0.0'}`);
+            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E054 00.0 or W054 00.0'}`);
             return;
         }
 
@@ -3781,7 +3788,7 @@ function ControlPanel({
 
         // Validate the value
         if (value === null) {
-            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E54 0.0 or W54 0.0'}`);
+            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E054 00.0 or W054 00.0'}`);
             return;
         }
 
@@ -3899,12 +3906,12 @@ function ControlPanel({
                                     if (lon !== null && lon >= -180 && lon <= 180) {
                                         setBullseyePosition({ ...bullseyePosition, lon });
                                     } else {
-                                        alert('Invalid longitude. Format: E54 0.0 or W54 0.0');
+                                        alert('Invalid longitude. Format: E054 00.0 or W054 00.0');
                                         setBullseyeLonInput(decimalToDMM(bullseyePosition.lon, false));
                                     }
                                 }
                             }}
-                            placeholder="E54 0.0"
+                            placeholder="E054 00.0"
                         />
                     </div>
                     <div className="input-group" style={{ marginTop: '10px', fontSize: '9px', opacity: 0.7 }}>
@@ -3990,7 +3997,7 @@ function ControlPanel({
                                         applyGeoPointCoordinate('lon');
                                     }
                                 }}
-                                placeholder="E54 0.0"
+                                placeholder="E054 00.0"
                             />
                         </div>
 
@@ -4074,7 +4081,7 @@ function ControlPanel({
                                                 e.target.blur();
                                             }
                                         }}
-                                        placeholder="E54 0.0"
+                                        placeholder="E054 00.0"
                                     />
                                 </div>
 
@@ -4155,7 +4162,7 @@ function ControlPanel({
                                                             e.target.blur();
                                                         }
                                                     }}
-                                                    placeholder="E54 0.0"
+                                                    placeholder="E054 00.0"
                                                 />
                                             </div>
                                         </div>
