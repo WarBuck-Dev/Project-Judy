@@ -3142,51 +3142,73 @@ function AICSimulator() {
                     {asset.name}
                 </text>
 
-                {/* Track number */}
-                {asset.trackNumber && (
-                    <text x={pos.x} y={pos.y+size+15} fill={config.color} fontSize="8"
-                          textAnchor="middle" fontWeight="700">
-                        TN#{asset.trackNumber}
-                    </text>
-                )}
+                {/* Labels below asset - dynamically positioned */}
+                {(() => {
+                    let currentY = pos.y + size + 15;
+                    const lineSpacing = 10;
+                    const labels = [];
 
-                {/* IFF Codes - shown when squawking */}
-                {asset.iffSquawking && (
-                    <g>
-                        {asset.iffModeI && (
-                            <text x={pos.x} y={pos.y+size+27} fill={config.color} fontSize="8"
+                    // Track number
+                    if (asset.trackNumber) {
+                        labels.push(
+                            <text key="tn" x={pos.x} y={currentY} fill={config.color} fontSize="8"
                                   textAnchor="middle" fontWeight="700">
-                                M1: {asset.iffModeI}
+                                TN#{asset.trackNumber}
                             </text>
-                        )}
-                        {asset.iffModeII && (
-                            <text x={pos.x} y={pos.y+size+37} fill={config.color} fontSize="8"
-                                  textAnchor="middle" fontWeight="700">
-                                M2: {asset.iffModeII}
-                            </text>
-                        )}
-                        {asset.iffModeIII && (
-                            <text x={pos.x} y={pos.y+size+47} fill={config.color} fontSize="8"
-                                  textAnchor="middle" fontWeight="700">
-                                M3: {asset.iffModeIII}
-                            </text>
-                        )}
-                    </g>
-                )}
+                        );
+                        currentY += lineSpacing;
+                    }
 
-                {/* Altitude / Depth display - always shown */}
-                {asset.domain === 'air' && (
-                    <text x={pos.x} y={pos.y+size+(asset.iffSquawking ? 57 : 27)} fill={config.color} fontSize="8"
-                          textAnchor="middle" fontWeight="700">
-                        ALT: FL{Math.round(asset.altitude/100)}
-                    </text>
-                )}
-                {asset.domain === 'subSurface' && asset.depth !== null && (
-                    <text x={pos.x} y={pos.y+size+27} fill={config.color} fontSize="8"
-                          textAnchor="middle" fontWeight="700">
-                        DEPTH: {asset.depth}ft
-                    </text>
-                )}
+                    // IFF Codes - only when squawking
+                    if (asset.iffSquawking) {
+                        if (asset.iffModeI) {
+                            labels.push(
+                                <text key="m1" x={pos.x} y={currentY} fill={config.color} fontSize="8"
+                                      textAnchor="middle" fontWeight="700">
+                                    M1: {asset.iffModeI}
+                                </text>
+                            );
+                            currentY += lineSpacing;
+                        }
+                        if (asset.iffModeII) {
+                            labels.push(
+                                <text key="m2" x={pos.x} y={currentY} fill={config.color} fontSize="8"
+                                      textAnchor="middle" fontWeight="700">
+                                    M2: {asset.iffModeII}
+                                </text>
+                            );
+                            currentY += lineSpacing;
+                        }
+                        if (asset.iffModeIII) {
+                            labels.push(
+                                <text key="m3" x={pos.x} y={currentY} fill={config.color} fontSize="8"
+                                      textAnchor="middle" fontWeight="700">
+                                    M3: {asset.iffModeIII}
+                                </text>
+                            );
+                            currentY += lineSpacing;
+                        }
+                    }
+
+                    // Altitude / Depth - always shown
+                    if (asset.domain === 'air') {
+                        labels.push(
+                            <text key="alt" x={pos.x} y={currentY} fill={config.color} fontSize="8"
+                                  textAnchor="middle" fontWeight="700">
+                                ALT: FL{Math.round(asset.altitude/100)}
+                            </text>
+                        );
+                    } else if (asset.domain === 'subSurface' && asset.depth !== null) {
+                        labels.push(
+                            <text key="depth" x={pos.x} y={currentY} fill={config.color} fontSize="8"
+                                  textAnchor="middle" fontWeight="700">
+                                DEPTH: {asset.depth}ft
+                            </text>
+                        );
+                    }
+
+                    return <g>{labels}</g>;
+                })()}
 
                 {/* Waypoints */}
                 {asset.waypoints.map((wp, i) => {
