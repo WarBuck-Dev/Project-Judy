@@ -4951,15 +4951,13 @@ function ControlPanel({
                             <input
                                 className="input-field"
                                 type="text"
-                                value={datalinkNet}
+                                defaultValue={datalinkNet}
+                                key={`net-${datalinkNet}`}
                                 onChange={(e) => {
                                     const val = e.target.value;
-                                    // Only allow digits and validate range
-                                    if (/^\d{0,3}$/.test(val)) {
-                                        const num = parseInt(val);
-                                        if (val === '' || (num >= 1 && num <= 127)) {
-                                            // Temporarily store - won't apply until Enter
-                                        }
+                                    // Only allow digits, max 3 chars
+                                    if (!/^\d{0,3}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
                                     }
                                 }}
                                 onKeyDown={(e) => {
@@ -4970,6 +4968,7 @@ function ControlPanel({
                                             setDatalinkNet(val);
                                         } else {
                                             e.target.value = '';
+                                            setDatalinkNet('');
                                         }
                                     }
                                 }}
@@ -4984,9 +4983,14 @@ function ControlPanel({
                             <input
                                 className="input-field"
                                 type="text"
-                                value={datalinkJU}
+                                defaultValue={datalinkJU}
+                                key={`ju-${datalinkJU}`}
                                 onChange={(e) => {
-                                    // Allow typing but don't update state
+                                    const val = e.target.value;
+                                    // Only allow digits, max 5 chars
+                                    if (!/^\d{0,5}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
+                                    }
                                 }}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
@@ -5012,9 +5016,14 @@ function ControlPanel({
                             <input
                                 className="input-field"
                                 type="text"
-                                value={datalinkTrackBlockStart}
+                                defaultValue={datalinkTrackBlockStart}
+                                key={`start-${datalinkTrackBlockStart}`}
                                 onChange={(e) => {
-                                    // Allow typing but don't update state
+                                    const val = e.target.value;
+                                    // Only allow digits, max 5 chars
+                                    if (!/^\d{0,5}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
+                                    }
                                 }}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
@@ -5040,9 +5049,14 @@ function ControlPanel({
                             <input
                                 className="input-field"
                                 type="text"
-                                value={datalinkTrackBlockEnd}
+                                defaultValue={datalinkTrackBlockEnd}
+                                key={`end-${datalinkTrackBlockEnd}`}
                                 onChange={(e) => {
-                                    // Allow typing but don't update state
+                                    const val = e.target.value;
+                                    // Only allow digits, max 5 chars
+                                    if (!/^\d{0,5}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
+                                    }
                                 }}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
