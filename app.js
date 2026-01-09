@@ -5051,8 +5051,8 @@ function ControlPanel({
                         <label className="input-label">Identity</label>
                         <select
                             className="input-field"
-                            value={selectedAsset.type}
-                            onChange={(e) => updateAsset(selectedAsset.id, { type: e.target.value })}
+                            value={selectedAsset.identity || 'unknown'}
+                            onChange={(e) => updateAsset(selectedAsset.id, { identity: e.target.value })}
                             disabled={selectedAsset.type === 'ownship'}
                         >
                             {selectedAsset.type === 'ownship' && <option value="ownship">Ownship</option>}
