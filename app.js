@@ -3142,21 +3142,9 @@ function AICSimulator() {
                     {asset.name}
                 </text>
 
-                {/* Flight level / Depth display below */}
-                {asset.domain === 'air' && (
-                    <text x={pos.x} y={pos.y+size+15} fill={config.color} fontSize="9"
-                          textAnchor="middle" fontWeight="700">
-                        FL{Math.round(asset.altitude/100)}
-                    </text>
-                )}
-                {asset.domain === 'subSurface' && asset.depth !== null && (
-                    <text x={pos.x} y={pos.y+size+15} fill={config.color} fontSize="9"
-                          textAnchor="middle" fontWeight="700">
-                        {asset.depth}ft
-                    </text>
-                )}
+                {/* Track number */}
                 {asset.trackNumber && (
-                    <text x={pos.x} y={pos.y+size+27} fill={config.color} fontSize="8"
+                    <text x={pos.x} y={pos.y+size+15} fill={config.color} fontSize="8"
                           textAnchor="middle" fontWeight="700">
                         TN#{asset.trackNumber}
                     </text>
@@ -3166,30 +3154,38 @@ function AICSimulator() {
                 {asset.iffSquawking && (
                     <g>
                         {asset.iffModeI && (
-                            <text x={pos.x} y={pos.y+size+39} fill={config.color} fontSize="8"
+                            <text x={pos.x} y={pos.y+size+27} fill={config.color} fontSize="8"
                                   textAnchor="middle" fontWeight="700">
                                 M1: {asset.iffModeI}
                             </text>
                         )}
                         {asset.iffModeII && (
-                            <text x={pos.x} y={pos.y+size+49} fill={config.color} fontSize="8"
+                            <text x={pos.x} y={pos.y+size+37} fill={config.color} fontSize="8"
                                   textAnchor="middle" fontWeight="700">
                                 M2: {asset.iffModeII}
                             </text>
                         )}
                         {asset.iffModeIII && (
-                            <text x={pos.x} y={pos.y+size+59} fill={config.color} fontSize="8"
+                            <text x={pos.x} y={pos.y+size+47} fill={config.color} fontSize="8"
                                   textAnchor="middle" fontWeight="700">
                                 M3: {asset.iffModeIII}
                             </text>
                         )}
-                        {asset.domain === 'air' && (
-                            <text x={pos.x} y={pos.y+size+69} fill={config.color} fontSize="8"
-                                  textAnchor="middle" fontWeight="700">
-                                ALT: FL{Math.round(asset.altitude/100)}
-                            </text>
-                        )}
                     </g>
+                )}
+
+                {/* Altitude / Depth display - always shown */}
+                {asset.domain === 'air' && (
+                    <text x={pos.x} y={pos.y+size+(asset.iffSquawking ? 57 : 27)} fill={config.color} fontSize="8"
+                          textAnchor="middle" fontWeight="700">
+                        ALT: FL{Math.round(asset.altitude/100)}
+                    </text>
+                )}
+                {asset.domain === 'subSurface' && asset.depth !== null && (
+                    <text x={pos.x} y={pos.y+size+27} fill={config.color} fontSize="8"
+                          textAnchor="middle" fontWeight="700">
+                        DEPTH: {asset.depth}ft
+                    </text>
                 )}
 
                 {/* Waypoints */}
