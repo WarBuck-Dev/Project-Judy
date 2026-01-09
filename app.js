@@ -3805,6 +3805,8 @@ function AICSimulator() {
                 setNextDatalinkTrackNumber={setNextDatalinkTrackNumber}
                 selectedAssetTab={selectedAssetTab}
                 setSelectedAssetTab={setSelectedAssetTab}
+                selectedSystemTab={selectedSystemTab}
+                setSelectedSystemTab={setSelectedSystemTab}
             />
 
             {/* Context Menu */}
@@ -3940,7 +3942,8 @@ function ControlPanel({
     datalinkTrackBlockStart, setDatalinkTrackBlockStart,
     datalinkTrackBlockEnd, setDatalinkTrackBlockEnd,
     nextDatalinkTrackNumber, setNextDatalinkTrackNumber,
-    selectedAssetTab, setSelectedAssetTab
+    selectedAssetTab, setSelectedAssetTab,
+    selectedSystemTab, setSelectedSystemTab
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
