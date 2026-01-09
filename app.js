@@ -4874,7 +4874,9 @@ function ControlPanel({
                                     if (e.key === 'Enter') {
                                         const val = e.target.value;
                                         if (/^[0-7]{0,2}$/.test(val)) {
-                                            setIffOwnshipModeI(val);
+                                            // Pad with zeros to 2 digits
+                                            const padded = val.padStart(2, '0');
+                                            setIffOwnshipModeI(padded);
                                             e.target.style.color = '#00FF00';
                                         }
                                     }
@@ -4905,7 +4907,9 @@ function ControlPanel({
                                     if (e.key === 'Enter') {
                                         const val = e.target.value;
                                         if (/^[0-7]{0,4}$/.test(val)) {
-                                            setIffOwnshipModeII(val);
+                                            // Pad with zeros to 4 digits
+                                            const padded = val.padStart(4, '0');
+                                            setIffOwnshipModeII(padded);
                                             e.target.style.color = '#00FF00';
                                         }
                                     }
@@ -4936,7 +4940,9 @@ function ControlPanel({
                                     if (e.key === 'Enter') {
                                         const val = e.target.value;
                                         if (/^[0-7]{0,4}$/.test(val)) {
-                                            setIffOwnshipModeIII(val);
+                                            // Pad with zeros to 4 digits
+                                            const padded = val.padStart(4, '0');
+                                            setIffOwnshipModeIII(padded);
                                             e.target.style.color = '#00FF00';
                                         }
                                     }
@@ -5656,7 +5662,9 @@ function ControlPanel({
                                             if (e.key === 'Enter') {
                                                 const val = e.target.value;
                                                 if (/^[0-7]{0,2}$/.test(val)) {
-                                                    updateAsset(selectedAsset.id, { iffModeI: val });
+                                                    // Pad with zeros to 2 digits
+                                                    const padded = val.padStart(2, '0');
+                                                    updateAsset(selectedAsset.id, { iffModeI: padded });
                                                     e.target.style.color = '#00FF00';
                                                 }
                                             }
@@ -5688,7 +5696,9 @@ function ControlPanel({
                                             if (e.key === 'Enter') {
                                                 const val = e.target.value;
                                                 if (/^[0-7]{0,4}$/.test(val)) {
-                                                    updateAsset(selectedAsset.id, { iffModeII: val });
+                                                    // Pad with zeros to 4 digits
+                                                    const padded = val.padStart(4, '0');
+                                                    updateAsset(selectedAsset.id, { iffModeII: padded });
                                                     e.target.style.color = '#00FF00';
                                                 }
                                             }
@@ -5720,7 +5730,9 @@ function ControlPanel({
                                             if (e.key === 'Enter') {
                                                 const val = e.target.value;
                                                 if (/^[0-7]{0,4}$/.test(val)) {
-                                                    updateAsset(selectedAsset.id, { iffModeIII: val });
+                                                    // Pad with zeros to 4 digits
+                                                    const padded = val.padStart(4, '0');
+                                                    updateAsset(selectedAsset.id, { iffModeIII: padded });
                                                     e.target.style.color = '#00FF00';
                                                 }
                                             }
