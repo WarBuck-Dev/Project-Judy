@@ -2952,7 +2952,9 @@ function AICSimulator() {
     };
 
     const renderAsset = (asset, width, height) => {
-        const config = ASSET_TYPES[asset.type];
+        // Use 'ownship' if type is ownship, otherwise use identity for symbol
+        const symbolType = asset.type === 'ownship' ? 'ownship' : (asset.identity || 'unknown');
+        const config = ASSET_TYPES[symbolType];
         const pos = latLonToScreen(asset.lat, asset.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
         const isSelected = asset.id === selectedAssetId;
         const size = 12; // Consistent size for all assets
