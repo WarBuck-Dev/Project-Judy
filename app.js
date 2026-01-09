@@ -4,7 +4,7 @@ const { useState, useEffect, useRef, useCallback, useMemo } = React;
 // CONSTANTS AND CONFIGURATION
 // ============================================================================
 
-const BULLSEYE = { lat: 26.5, lon: 54.0 };
+// BULLSEYE position is now stored in state (bullseyePosition)
 const INITIAL_SCALE = 100; // nautical miles
 const MIN_SCALE = 10;
 const MAX_SCALE = 360;
@@ -175,8 +175,8 @@ function AICSimulator() {
             type: 'ownship',
             domain: 'air',
             platform: null,
-            lat: BULLSEYE.lat - (50 / 60), // 50 NM south of bullseye
-            lon: BULLSEYE.lon,
+            lat: 26.5 - (50 / 60), // 50 NM south of bullseye (initial position)
+            lon: 54.0,
             heading: 0,
             speed: 150,
             altitude: 15000,
@@ -192,7 +192,7 @@ function AICSimulator() {
     const [selectedAssetId, setSelectedAssetId] = useState(null);
     const [isRunning, setIsRunning] = useState(false);
     const [scale, setScale] = useState(INITIAL_SCALE);
-    const [mapCenter, setMapCenter] = useState(BULLSEYE);
+    const [mapCenter, setMapCenter] = useState({ lat: 26.5, lon: 54.0 });
     const [tempMark, setTempMark] = useState(null);
     const [contextMenu, setContextMenu] = useState(null);
     const [cursorPos, setCursorPos] = useState(null);
@@ -213,14 +213,18 @@ function AICSimulator() {
     const [hasStarted, setHasStarted] = useState(false);
     const [missionTime, setMissionTime] = useState(0);
     const [bullseyeName, setBullseyeName] = useState('');
+    const [bullseyePosition, setBullseyePosition] = useState({ lat: 26.5, lon: 54.0 });
+    const [bullseyeLatInput, setBullseyeLatInput] = useState('26.5');
+    const [bullseyeLonInput, setBullseyeLonInput] = useState('54.0');
     const [bullseyeSelected, setBullseyeSelected] = useState(false);
+    const [draggedBullseye, setDraggedBullseye] = useState(false);
     const [radarControlsSelected, setRadarControlsSelected] = useState(false);
     const [radarReturns, setRadarReturns] = useState([]);
     const [radarSweepAngle, setRadarSweepAngle] = useState(0); // Current radar sweep angle in degrees
     const [radarEnabled, setRadarEnabled] = useState(true); // Radar ON/OFF state
-    const [radarSweepOpacity, setRadarSweepOpacity] = useState(0.5); // Radar sweep opacity (0-1)
-    const [radarReturnDecay, setRadarReturnDecay] = useState(30); // Radar return decay time in seconds
-    const [radarReturnIntensity, setRadarReturnIntensity] = useState(100); // Radar return intensity (1-100%)
+    const [radarSweepOpacity, setRadarSweepOpacity] = useState(0.12); // Radar sweep opacity (0-1) - default 12%
+    const [radarReturnDecay, setRadarReturnDecay] = useState(11); // Radar return decay time in seconds - default 11s
+    const [radarReturnIntensity, setRadarReturnIntensity] = useState(10); // Radar return intensity (1-100%) - default 10%
     const [esmEnabled, setEsmEnabled] = useState(false); // ESM ON/OFF state (OFF by default)
     const [esmControlsSelected, setEsmControlsSelected] = useState(false); // ESM controls page selected
     const [detectedEmitters, setDetectedEmitters] = useState([]); // List of detected emitters: { id, assetId, emitterName, bearing, visible, serialNumber }
@@ -235,7 +239,7 @@ function AICSimulator() {
     const [iffOwnshipModeIII, setIffOwnshipModeIII] = useState(''); // Ownship MODE III (4 digit octal)
     const [iffOwnshipModeIV, setIffOwnshipModeIV] = useState(false); // Ownship MODE IV ON/OFF
     const [iffReturns, setIffReturns] = useState([]); // IFF returns similar to radar returns
-    const [iffReturnIntensity, setIffReturnIntensity] = useState(100); // IFF return intensity (1-100%)
+    const [iffReturnIntensity, setIffReturnIntensity] = useState(10); // IFF return intensity (1-100%) - default 10%
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
@@ -691,8 +695,8 @@ function AICSimulator() {
             type: assetData.type || 'unknown',
             domain: domain,
             platform: platform,
-            lat: assetData.lat || BULLSEYE.lat,
-            lon: assetData.lon || BULLSEYE.lon,
+            lat: assetData.lat || bullseyePosition.lat,
+            lon: assetData.lon || bullseyePosition.lon,
             heading: assetData.heading || 0,
             speed: speed,
             altitude: domainConfig.hasAltitude ? altitude : 0,
@@ -713,7 +717,7 @@ function AICSimulator() {
         setAssets(prev => [...prev, newAsset]);
         setNextAssetId(prev => prev + 1);
         setSelectedAssetId(newAsset.id);
-    }, [nextAssetId]);
+    }, [nextAssetId, bullseyePosition]);
 
     const deleteAsset = useCallback((assetId) => {
         // Prevent deletion of ownship
@@ -1111,7 +1115,7 @@ function AICSimulator() {
             version: '1.0',
             timestamp: new Date().toISOString(),
             assets,
-            bullseye: BULLSEYE,
+            bullseye: bullseyePosition,
             bullseyeName,
             scale,
             mapCenter,
@@ -1126,14 +1130,14 @@ function AICSimulator() {
 
         localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
         alert(`Scenario saved to application: ${name}`);
-    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId]);
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId]);
 
     const saveToFile = useCallback((name) => {
         const saveData = {
             version: '1.0',
             timestamp: new Date().toISOString(),
             assets,
-            bullseye: BULLSEYE,
+            bullseye: bullseyePosition,
             bullseyeName,
             scale,
             mapCenter,
@@ -1153,7 +1157,7 @@ function AICSimulator() {
         a.download = `${name}-${new Date().toISOString().split('T')[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
-    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId]);
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId]);
 
     const loadFromLocalStorage = useCallback((name) => {
         const data = localStorage.getItem(`aic-scenario-${name}`);
@@ -1186,6 +1190,12 @@ function AICSimulator() {
 
             const ownshipIndex = loadedAssets.findIndex(a => a.id === 0 || a.type === 'ownship');
 
+            // Load bullseye position (with fallback to default)
+            const loadedBullseye = saveData.bullseye || { lat: 26.5, lon: 54.0 };
+            setBullseyePosition(loadedBullseye);
+            setBullseyeLatInput(loadedBullseye.lat.toString());
+            setBullseyeLonInput(loadedBullseye.lon.toString());
+
             if (ownshipIndex === -1) {
                 // No ownship found, add default ownship 50 NM south of bullseye
                 loadedAssets = [{
@@ -1194,8 +1204,8 @@ function AICSimulator() {
                     type: 'ownship',
                     domain: 'air',
                     platform: null,
-                    lat: BULLSEYE.lat - (50 / 60),
-                    lon: BULLSEYE.lon,
+                    lat: loadedBullseye.lat - (50 / 60),
+                    lon: loadedBullseye.lon,
                     heading: 0,
                     speed: 150,
                     altitude: 15000,
@@ -1214,7 +1224,7 @@ function AICSimulator() {
 
             setAssets(loadedAssets);
             setScale(saveData.scale || INITIAL_SCALE);
-            setMapCenter(saveData.mapCenter || BULLSEYE);
+            setMapCenter(saveData.mapCenter || loadedBullseye);
             setTempMark(saveData.tempMark || null);
             setNextTrackNumber(saveData.nextTrackNumber || 6000);
             setSelectedAssetId(null);
@@ -1237,7 +1247,7 @@ function AICSimulator() {
             setInitialScenario({
                 assets: JSON.parse(JSON.stringify(loadedAssets)),
                 scale: saveData.scale || INITIAL_SCALE,
-                mapCenter: saveData.mapCenter || BULLSEYE,
+                mapCenter: saveData.mapCenter || loadedBullseye,
                 tempMark: saveData.tempMark || null,
                 nextTrackNumber: saveData.nextTrackNumber || 6000,
                 nextAssetId: maxId + 1,
@@ -1283,6 +1293,12 @@ function AICSimulator() {
 
                     const ownshipIndex = loadedAssets.findIndex(a => a.id === 0 || a.type === 'ownship');
 
+                    // Load bullseye position (with fallback to default)
+                    const loadedBullseye = saveData.bullseye || { lat: 26.5, lon: 54.0 };
+                    setBullseyePosition(loadedBullseye);
+                    setBullseyeLatInput(loadedBullseye.lat.toString());
+                    setBullseyeLonInput(loadedBullseye.lon.toString());
+
                     if (ownshipIndex === -1) {
                         // No ownship found, add default ownship 50 NM south of bullseye
                         loadedAssets = [{
@@ -1291,8 +1307,8 @@ function AICSimulator() {
                             type: 'ownship',
                             domain: 'air',
                             platform: null,
-                            lat: BULLSEYE.lat - (50 / 60),
-                            lon: BULLSEYE.lon,
+                            lat: loadedBullseye.lat - (50 / 60),
+                            lon: loadedBullseye.lon,
                             heading: 0,
                             speed: 150,
                             altitude: 15000,
@@ -1311,7 +1327,7 @@ function AICSimulator() {
 
                     setAssets(loadedAssets);
                     setScale(saveData.scale || INITIAL_SCALE);
-                    setMapCenter(saveData.mapCenter || BULLSEYE);
+                    setMapCenter(saveData.mapCenter || loadedBullseye);
                     setTempMark(saveData.tempMark || null);
                     setNextTrackNumber(saveData.nextTrackNumber || 6000);
                     setSelectedAssetId(null);
@@ -1333,7 +1349,7 @@ function AICSimulator() {
                     setInitialScenario({
                         assets: JSON.parse(JSON.stringify(loadedAssets)),
                         scale: saveData.scale || INITIAL_SCALE,
-                        mapCenter: saveData.mapCenter || BULLSEYE,
+                        mapCenter: saveData.mapCenter || loadedBullseye,
                         tempMark: saveData.tempMark || null,
                         nextTrackNumber: saveData.nextTrackNumber || 6000,
                         nextAssetId: maxId + 1,
@@ -1418,7 +1434,7 @@ function AICSimulator() {
         }
 
         // Check if clicking on the bullseye
-        const bullseyePos = latLonToScreen(BULLSEYE.lat, BULLSEYE.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+        const bullseyePos = latLonToScreen(bullseyePosition.lat, bullseyePosition.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
         const bullseyeDist = Math.sqrt((x - bullseyePos.x) ** 2 + (y - bullseyePos.y) ** 2);
         if (bullseyeDist < 15) {
             // Already handled in handleMouseDown, don't do anything
@@ -1643,6 +1659,14 @@ function AICSimulator() {
             return;
         }
 
+        // Handle bullseye dragging
+        if (draggedBullseye) {
+            setBullseyePosition({ lat: latLon.lat, lon: latLon.lon });
+            setBullseyeLatInput(latLon.lat.toFixed(6));
+            setBullseyeLonInput(latLon.lon.toFixed(6));
+            return;
+        }
+
         // Handle geo-point dragging
         if (draggedGeoPointId !== null) {
             updateGeoPoint(draggedGeoPointId, { lat: latLon.lat, lon: latLon.lon });
@@ -1692,7 +1716,7 @@ function AICSimulator() {
         if (draggedWaypoint !== null) {
             moveWaypoint(draggedWaypoint.assetId, draggedWaypoint.wpIndex, latLon.lat, latLon.lon);
         }
-    }, [mapCenter, scale, isDragging, dragStart, draggedWaypoint, draggedAssetId, draggedGeoPointId, draggedShapeId, draggedShapePointIndex, assets, shapes, moveWaypoint, updateAsset, updateGeoPoint, updateShape]);
+    }, [mapCenter, scale, isDragging, dragStart, draggedWaypoint, draggedAssetId, draggedGeoPointId, draggedShapeId, draggedShapePointIndex, draggedBullseye, assets, shapes, moveWaypoint, updateAsset, updateGeoPoint, updateShape, setBullseyePosition, setBullseyeLatInput, setBullseyeLonInput]);
 
     const handleMouseDown = useCallback((e) => {
         if (e.button !== 0) return; // Only left click
@@ -1703,16 +1727,23 @@ function AICSimulator() {
         const y = e.clientY - rect.top;
 
         // Check if clicking on the bullseye
-        const bullseyePos = latLonToScreen(BULLSEYE.lat, BULLSEYE.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+        const bullseyePos = latLonToScreen(bullseyePosition.lat, bullseyePosition.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
         const bullseyeDist = Math.sqrt((x - bullseyePos.x) ** 2 + (y - bullseyePos.y) ** 2);
         if (bullseyeDist < 15) {
-            setBullseyeSelected(true);
-            setSelectedAssetId(null);
-            setSelectedGeoPointId(null);
-            setRadarControlsSelected(false);
-            setEsmControlsSelected(false);
-            setIffControlsSelected(false);
-            setTempMark(null);
+            // Enable dragging if already selected
+            if (bullseyeSelected) {
+                setDraggedBullseye(true);
+            } else {
+                // First click - select the bullseye
+                setBullseyeSelected(true);
+                setSelectedAssetId(null);
+                setSelectedGeoPointId(null);
+                setSelectedShapeId(null);
+                setRadarControlsSelected(false);
+                setEsmControlsSelected(false);
+                setIffControlsSelected(false);
+                setTempMark(null);
+            }
             return;
         }
 
@@ -1839,7 +1870,7 @@ function AICSimulator() {
                 centerLon: mapCenter.lon
             });
         }
-    }, [assets, geoPoints, shapes, selectedAsset, selectedGeoPointId, selectedShapeId, mapCenter, scale]);
+    }, [assets, geoPoints, shapes, selectedAsset, selectedGeoPointId, selectedShapeId, bullseyeSelected, bullseyePosition, mapCenter, scale, setBullseyeSelected, setSelectedAssetId, setSelectedGeoPointId, setSelectedShapeId, setRadarControlsSelected, setEsmControlsSelected, setIffControlsSelected, setTempMark, setDraggedBullseye, setDraggedShapeId, setDraggedShapePointIndex, setDraggedGeoPointId, setDraggedWaypoint, setDraggedAssetId, setIsDragging, setDragStart]);
 
     const handleMouseUp = useCallback(() => {
         setIsDragging(false);
@@ -1849,6 +1880,7 @@ function AICSimulator() {
         setDraggedGeoPointId(null);
         setDraggedShapeId(null);
         setDraggedShapePointIndex(null);
+        setDraggedBullseye(false);
     }, []);
 
     const handleWheel = useCallback((e) => {
@@ -2079,11 +2111,11 @@ function AICSimulator() {
     };
 
     const renderBullseye = (width, height) => {
-        const pos = latLonToScreen(BULLSEYE.lat, BULLSEYE.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+        const pos = latLonToScreen(bullseyePosition.lat, bullseyePosition.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
         const displayName = bullseyeName && bullseyeName.trim() ? bullseyeName.toUpperCase() : 'BE';
 
         return (
-            <g>
+            <g style={{ cursor: 'pointer' }}>
                 {/* Selection ring when bullseye is selected */}
                 {bullseyeSelected && (
                     <circle
@@ -3350,8 +3382,8 @@ function AICSimulator() {
                         <div className="position-box">
                             <div className="position-label">FROM {bullseyeName && bullseyeName.trim() ? bullseyeName.toUpperCase() : 'BULLSEYE'}</div>
                             <div className="position-value">
-                                {Math.round(calculateBearing(BULLSEYE.lat, BULLSEYE.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/
-                                {Math.round(calculateDistance(BULLSEYE.lat, BULLSEYE.lon, cursorPos.lat, cursorPos.lon))}
+                                {Math.round(calculateBearing(bullseyePosition.lat, bullseyePosition.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/
+                                {Math.round(calculateDistance(bullseyePosition.lat, bullseyePosition.lon, cursorPos.lat, cursorPos.lon))}
                             </div>
                         </div>
 
@@ -3401,6 +3433,12 @@ function AICSimulator() {
                 bullseyeSelected={bullseyeSelected}
                 bullseyeName={bullseyeName}
                 setBullseyeName={setBullseyeName}
+                bullseyePosition={bullseyePosition}
+                setBullseyePosition={setBullseyePosition}
+                bullseyeLatInput={bullseyeLatInput}
+                setBullseyeLatInput={setBullseyeLatInput}
+                bullseyeLonInput={bullseyeLonInput}
+                setBullseyeLonInput={setBullseyeLonInput}
                 radarControlsSelected={radarControlsSelected}
                 setRadarControlsSelected={setRadarControlsSelected}
                 radarEnabled={radarEnabled}
@@ -3556,6 +3594,8 @@ function ControlPanel({
     updateAsset, deleteAsset, reportTrack, setShowAddAssetDialog,
     setShowSaveDialog, setShowLoadDialog, setShowPauseMenu, centerMapOnAsset,
     restartSimulation, hasStarted, bullseyeSelected, bullseyeName, setBullseyeName,
+    bullseyePosition, setBullseyePosition, bullseyeLatInput, setBullseyeLatInput,
+    bullseyeLonInput, setBullseyeLonInput,
     radarControlsSelected, setRadarControlsSelected,
     radarEnabled, setRadarEnabled, radarSweepOpacity, setRadarSweepOpacity,
     radarReturnDecay, setRadarReturnDecay, radarReturnIntensity, setRadarReturnIntensity,
@@ -3781,8 +3821,50 @@ function ControlPanel({
                             placeholder="BULLSEYE"
                         />
                     </div>
+                    <div className="input-group">
+                        <label className="input-label">Latitude</label>
+                        <input
+                            className="input-field"
+                            type="text"
+                            value={bullseyeLatInput}
+                            onChange={(e) => setBullseyeLatInput(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    const lat = parseFloat(bullseyeLatInput);
+                                    if (!isNaN(lat) && lat >= -90 && lat <= 90) {
+                                        setBullseyePosition({ ...bullseyePosition, lat });
+                                    } else {
+                                        alert('Invalid latitude. Must be between -90 and 90.');
+                                        setBullseyeLatInput(bullseyePosition.lat.toString());
+                                    }
+                                }
+                            }}
+                            placeholder="26.5"
+                        />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">Longitude</label>
+                        <input
+                            className="input-field"
+                            type="text"
+                            value={bullseyeLonInput}
+                            onChange={(e) => setBullseyeLonInput(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    const lon = parseFloat(bullseyeLonInput);
+                                    if (!isNaN(lon) && lon >= -180 && lon <= 180) {
+                                        setBullseyePosition({ ...bullseyePosition, lon });
+                                    } else {
+                                        alert('Invalid longitude. Must be between -180 and 180.');
+                                        setBullseyeLonInput(bullseyePosition.lon.toString());
+                                    }
+                                }
+                            }}
+                            placeholder="54.0"
+                        />
+                    </div>
                     <div className="input-group" style={{ marginTop: '10px', fontSize: '9px', opacity: 0.7 }}>
-                        Reference point for all position calls. Enter a custom name or leave blank for default "BULLSEYE".
+                        Reference point for all position calls. Enter a custom name or leave blank for default "BULLSEYE". You can also drag the bullseye on the map or enter coordinates (press Enter to apply).
                     </div>
                 </div>
             )}
@@ -4529,7 +4611,7 @@ function ControlPanel({
                     </div>
                     <button
                         className="control-btn primary full-width mb-10"
-                        onClick={() => setShowAddAssetDialog({ lat: BULLSEYE.lat, lon: BULLSEYE.lon })}
+                        onClick={() => setShowAddAssetDialog({ lat: bullseyePosition.lat, lon: bullseyePosition.lon })}
                         style={{ marginTop: '10px' }}
                     >
                         + ADD ASSET
