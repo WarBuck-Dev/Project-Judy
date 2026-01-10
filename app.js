@@ -4089,6 +4089,8 @@ function AICSimulator() {
                 setSonoEnabled={setSonoEnabled}
                 sonoArmed={sonoArmed}
                 setSonoArmed={setSonoArmed}
+                sonoGuardOpen={sonoGuardOpen}
+                setSonoGuardOpen={setSonoGuardOpen}
                 sonobuoys={sonobuoys}
                 setSonobuoys={setSonobuoys}
                 sonobuoyCount={sonobuoyCount}
@@ -4501,6 +4503,7 @@ function ControlPanel({
     isarSelectedAssetId, setIsarSelectedAssetId,
     sonoEnabled, setSonoEnabled,
     sonoArmed, setSonoArmed,
+    sonoGuardOpen, setSonoGuardOpen,
     sonobuoys, setSonobuoys,
     sonobuoyCount, setSonobuoyCount,
     nextSonobuoyId, setNextSonobuoyId,
