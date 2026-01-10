@@ -4672,7 +4672,8 @@ function ControlPanel({
                     <div className="section-header">SYSTEMS</div>
 
                     {/* System Tab Navigation */}
-                    <div style={{ display: 'flex', gap: '5px', marginBottom: '15px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
+                    {/* First Row: RADAR, ESM, IFF, DATALINK */}
+                    <div style={{ display: 'flex', gap: '5px', marginBottom: '5px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
                         <button
                             onClick={() => setSelectedSystemTab('radar')}
                             style={{
@@ -4741,6 +4742,10 @@ function ControlPanel({
                         >
                             DATALINK
                         </button>
+                    </div>
+
+                    {/* Second Row: EO/IR, ISAR, SONO */}
+                    <div style={{ display: 'flex', gap: '5px', marginBottom: '15px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
                         <button
                             onClick={() => setSelectedSystemTab('eoir')}
                             style={{
