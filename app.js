@@ -3419,9 +3419,9 @@ function AICSimulator() {
                 {sonobuoys.map(sono => {
                     const pos = latLonToScreen(sono.lat, sono.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
                     const sonoColor = '#00BFFF'; // Friendly asset light blue color
-                    const circleRadius = 12; // 2x larger (was 6)
-                    const lineHeight = 24; // 2x larger (was 12)
-                    const horizontalLineLength = 12; // Length of horizontal line at top
+                    const circleRadius = 9; // 1.5x larger (was 6)
+                    const lineHeight = 18; // 1.5x larger (was 12)
+                    const horizontalLineLength = 9; // Length of horizontal line at top
 
                     return (
                         <g key={`sono-${sono.id}`}>
