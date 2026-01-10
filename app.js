@@ -3379,7 +3379,7 @@ function AICSimulator() {
                         labels.push(
                             <text key="depth" x={pos.x} y={currentY} fill={config.color} fontSize="10"
                                   textAnchor="middle" fontWeight="700">
-                                DEPTH: {asset.depth}ft
+                                DEPTH: {Math.round(asset.depth)}ft
                             </text>
                         );
                     }
