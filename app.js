@@ -4,7 +4,7 @@ const { useState, useEffect, useRef, useCallback, useMemo } = React;
 // CONSTANTS AND CONFIGURATION
 // ============================================================================
 
-const BULLSEYE = { lat: 26.5, lon: 54.0 };
+// BULLSEYE position is now stored in state (bullseyePosition)
 const INITIAL_SCALE = 100; // nautical miles
 const MIN_SCALE = 10;
 const MAX_SCALE = 360;
@@ -71,6 +71,54 @@ const CLIMB_RATE = 100; // feet per second (6000 ft/min)
 // ============================================================================
 // UTILITY FUNCTIONS - NAVIGATION AND PHYSICS
 // ============================================================================
+
+// Convert decimal degrees to DMM format (Degrees & Decimal Minutes)
+// Format: NXX XX.X for latitude (2 digits), EXXX XX.X for longitude (3 digits)
+// Example: 26.5 -> "N26 30.0", 5.092 -> "E005 05.5"
+function decimalToDMM(decimal, isLatitude) {
+    const isNegative = decimal < 0;
+    const absDecimal = Math.abs(decimal);
+    const degrees = Math.floor(absDecimal);
+    const minutes = (absDecimal - degrees) * 60;
+
+    let direction;
+    if (isLatitude) {
+        direction = isNegative ? 'S' : 'N';
+    } else {
+        direction = isNegative ? 'W' : 'E';
+    }
+
+    // Format degrees: 2 digits for latitude, 3 digits for longitude
+    const degreesPadded = isLatitude ? degrees.toString().padStart(2, '0') : degrees.toString().padStart(3, '0');
+
+    // Format minutes: always 2 digits before decimal, 1 after (XX.X)
+    const minutesPadded = minutes.toFixed(1).padStart(4, '0');
+
+    return `${direction}${degreesPadded} ${minutesPadded}`;
+}
+
+// Convert DMM format to decimal degrees
+// Example: "N26 30.0" -> 26.5 or "S26 30.0" -> -26.5
+function dmmToDecimal(dmm) {
+    // Match patterns like "N26 30.0", "S26 30.0", "E126 45.2", "W126 45.2"
+    const match = dmm.trim().match(/^([NSEW])(\d+)\s+(\d+\.?\d*)$/i);
+    if (!match) return null;
+
+    const direction = match[1].toUpperCase();
+    const degrees = parseInt(match[2]);
+    const minutes = parseFloat(match[3]);
+
+    if (minutes >= 60) return null; // Invalid minutes
+
+    let decimal = degrees + (minutes / 60);
+
+    // Apply negative sign for South and West
+    if (direction === 'S' || direction === 'W') {
+        decimal = -decimal;
+    }
+
+    return decimal;
+}
 
 // Calculate bearing between two lat/lon points (in degrees)
 function calculateBearing(lat1, lon1, lat2, lon2) {
@@ -175,8 +223,8 @@ function AICSimulator() {
             type: 'ownship',
             domain: 'air',
             platform: null,
-            lat: BULLSEYE.lat - (50 / 60), // 50 NM south of bullseye
-            lon: BULLSEYE.lon,
+            lat: 26.5 - (50 / 60), // 50 NM south of bullseye (initial position)
+            lon: 54.0,
             heading: 0,
             speed: 150,
             altitude: 15000,
@@ -190,9 +238,11 @@ function AICSimulator() {
         }
     ]);
     const [selectedAssetId, setSelectedAssetId] = useState(null);
+    const [selectedAssetTab, setSelectedAssetTab] = useState('general');
+    const [selectedSystemTab, setSelectedSystemTab] = useState('radar');
     const [isRunning, setIsRunning] = useState(false);
     const [scale, setScale] = useState(INITIAL_SCALE);
-    const [mapCenter, setMapCenter] = useState(BULLSEYE);
+    const [mapCenter, setMapCenter] = useState({ lat: 26.5, lon: 54.0 });
     const [tempMark, setTempMark] = useState(null);
     const [contextMenu, setContextMenu] = useState(null);
     const [cursorPos, setCursorPos] = useState(null);
@@ -213,14 +263,18 @@ function AICSimulator() {
     const [hasStarted, setHasStarted] = useState(false);
     const [missionTime, setMissionTime] = useState(0);
     const [bullseyeName, setBullseyeName] = useState('');
+    const [bullseyePosition, setBullseyePosition] = useState({ lat: 26.5, lon: 54.0 });
+    const [bullseyeLatInput, setBullseyeLatInput] = useState('N26 30.0');
+    const [bullseyeLonInput, setBullseyeLonInput] = useState('E054 00.0');
     const [bullseyeSelected, setBullseyeSelected] = useState(false);
+    const [draggedBullseye, setDraggedBullseye] = useState(false);
     const [radarControlsSelected, setRadarControlsSelected] = useState(false);
     const [radarReturns, setRadarReturns] = useState([]);
     const [radarSweepAngle, setRadarSweepAngle] = useState(0); // Current radar sweep angle in degrees
     const [radarEnabled, setRadarEnabled] = useState(true); // Radar ON/OFF state
-    const [radarSweepOpacity, setRadarSweepOpacity] = useState(0.5); // Radar sweep opacity (0-1)
-    const [radarReturnDecay, setRadarReturnDecay] = useState(30); // Radar return decay time in seconds
-    const [radarReturnIntensity, setRadarReturnIntensity] = useState(100); // Radar return intensity (1-100%)
+    const [radarSweepOpacity, setRadarSweepOpacity] = useState(0.12); // Radar sweep opacity (0-1) - default 12%
+    const [radarReturnDecay, setRadarReturnDecay] = useState(11); // Radar return decay time in seconds - default 11s
+    const [radarReturnIntensity, setRadarReturnIntensity] = useState(10); // Radar return intensity (1-100%) - default 10%
     const [esmEnabled, setEsmEnabled] = useState(false); // ESM ON/OFF state (OFF by default)
     const [esmControlsSelected, setEsmControlsSelected] = useState(false); // ESM controls page selected
     const [detectedEmitters, setDetectedEmitters] = useState([]); // List of detected emitters: { id, assetId, emitterName, bearing, visible, serialNumber }
@@ -228,6 +282,21 @@ function AICSimulator() {
     const [nextEsmSerialNumber, setNextEsmSerialNumber] = useState(1); // Counter for ESM serial numbers
     const [manualBearingLines, setManualBearingLines] = useState([]); // Manual bearing lines: { id, bearing, serialNumber, lat, lon, emitterName }
     const [nextManualLineSerialNumber, setNextManualLineSerialNumber] = useState(1); // Counter for manual line serial numbers
+    const [iffEnabled, setIffEnabled] = useState(false); // IFF ON/OFF state (OFF by default)
+    const [iffControlsSelected, setIffControlsSelected] = useState(false); // IFF controls page selected
+    const [iffOwnshipModeI, setIffOwnshipModeI] = useState(''); // Ownship MODE I (2 digit octal)
+    const [iffOwnshipModeII, setIffOwnshipModeII] = useState(''); // Ownship MODE II (4 digit octal)
+    const [iffOwnshipModeIII, setIffOwnshipModeIII] = useState(''); // Ownship MODE III (4 digit octal)
+    const [iffOwnshipModeIV, setIffOwnshipModeIV] = useState(false); // Ownship MODE IV ON/OFF
+    const [iffReturns, setIffReturns] = useState([]); // IFF returns similar to radar returns
+    const [iffReturnIntensity, setIffReturnIntensity] = useState(10); // IFF return intensity (1-100%) - default 10%
+    const [datalinkEnabled, setDatalinkEnabled] = useState(false); // Datalink ON/OFF state (OFF by default)
+    const [datalinkControlsSelected, setDatalinkControlsSelected] = useState(false); // Datalink controls page selected
+    const [datalinkNet, setDatalinkNet] = useState(''); // User's NET (1-127)
+    const [datalinkJU, setDatalinkJU] = useState(''); // User's 6 digit JU code
+    const [datalinkTrackBlockStart, setDatalinkTrackBlockStart] = useState(''); // Track block start (e.g., 6000)
+    const [datalinkTrackBlockEnd, setDatalinkTrackBlockEnd] = useState(''); // Track block end (e.g., 6200)
+    const [nextDatalinkTrackNumber, setNextDatalinkTrackNumber] = useState(null); // Next track number to assign
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
@@ -481,6 +550,215 @@ function AICSimulator() {
     }, [missionTime, isRunning, radarReturnDecay]);
 
     // ========================================================================
+    // IFF SYSTEM - Generate IFF returns for squawking assets
+    // ========================================================================
+
+    // IFF return generation - create returns when sweep passes over squawking assets
+    useEffect(() => {
+        if (isRunning && iffEnabled) {
+            const ownship = assets.find(a => a.type === 'ownship');
+            if (!ownship) return;
+
+            // Check each asset to see if the sweep just passed over it and it's squawking IFF
+            assets.forEach(asset => {
+                // Skip ownship itself
+                if (asset.type === 'ownship') return;
+
+                // Skip assets not squawking IFF
+                if (!asset.iffSquawking) return;
+
+                // Calculate bearing from ownship to asset
+                const bearing = calculateBearing(ownship.lat, ownship.lon, asset.lat, asset.lon);
+                const distance = calculateDistance(ownship.lat, ownship.lon, asset.lat, asset.lon);
+
+                // Skip if asset is beyond 320 NM range
+                if (distance > 320) return;
+
+                // Calculate radar horizon (IFF uses same horizon as radar)
+                const ownshipAltFt = ownship.altitude || 0;
+                const targetAltFt = asset.domain === 'air' ? (asset.altitude || 0) : 0;
+                const iffHorizonNM = 1.23 * (Math.sqrt(ownshipAltFt) + Math.sqrt(targetAltFt));
+
+                // Skip if target is beyond IFF horizon
+                if (distance > iffHorizonNM) return;
+
+                // Check if sweep angle just passed over this bearing
+                const angleDiff = Math.abs(((bearing - radarSweepAngle + 540) % 360) - 180);
+
+                if (angleDiff < 1) {
+                    // Create IFF return for this asset
+                    const newReturn = {
+                        assetId: asset.id,
+                        lat: asset.lat,
+                        lon: asset.lon,
+                        bearing: bearing,
+                        distance: distance,
+                        missionTime: missionTime,
+                        modeI: asset.iffModeI,
+                        modeII: asset.iffModeII,
+                        modeIII: asset.iffModeIII,
+                        id: `${asset.id}-${missionTime}-${Math.random()}`
+                    };
+                    setIffReturns(prev => [...prev, newReturn]);
+                }
+            });
+        }
+    }, [isRunning, iffEnabled, radarSweepAngle, assets, missionTime]);
+
+    // Clean up old IFF returns based on radar decay setting (IFF returns use same decay)
+    useEffect(() => {
+        if (isRunning) {
+            setIffReturns(prev => prev.filter(ret => missionTime - ret.missionTime < radarReturnDecay));
+        }
+    }, [missionTime, isRunning, radarReturnDecay]);
+
+    // ========================================================================
+    // DATALINK SYSTEM - Automatic friendly identity for same NET assets
+    // ========================================================================
+
+    useEffect(() => {
+        if (!datalinkEnabled || !datalinkNet) return;
+
+        // Check all assets and update identity based on datalink participation
+        setAssets(prevAssets => {
+            return prevAssets.map(asset => {
+                // Skip ownship
+                if (asset.type === 'ownship') return asset;
+
+                // Convert both to strings for comparison to handle number vs string
+                const userNet = String(datalinkNet);
+                const assetNet = String(asset.datalinkNet);
+
+                // Check if asset is participating in datalink on same NET (5 digits for JU now)
+                const assetInDatalink = (assetNet === userNet &&
+                                        assetNet !== '' && // Must have a NET set
+                                        !!asset.datalinkJU &&
+                                        asset.datalinkJU.length === 5 &&
+                                        !!asset.datalinkTrackBlockStart &&
+                                        !!asset.datalinkTrackBlockEnd);
+
+                if (assetInDatalink) {
+                    // Mark asset as active in datalink and set identity to friendly
+                    if (asset.identity !== 'friendly' || !asset.datalinkActive || asset.trackNumber !== asset.datalinkJU) {
+                        return {
+                            ...asset,
+                            identity: 'friendly',
+                            datalinkActive: true,
+                            trackNumber: asset.datalinkJU // Use JU as track number
+                        };
+                    }
+                } else {
+                    // Asset not in datalink on same NET, mark as inactive
+                    if (asset.datalinkActive) {
+                        return {
+                            ...asset,
+                            datalinkActive: false
+                        };
+                    }
+                }
+
+                return asset;
+            });
+        });
+    }, [datalinkEnabled, datalinkNet]);
+
+    // Check asset datalink configuration changes and update identity accordingly
+    // Track previous asset datalink state to detect changes
+    const prevAssetDatalinkRef = useRef(new Map());
+
+    useEffect(() => {
+        if (!datalinkEnabled || !datalinkNet) return;
+
+        const userNet = String(datalinkNet);
+        const currentAssetDatalink = new Map();
+
+        setAssets(prevAssets => {
+            let hasChanges = false;
+            const updatedAssets = prevAssets.map(asset => {
+                if (asset.type === 'ownship') return asset;
+
+                // Ensure old assets have identity field
+                const currentIdentity = asset.identity || 'unknown';
+
+                // Track current state
+                const stateKey = `${asset.id}`;
+                const currentState = {
+                    net: asset.datalinkNet,
+                    ju: asset.datalinkJU,
+                    start: asset.datalinkTrackBlockStart,
+                    end: asset.datalinkTrackBlockEnd
+                };
+                currentAssetDatalink.set(stateKey, currentState);
+
+                const assetNet = String(asset.datalinkNet);
+                const assetInDatalink = (assetNet === userNet &&
+                                        assetNet !== '' &&
+                                        !!asset.datalinkJU &&
+                                        asset.datalinkJU.length === 5 &&
+                                        !!asset.datalinkTrackBlockStart &&
+                                        !!asset.datalinkTrackBlockEnd);
+
+                // Only log if state changed
+                const prevState = prevAssetDatalinkRef.current.get(stateKey);
+                const stateChanged = !prevState ||
+                    prevState.net !== currentState.net ||
+                    prevState.ju !== currentState.ju ||
+                    prevState.start !== currentState.start ||
+                    prevState.end !== currentState.end;
+
+                if (asset.name && asset.datalinkNet && stateChanged) {
+                    console.log('Datalink Check:', {
+                        name: asset.name,
+                        userNet: userNet,
+                        assetNet: assetNet,
+                        assetInDatalink: assetInDatalink,
+                        currentIdentity: currentIdentity,
+                        datalinkJU: asset.datalinkJU,
+                        datalinkJULength: asset.datalinkJU?.length,
+                        trackBlockStart: asset.datalinkTrackBlockStart,
+                        trackBlockEnd: asset.datalinkTrackBlockEnd
+                    });
+                }
+
+                if (assetInDatalink && (currentIdentity !== 'friendly' || !asset.datalinkActive || asset.trackNumber !== asset.datalinkJU)) {
+                    console.log('✓ Setting asset to friendly:', asset.name);
+                    hasChanges = true;
+                    return {
+                        ...asset,
+                        identity: 'friendly',
+                        datalinkActive: true,
+                        trackNumber: asset.datalinkJU
+                    };
+                } else if (!assetInDatalink && asset.datalinkActive) {
+                    hasChanges = true;
+                    return {
+                        ...asset,
+                        datalinkActive: false
+                    };
+                } else if (asset.identity === undefined) {
+                    // Fix old assets missing identity field
+                    hasChanges = true;
+                    return {
+                        ...asset,
+                        identity: 'unknown'
+                    };
+                }
+
+                return asset;
+            });
+
+            // Update ref for next comparison
+            prevAssetDatalinkRef.current = currentAssetDatalink;
+
+            if (hasChanges) {
+                console.log('Updating assets with new datalink identities');
+                return updatedAssets;
+            }
+            return prevAssets;
+        });
+    }, [assets, datalinkEnabled, datalinkNet]);
+
+    // ========================================================================
     // ESM SYSTEM - Detect active emitters
     // ========================================================================
 
@@ -620,10 +898,11 @@ function AICSimulator() {
             id: nextAssetId,
             name: assetData.name || `Asset ${nextAssetId}`,
             type: assetData.type || 'unknown',
+            identity: assetData.identity || 'unknown', // friendly, hostile, neutral, unknown, unknownUnevaluated
             domain: domain,
             platform: platform,
-            lat: assetData.lat || BULLSEYE.lat,
-            lon: assetData.lon || BULLSEYE.lon,
+            lat: assetData.lat || bullseyePosition.lat,
+            lon: assetData.lon || bullseyePosition.lon,
             heading: assetData.heading || 0,
             speed: speed,
             altitude: domainConfig.hasAltitude ? altitude : 0,
@@ -634,13 +913,23 @@ function AICSimulator() {
             targetDepth: domainConfig.hasDepth ? null : null,
             waypoints: [],
             trackNumber: null,
-            emitterStates: emitterStates
+            emitterStates: emitterStates,
+            iffModeI: assetData.iffModeI || '',
+            iffModeII: assetData.iffModeII || '',
+            iffModeIII: assetData.iffModeIII || '',
+            iffSquawking: assetData.iffSquawking !== undefined ? assetData.iffSquawking : false,
+            datalinkNet: assetData.datalinkNet || '',
+            datalinkJU: assetData.datalinkJU || '',
+            datalinkTrackBlockStart: assetData.datalinkTrackBlockStart || '',
+            datalinkTrackBlockEnd: assetData.datalinkTrackBlockEnd || '',
+            datalinkActive: false, // Whether asset is active in datalink
+            datalinkAssignedTrack: null // Track number assigned when reported to datalink
         };
 
         setAssets(prev => [...prev, newAsset]);
         setNextAssetId(prev => prev + 1);
         setSelectedAssetId(newAsset.id);
-    }, [nextAssetId]);
+    }, [nextAssetId, bullseyePosition]);
 
     const deleteAsset = useCallback((assetId) => {
         // Prevent deletion of ownship
@@ -700,12 +989,56 @@ function AICSimulator() {
 
     const reportTrack = useCallback((assetId) => {
         const asset = assets.find(a => a.id === assetId);
-        // Only assign a track number if the asset doesn't already have one
-        if (asset && asset.trackNumber === null) {
-            updateAsset(assetId, { trackNumber: nextTrackNumber });
-            setNextTrackNumber(prev => prev + 1);
+        if (!asset) return;
+
+        // Don't allow reporting ownship
+        if (asset.type === 'ownship') {
+            alert('Cannot report ownship track');
+            return;
         }
-    }, [nextTrackNumber, updateAsset, assets]);
+
+        // Check if datalink is active (5 digits for JU now)
+        const datalinkActive = datalinkEnabled &&
+                               datalinkNet &&
+                               datalinkJU.length === 5 &&
+                               datalinkTrackBlockStart &&
+                               datalinkTrackBlockEnd;
+
+        if (!datalinkActive) {
+            alert('Datalink must be powered on with NET, JU, and Track Block configured');
+            return;
+        }
+
+        // Check if asset is already in datalink with same NET - silently skip
+        if (asset.datalinkNet === datalinkNet &&
+            asset.datalinkJU &&
+            asset.datalinkJU.length === 5 &&
+            asset.datalinkTrackBlockStart &&
+            asset.datalinkTrackBlockEnd) {
+            return; // Removed alert - just silently ignore
+        }
+
+        // Check if we have tracks available in the block
+        if (nextDatalinkTrackNumber === null) {
+            alert('Track block start must be configured');
+            return;
+        }
+
+        const trackBlockEnd = parseInt(datalinkTrackBlockEnd);
+        if (nextDatalinkTrackNumber > trackBlockEnd) {
+            alert('Track block exhausted. No more tracks available.');
+            return;
+        }
+
+        // Assign track number from datalink track block
+        updateAsset(assetId, {
+            trackNumber: nextDatalinkTrackNumber,
+            datalinkAssignedTrack: nextDatalinkTrackNumber
+        });
+
+        // Increment to next track number
+        setNextDatalinkTrackNumber(prev => prev + 1);
+    }, [assets, updateAsset, datalinkEnabled, datalinkNet, datalinkJU, datalinkTrackBlockStart, datalinkTrackBlockEnd, nextDatalinkTrackNumber]);
 
     // ========================================================================
     // WAYPOINT MANAGEMENT
@@ -1038,7 +1371,7 @@ function AICSimulator() {
             version: '1.0',
             timestamp: new Date().toISOString(),
             assets,
-            bullseye: BULLSEYE,
+            bullseye: bullseyePosition,
             bullseyeName,
             scale,
             mapCenter,
@@ -1053,14 +1386,14 @@ function AICSimulator() {
 
         localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
         alert(`Scenario saved to application: ${name}`);
-    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId]);
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId]);
 
     const saveToFile = useCallback((name) => {
         const saveData = {
             version: '1.0',
             timestamp: new Date().toISOString(),
             assets,
-            bullseye: BULLSEYE,
+            bullseye: bullseyePosition,
             bullseyeName,
             scale,
             mapCenter,
@@ -1080,7 +1413,7 @@ function AICSimulator() {
         a.download = `${name}-${new Date().toISOString().split('T')[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
-    }, [assets, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId]);
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId]);
 
     const loadFromLocalStorage = useCallback((name) => {
         const data = localStorage.getItem(`aic-scenario-${name}`);
@@ -1113,6 +1446,12 @@ function AICSimulator() {
 
             const ownshipIndex = loadedAssets.findIndex(a => a.id === 0 || a.type === 'ownship');
 
+            // Load bullseye position (with fallback to default)
+            const loadedBullseye = saveData.bullseye || { lat: 26.5, lon: 54.0 };
+            setBullseyePosition(loadedBullseye);
+            setBullseyeLatInput(decimalToDMM(loadedBullseye.lat, true));
+            setBullseyeLonInput(decimalToDMM(loadedBullseye.lon, false));
+
             if (ownshipIndex === -1) {
                 // No ownship found, add default ownship 50 NM south of bullseye
                 loadedAssets = [{
@@ -1121,8 +1460,8 @@ function AICSimulator() {
                     type: 'ownship',
                     domain: 'air',
                     platform: null,
-                    lat: BULLSEYE.lat - (50 / 60),
-                    lon: BULLSEYE.lon,
+                    lat: loadedBullseye.lat - (50 / 60),
+                    lon: loadedBullseye.lon,
                     heading: 0,
                     speed: 150,
                     altitude: 15000,
@@ -1141,7 +1480,7 @@ function AICSimulator() {
 
             setAssets(loadedAssets);
             setScale(saveData.scale || INITIAL_SCALE);
-            setMapCenter(saveData.mapCenter || BULLSEYE);
+            setMapCenter(saveData.mapCenter || loadedBullseye);
             setTempMark(saveData.tempMark || null);
             setNextTrackNumber(saveData.nextTrackNumber || 6000);
             setSelectedAssetId(null);
@@ -1164,7 +1503,7 @@ function AICSimulator() {
             setInitialScenario({
                 assets: JSON.parse(JSON.stringify(loadedAssets)),
                 scale: saveData.scale || INITIAL_SCALE,
-                mapCenter: saveData.mapCenter || BULLSEYE,
+                mapCenter: saveData.mapCenter || loadedBullseye,
                 tempMark: saveData.tempMark || null,
                 nextTrackNumber: saveData.nextTrackNumber || 6000,
                 nextAssetId: maxId + 1,
@@ -1210,6 +1549,12 @@ function AICSimulator() {
 
                     const ownshipIndex = loadedAssets.findIndex(a => a.id === 0 || a.type === 'ownship');
 
+                    // Load bullseye position (with fallback to default)
+                    const loadedBullseye = saveData.bullseye || { lat: 26.5, lon: 54.0 };
+                    setBullseyePosition(loadedBullseye);
+                    setBullseyeLatInput(decimalToDMM(loadedBullseye.lat, true));
+                    setBullseyeLonInput(decimalToDMM(loadedBullseye.lon, false));
+
                     if (ownshipIndex === -1) {
                         // No ownship found, add default ownship 50 NM south of bullseye
                         loadedAssets = [{
@@ -1218,8 +1563,8 @@ function AICSimulator() {
                             type: 'ownship',
                             domain: 'air',
                             platform: null,
-                            lat: BULLSEYE.lat - (50 / 60),
-                            lon: BULLSEYE.lon,
+                            lat: loadedBullseye.lat - (50 / 60),
+                            lon: loadedBullseye.lon,
                             heading: 0,
                             speed: 150,
                             altitude: 15000,
@@ -1238,7 +1583,7 @@ function AICSimulator() {
 
                     setAssets(loadedAssets);
                     setScale(saveData.scale || INITIAL_SCALE);
-                    setMapCenter(saveData.mapCenter || BULLSEYE);
+                    setMapCenter(saveData.mapCenter || loadedBullseye);
                     setTempMark(saveData.tempMark || null);
                     setNextTrackNumber(saveData.nextTrackNumber || 6000);
                     setSelectedAssetId(null);
@@ -1260,7 +1605,7 @@ function AICSimulator() {
                     setInitialScenario({
                         assets: JSON.parse(JSON.stringify(loadedAssets)),
                         scale: saveData.scale || INITIAL_SCALE,
-                        mapCenter: saveData.mapCenter || BULLSEYE,
+                        mapCenter: saveData.mapCenter || loadedBullseye,
                         tempMark: saveData.tempMark || null,
                         nextTrackNumber: saveData.nextTrackNumber || 6000,
                         nextAssetId: maxId + 1,
@@ -1345,7 +1690,7 @@ function AICSimulator() {
         }
 
         // Check if clicking on the bullseye
-        const bullseyePos = latLonToScreen(BULLSEYE.lat, BULLSEYE.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+        const bullseyePos = latLonToScreen(bullseyePosition.lat, bullseyePosition.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
         const bullseyeDist = Math.sqrt((x - bullseyePos.x) ** 2 + (y - bullseyePos.y) ** 2);
         if (bullseyeDist < 15) {
             // Already handled in handleMouseDown, don't do anything
@@ -1570,6 +1915,14 @@ function AICSimulator() {
             return;
         }
 
+        // Handle bullseye dragging
+        if (draggedBullseye) {
+            setBullseyePosition({ lat: latLon.lat, lon: latLon.lon });
+            setBullseyeLatInput(decimalToDMM(latLon.lat, true));
+            setBullseyeLonInput(decimalToDMM(latLon.lon, false));
+            return;
+        }
+
         // Handle geo-point dragging
         if (draggedGeoPointId !== null) {
             updateGeoPoint(draggedGeoPointId, { lat: latLon.lat, lon: latLon.lon });
@@ -1619,7 +1972,7 @@ function AICSimulator() {
         if (draggedWaypoint !== null) {
             moveWaypoint(draggedWaypoint.assetId, draggedWaypoint.wpIndex, latLon.lat, latLon.lon);
         }
-    }, [mapCenter, scale, isDragging, dragStart, draggedWaypoint, draggedAssetId, draggedGeoPointId, draggedShapeId, draggedShapePointIndex, assets, shapes, moveWaypoint, updateAsset, updateGeoPoint, updateShape]);
+    }, [mapCenter, scale, isDragging, dragStart, draggedWaypoint, draggedAssetId, draggedGeoPointId, draggedShapeId, draggedShapePointIndex, draggedBullseye, assets, shapes, moveWaypoint, updateAsset, updateGeoPoint, updateShape, setBullseyePosition, setBullseyeLatInput, setBullseyeLonInput]);
 
     const handleMouseDown = useCallback((e) => {
         if (e.button !== 0) return; // Only left click
@@ -1630,14 +1983,23 @@ function AICSimulator() {
         const y = e.clientY - rect.top;
 
         // Check if clicking on the bullseye
-        const bullseyePos = latLonToScreen(BULLSEYE.lat, BULLSEYE.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+        const bullseyePos = latLonToScreen(bullseyePosition.lat, bullseyePosition.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
         const bullseyeDist = Math.sqrt((x - bullseyePos.x) ** 2 + (y - bullseyePos.y) ** 2);
         if (bullseyeDist < 15) {
-            setBullseyeSelected(true);
-            setSelectedAssetId(null);
-            setSelectedGeoPointId(null);
-            setRadarControlsSelected(false);
-            setTempMark(null);
+            // Enable dragging if already selected
+            if (bullseyeSelected) {
+                setDraggedBullseye(true);
+            } else {
+                // First click - select the bullseye
+                setBullseyeSelected(true);
+                setSelectedAssetId(null);
+                setSelectedGeoPointId(null);
+                setSelectedShapeId(null);
+                setRadarControlsSelected(false);
+                setEsmControlsSelected(false);
+                setIffControlsSelected(false);
+                setTempMark(null);
+            }
             return;
         }
 
@@ -1654,6 +2016,8 @@ function AICSimulator() {
                     setSelectedGeoPointId(null);
                     setBullseyeSelected(false);
                     setRadarControlsSelected(false);
+                    setEsmControlsSelected(false);
+                    setIffControlsSelected(false);
                     setTempMark(null);
                     // Check if this is the already-selected shape (enable dragging)
                     if (selectedShapeId === shape.id) {
@@ -1672,6 +2036,8 @@ function AICSimulator() {
                         setSelectedGeoPointId(null);
                         setBullseyeSelected(false);
                         setRadarControlsSelected(false);
+                        setEsmControlsSelected(false);
+                        setIffControlsSelected(false);
                         setTempMark(null);
                         // Check if this is the already-selected shape (enable dragging of this specific point)
                         if (selectedShapeId === shape.id) {
@@ -1695,6 +2061,8 @@ function AICSimulator() {
                 setSelectedShapeId(null);
                 setBullseyeSelected(false);
                 setRadarControlsSelected(false);
+                setEsmControlsSelected(false);
+                setIffControlsSelected(false);
                 setTempMark(null);
                 // Check if this is the already-selected geo-point (enable dragging)
                 if (selectedGeoPointId === geoPoint.id) {
@@ -1746,6 +2114,10 @@ function AICSimulator() {
         }
 
         if (!clickedAsset) {
+            // Close control panels when clicking on empty space
+            setRadarControlsSelected(false);
+            setEsmControlsSelected(false);
+            setIffControlsSelected(false);
             setIsDragging(true);
             setDragStart({
                 x: e.clientX,
@@ -1754,7 +2126,7 @@ function AICSimulator() {
                 centerLon: mapCenter.lon
             });
         }
-    }, [assets, geoPoints, shapes, selectedAsset, selectedGeoPointId, selectedShapeId, mapCenter, scale]);
+    }, [assets, geoPoints, shapes, selectedAsset, selectedGeoPointId, selectedShapeId, bullseyeSelected, bullseyePosition, mapCenter, scale, setBullseyeSelected, setSelectedAssetId, setSelectedGeoPointId, setSelectedShapeId, setRadarControlsSelected, setEsmControlsSelected, setIffControlsSelected, setTempMark, setDraggedBullseye, setDraggedShapeId, setDraggedShapePointIndex, setDraggedGeoPointId, setDraggedWaypoint, setDraggedAssetId, setIsDragging, setDragStart]);
 
     const handleMouseUp = useCallback(() => {
         setIsDragging(false);
@@ -1764,6 +2136,7 @@ function AICSimulator() {
         setDraggedGeoPointId(null);
         setDraggedShapeId(null);
         setDraggedShapePointIndex(null);
+        setDraggedBullseye(false);
     }, []);
 
     const handleWheel = useCallback((e) => {
@@ -1994,11 +2367,11 @@ function AICSimulator() {
     };
 
     const renderBullseye = (width, height) => {
-        const pos = latLonToScreen(BULLSEYE.lat, BULLSEYE.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+        const pos = latLonToScreen(bullseyePosition.lat, bullseyePosition.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
         const displayName = bullseyeName && bullseyeName.trim() ? bullseyeName.toUpperCase() : 'BE';
 
         return (
-            <g>
+            <g style={{ cursor: 'pointer' }}>
                 {/* Selection ring when bullseye is selected */}
                 {bullseyeSelected && (
                     <circle
@@ -2133,6 +2506,103 @@ function AICSimulator() {
         );
     };
 
+    const renderIFFReturns = (width, height) => {
+        const ownship = assets.find(a => a.type === 'ownship');
+        if (!ownship) return null;
+
+        const ownshipPos = latLonToScreen(ownship.lat, ownship.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+
+        // Simple seeded random function for consistent fuzziness
+        const seededRandom = (seed) => {
+            const x = Math.sin(seed) * 10000;
+            return x - Math.floor(x);
+        };
+
+        return (
+            <g>
+                {iffReturns.map(ret => {
+                    const age = missionTime - ret.missionTime;
+                    const baseOpacity = Math.max(0, 1 - (age / radarReturnDecay));
+                    const opacity = baseOpacity * (iffReturnIntensity / 100);
+
+                    // Get the actual target position
+                    const targetPos = latLonToScreen(ret.lat, ret.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+
+                    // Calculate azimuth spread (same as radar)
+                    const azimuthSpreadDegrees = 0.5 + (ret.distance / 50);
+
+                    // Calculate segments for solid/hazy appearance (same density as radar)
+                    const pixelsPerNM = Math.min(width, height) / scale;
+                    const baseSegments = Math.max(15, Math.floor(azimuthSpreadDegrees * 8));
+                    const numSegments = Math.floor(baseSegments * (1 + pixelsPerNM / 50));
+                    const segments = [];
+
+                    // Create hash from return ID for seeding
+                    let idHash = 0;
+                    for (let c = 0; c < ret.id.length; c++) {
+                        idHash = ((idHash << 5) - idHash) + ret.id.charCodeAt(c);
+                        idHash = idHash & idHash;
+                    }
+
+                    // Calculate angle from ownship to target
+                    const bearingToTarget = Math.atan2(targetPos.y - ownshipPos.y, targetPos.x - ownshipPos.x);
+
+                    // Offset IFF return toward ownship by approximately the radar return width
+                    // This prevents overlap with radar returns
+                    const offsetDistance = 8; // pixels - approximately one radar return width
+                    const iffOffsetX = -offsetDistance * Math.cos(bearingToTarget);
+                    const iffOffsetY = -offsetDistance * Math.sin(bearingToTarget);
+
+                    for (let i = 0; i < numSegments; i++) {
+                        const spreadFactor = ((i - numSegments / 2) / numSegments);
+                        const azimuthOffsetRadians = spreadFactor * azimuthSpreadDegrees * Math.PI / 180;
+
+                        const perpAngle = bearingToTarget + Math.PI / 2;
+                        const spreadDistance = ret.distance * Math.tan(azimuthOffsetRadians) * pixelsPerNM;
+
+                        const spreadX = spreadDistance * Math.cos(perpAngle);
+                        const spreadY = spreadDistance * Math.sin(perpAngle);
+
+                        // Very slight curve toward ownship
+                        const curveAmount = Math.abs(spreadFactor) * 0.5;
+                        const curveX = -curveAmount * Math.cos(bearingToTarget);
+                        const curveY = -curveAmount * Math.sin(bearingToTarget);
+
+                        const segmentX = targetPos.x + spreadX + curveX + iffOffsetX;
+                        const segmentY = targetPos.y + spreadY + curveY + iffOffsetY;
+
+                        // Add stationary fuzziness
+                        const fuzzSeed = idHash + i * 100;
+                        const fuzzX = (seededRandom(fuzzSeed) - 0.5) * 3;
+                        const fuzzY = (seededRandom(fuzzSeed + 50) - 0.5) * 3;
+
+                        segments.push({
+                            x: segmentX + fuzzX,
+                            y: segmentY + fuzzY,
+                            opacity: opacity * (0.4 + seededRandom(fuzzSeed + 25) * 0.4),
+                            radius: 3 + seededRandom(fuzzSeed + 75) * 2
+                        });
+                    }
+
+                    return (
+                        <g key={ret.id}>
+                            {segments.map((seg, idx) => (
+                                <circle
+                                    key={`${ret.id}-${idx}`}
+                                    cx={seg.x}
+                                    cy={seg.y}
+                                    r={seg.radius}
+                                    fill="#00FF00"
+                                    opacity={seg.opacity}
+                                />
+                            ))}
+                        </g>
+                    );
+                })}
+            </g>
+        );
+    };
+
     const renderRadarSweep = (width, height) => {
         const ownship = assets.find(a => a.type === 'ownship');
         // Don't show radar sweep until user has started simulation at least once, or if radar is disabled
@@ -2251,11 +2721,15 @@ function AICSimulator() {
                     const endX = ownshipPos.x + tMin * cos;
                     const endY = ownshipPos.y + tMin * sin;
 
-                    // Inset label from edge by 25 pixels, but more from top to avoid status bar
-                    let inset = 25;
-                    // If label is near the top edge (within 60px), inset more to avoid status indicators
-                    if (endY < 60) {
-                        inset = 60;
+                    // Inset label from edge - increased by 50% for better spacing
+                    let inset = 37.5; // Increased from 25
+                    // If label is near the top edge (within 90px), inset more to avoid status indicators
+                    if (endY < 90) {
+                        inset = 90; // Increased from 60
+                    }
+                    // If label is near the bottom edge, double the inset (2x = 75px)
+                    if (endY > height - 90) {
+                        inset = 75; // 2x the base inset
                     }
                     const labelX = endX - inset * cos;
                     const labelY = endY - inset * sin;
@@ -2276,29 +2750,33 @@ function AICSimulator() {
 
                     return (
                         <g key={emitter.id}>
-                            {/* LOB Line - solid, clickable */}
-                            <line
-                                x1={ownshipPos.x}
-                                y1={ownshipPos.y}
-                                x2={endX}
-                                y2={endY}
-                                stroke={lineColor}
-                                strokeWidth={isSelected ? 2 : 1.5}
-                                opacity={isActive ? 0.8 : 0.6}
-                                style={{ cursor: 'pointer' }}
-                                onClick={handleEsmClick}
-                            />
-                            {/* Invisible wider line for easier clicking */}
-                            <line
-                                x1={ownshipPos.x}
-                                y1={ownshipPos.y}
-                                x2={endX}
-                                y2={endY}
-                                stroke="transparent"
-                                strokeWidth={10}
-                                style={{ cursor: 'pointer' }}
-                                onClick={handleEsmClick}
-                            />
+                            {/* LOB Line - only show when selected */}
+                            {isSelected && (
+                                <>
+                                    <line
+                                        x1={ownshipPos.x}
+                                        y1={ownshipPos.y}
+                                        x2={endX}
+                                        y2={endY}
+                                        stroke={lineColor}
+                                        strokeWidth={2}
+                                        opacity={isActive ? 0.8 : 0.6}
+                                        style={{ cursor: 'pointer' }}
+                                        onClick={handleEsmClick}
+                                    />
+                                    {/* Invisible wider line for easier clicking */}
+                                    <line
+                                        x1={ownshipPos.x}
+                                        y1={ownshipPos.y}
+                                        x2={endX}
+                                        y2={endY}
+                                        stroke="transparent"
+                                        strokeWidth={10}
+                                        style={{ cursor: 'pointer' }}
+                                        onClick={handleEsmClick}
+                                    />
+                                </>
+                            )}
                             {/* Label Box */}
                             <g
                                 style={{ cursor: 'pointer' }}
@@ -2376,10 +2854,14 @@ function AICSimulator() {
                     const endX = lineStartPos.x + tMin * cos;
                     const endY = lineStartPos.y + tMin * sin;
 
-                    // Inset label from edge by 25 pixels, but more from top to avoid status bar
-                    let inset = 25;
-                    if (endY < 60) {
-                        inset = 60;
+                    // Inset label from edge - increased by 50% for better spacing
+                    let inset = 37.5; // Increased from 25
+                    if (endY < 90) {
+                        inset = 90; // Increased from 60
+                    }
+                    // If label is near the bottom edge, double the inset (2x = 75px)
+                    if (endY > height - 90) {
+                        inset = 75; // 2x the base inset
                     }
                     const labelX = endX - inset * cos;
                     const labelY = endY - inset * sin;
@@ -2416,7 +2898,7 @@ function AICSimulator() {
 
                     return (
                         <g key={line.id}>
-                            {/* Line */}
+                            {/* Line - always show for manual bearing lines */}
                             <line
                                 x1={lineStartPos.x}
                                 y1={lineStartPos.y}
@@ -2475,7 +2957,9 @@ function AICSimulator() {
     };
 
     const renderAsset = (asset, width, height) => {
-        const config = ASSET_TYPES[asset.type];
+        // Use 'ownship' if type is ownship, otherwise use identity for symbol
+        const symbolType = asset.type === 'ownship' ? 'ownship' : (asset.identity || 'unknown');
+        const config = ASSET_TYPES[symbolType];
         const pos = latLonToScreen(asset.lat, asset.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
         const isSelected = asset.id === selectedAssetId;
         const size = 12; // Consistent size for all assets
@@ -2663,25 +3147,73 @@ function AICSimulator() {
                     {asset.name}
                 </text>
 
-                {/* Flight level / Depth display below */}
-                {asset.domain === 'air' && (
-                    <text x={pos.x} y={pos.y+size+15} fill={config.color} fontSize="9"
-                          textAnchor="middle" fontWeight="700">
-                        FL{Math.round(asset.altitude/100)}
-                    </text>
-                )}
-                {asset.domain === 'subSurface' && asset.depth !== null && (
-                    <text x={pos.x} y={pos.y+size+15} fill={config.color} fontSize="9"
-                          textAnchor="middle" fontWeight="700">
-                        {asset.depth}ft
-                    </text>
-                )}
-                {asset.trackNumber && (
-                    <text x={pos.x} y={pos.y+size+27} fill={config.color} fontSize="8"
-                          textAnchor="middle" fontWeight="700">
-                        TN#{asset.trackNumber}
-                    </text>
-                )}
+                {/* Labels below asset - dynamically positioned */}
+                {(() => {
+                    let currentY = pos.y + size + 15;
+                    const lineSpacing = 12;
+                    const labels = [];
+
+                    // Track number
+                    if (asset.trackNumber) {
+                        labels.push(
+                            <text key="tn" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                  textAnchor="middle" fontWeight="700">
+                                TN#{asset.trackNumber}
+                            </text>
+                        );
+                        currentY += lineSpacing;
+                    }
+
+                    // IFF Codes - only when squawking
+                    if (asset.iffSquawking) {
+                        if (asset.iffModeI) {
+                            labels.push(
+                                <text key="m1" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                      textAnchor="middle" fontWeight="700">
+                                    M1: {asset.iffModeI}
+                                </text>
+                            );
+                            currentY += lineSpacing;
+                        }
+                        if (asset.iffModeII) {
+                            labels.push(
+                                <text key="m2" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                      textAnchor="middle" fontWeight="700">
+                                    M2: {asset.iffModeII}
+                                </text>
+                            );
+                            currentY += lineSpacing;
+                        }
+                        if (asset.iffModeIII) {
+                            labels.push(
+                                <text key="m3" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                      textAnchor="middle" fontWeight="700">
+                                    M3: {asset.iffModeIII}
+                                </text>
+                            );
+                            currentY += lineSpacing;
+                        }
+                    }
+
+                    // Altitude / Depth - always shown
+                    if (asset.domain === 'air') {
+                        labels.push(
+                            <text key="alt" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                  textAnchor="middle" fontWeight="700">
+                                ALT: FL{Math.round(asset.altitude/100)}
+                            </text>
+                        );
+                    } else if (asset.domain === 'subSurface' && asset.depth !== null) {
+                        labels.push(
+                            <text key="depth" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                  textAnchor="middle" fontWeight="700">
+                                DEPTH: {asset.depth}ft
+                            </text>
+                        );
+                    }
+
+                    return <g>{labels}</g>;
+                })()}
 
                 {/* Waypoints */}
                 {asset.waypoints.map((wp, i) => {
@@ -3075,6 +3607,7 @@ function AICSimulator() {
                             {renderTempMark(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarSweep(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarReturns(svgRef.current.clientWidth, svgRef.current.clientHeight)}
+                            {renderIFFReturns(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {shapes.map(shape => renderShape(shape, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                             {/* Render line segment being created */}
                             {creatingShape && creatingShape.type === 'lineSegment' && creatingShape.points.length > 0 && (() => {
@@ -3157,8 +3690,8 @@ function AICSimulator() {
                         <div className="position-box">
                             <div className="position-label">FROM {bullseyeName && bullseyeName.trim() ? bullseyeName.toUpperCase() : 'BULLSEYE'}</div>
                             <div className="position-value">
-                                {Math.round(calculateBearing(BULLSEYE.lat, BULLSEYE.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/
-                                {Math.round(calculateDistance(BULLSEYE.lat, BULLSEYE.lon, cursorPos.lat, cursorPos.lon))}
+                                {Math.round(calculateBearing(bullseyePosition.lat, bullseyePosition.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/
+                                {Math.round(calculateDistance(bullseyePosition.lat, bullseyePosition.lon, cursorPos.lat, cursorPos.lon))}
                             </div>
                         </div>
 
@@ -3208,6 +3741,12 @@ function AICSimulator() {
                 bullseyeSelected={bullseyeSelected}
                 bullseyeName={bullseyeName}
                 setBullseyeName={setBullseyeName}
+                bullseyePosition={bullseyePosition}
+                setBullseyePosition={setBullseyePosition}
+                bullseyeLatInput={bullseyeLatInput}
+                setBullseyeLatInput={setBullseyeLatInput}
+                bullseyeLonInput={bullseyeLonInput}
+                setBullseyeLonInput={setBullseyeLonInput}
                 radarControlsSelected={radarControlsSelected}
                 setRadarControlsSelected={setRadarControlsSelected}
                 radarEnabled={radarEnabled}
@@ -3226,6 +3765,20 @@ function AICSimulator() {
                 setDetectedEmitters={setDetectedEmitters}
                 selectedEsmId={selectedEsmId}
                 setSelectedEsmId={setSelectedEsmId}
+                iffControlsSelected={iffControlsSelected}
+                setIffControlsSelected={setIffControlsSelected}
+                iffEnabled={iffEnabled}
+                setIffEnabled={setIffEnabled}
+                iffOwnshipModeI={iffOwnshipModeI}
+                setIffOwnshipModeI={setIffOwnshipModeI}
+                iffOwnshipModeII={iffOwnshipModeII}
+                setIffOwnshipModeII={setIffOwnshipModeII}
+                iffOwnshipModeIII={iffOwnshipModeIII}
+                setIffOwnshipModeIII={setIffOwnshipModeIII}
+                iffOwnshipModeIV={iffOwnshipModeIV}
+                setIffOwnshipModeIV={setIffOwnshipModeIV}
+                iffReturnIntensity={iffReturnIntensity}
+                setIffReturnIntensity={setIffReturnIntensity}
                 geoPoints={geoPoints}
                 selectedGeoPointId={selectedGeoPointId}
                 updateGeoPoint={updateGeoPoint}
@@ -3240,6 +3793,24 @@ function AICSimulator() {
                 setManualBearingLines={setManualBearingLines}
                 nextManualLineSerialNumber={nextManualLineSerialNumber}
                 setNextManualLineSerialNumber={setNextManualLineSerialNumber}
+                datalinkControlsSelected={datalinkControlsSelected}
+                setDatalinkControlsSelected={setDatalinkControlsSelected}
+                datalinkEnabled={datalinkEnabled}
+                setDatalinkEnabled={setDatalinkEnabled}
+                datalinkNet={datalinkNet}
+                setDatalinkNet={setDatalinkNet}
+                datalinkJU={datalinkJU}
+                setDatalinkJU={setDatalinkJU}
+                datalinkTrackBlockStart={datalinkTrackBlockStart}
+                setDatalinkTrackBlockStart={setDatalinkTrackBlockStart}
+                datalinkTrackBlockEnd={datalinkTrackBlockEnd}
+                setDatalinkTrackBlockEnd={setDatalinkTrackBlockEnd}
+                nextDatalinkTrackNumber={nextDatalinkTrackNumber}
+                setNextDatalinkTrackNumber={setNextDatalinkTrackNumber}
+                selectedAssetTab={selectedAssetTab}
+                setSelectedAssetTab={setSelectedAssetTab}
+                selectedSystemTab={selectedSystemTab}
+                setSelectedSystemTab={setSelectedSystemTab}
             />
 
             {/* Context Menu */}
@@ -3349,16 +3920,34 @@ function ControlPanel({
     updateAsset, deleteAsset, reportTrack, setShowAddAssetDialog,
     setShowSaveDialog, setShowLoadDialog, setShowPauseMenu, centerMapOnAsset,
     restartSimulation, hasStarted, bullseyeSelected, bullseyeName, setBullseyeName,
+    bullseyePosition, setBullseyePosition, bullseyeLatInput, setBullseyeLatInput,
+    bullseyeLonInput, setBullseyeLonInput,
     radarControlsSelected, setRadarControlsSelected,
     radarEnabled, setRadarEnabled, radarSweepOpacity, setRadarSweepOpacity,
     radarReturnDecay, setRadarReturnDecay, radarReturnIntensity, setRadarReturnIntensity,
     esmControlsSelected, setEsmControlsSelected,
     esmEnabled, setEsmEnabled, detectedEmitters, setDetectedEmitters,
     selectedEsmId, setSelectedEsmId,
+    iffControlsSelected, setIffControlsSelected,
+    iffEnabled, setIffEnabled,
+    iffOwnshipModeI, setIffOwnshipModeI,
+    iffOwnshipModeII, setIffOwnshipModeII,
+    iffOwnshipModeIII, setIffOwnshipModeIII,
+    iffOwnshipModeIV, setIffOwnshipModeIV,
+    iffReturnIntensity, setIffReturnIntensity,
     geoPoints, selectedGeoPointId, updateGeoPoint, deleteGeoPoint,
     shapes, selectedShapeId, updateShape, deleteShape,
     platforms, missionTime,
-    manualBearingLines, setManualBearingLines, nextManualLineSerialNumber, setNextManualLineSerialNumber
+    manualBearingLines, setManualBearingLines, nextManualLineSerialNumber, setNextManualLineSerialNumber,
+    datalinkControlsSelected, setDatalinkControlsSelected,
+    datalinkEnabled, setDatalinkEnabled,
+    datalinkNet, setDatalinkNet,
+    datalinkJU, setDatalinkJU,
+    datalinkTrackBlockStart, setDatalinkTrackBlockStart,
+    datalinkTrackBlockEnd, setDatalinkTrackBlockEnd,
+    nextDatalinkTrackNumber, setNextDatalinkTrackNumber,
+    selectedAssetTab, setSelectedAssetTab,
+    selectedSystemTab, setSelectedSystemTab
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
@@ -3375,19 +3964,38 @@ function ControlPanel({
                 heading: Math.round(selectedAsset.heading),
                 speed: Math.round(selectedAsset.speed),
                 altitude: Math.round(selectedAsset.altitude),
-                depth: Math.round(selectedAsset.depth || 0)
+                depth: Math.round(selectedAsset.depth || 0),
+                lat: decimalToDMM(selectedAsset.lat, true),
+                lon: decimalToDMM(selectedAsset.lon, false)
             });
         }
     }, [selectedAsset?.id]); // Only depend on ID, not the whole asset object
 
-    // Update geo-point edit values when geo-point is first selected or when switching geo-points
+    // Update asset LAT/LONG display when asset position changes (e.g., during dragging)
+    useEffect(() => {
+        if (selectedAsset) {
+            setEditValues(prev => ({
+                ...prev,
+                lat: decimalToDMM(selectedAsset.lat, true),
+                lon: decimalToDMM(selectedAsset.lon, false)
+            }));
+        }
+    }, [selectedAsset?.lat, selectedAsset?.lon]);
+
+    // Update geo-point edit values when geo-point is first selected, when switching geo-points, or when position changes
     useEffect(() => {
         const selectedGeoPoint = geoPoints.find(gp => gp.id === selectedGeoPointId);
-        if (selectedGeoPoint && selectedGeoPoint.id !== selectedGeoPointIdRef.current) {
-            selectedGeoPointIdRef.current = selectedGeoPoint.id;
+        if (selectedGeoPoint) {
+            // Update if switching to a different geo-point OR if the same geo-point's position changed
+            const isDifferentGeoPoint = selectedGeoPoint.id !== selectedGeoPointIdRef.current;
+            if (isDifferentGeoPoint) {
+                selectedGeoPointIdRef.current = selectedGeoPoint.id;
+            }
+
+            // Always update the display values to reflect current position
             setGeoPointEditValues({
-                lat: selectedGeoPoint.lat.toFixed(4),
-                lon: selectedGeoPoint.lon.toFixed(4)
+                lat: decimalToDMM(selectedGeoPoint.lat, true),
+                lon: decimalToDMM(selectedGeoPoint.lon, false)
             });
         }
     }, [selectedGeoPointId, geoPoints]);
@@ -3401,13 +4009,13 @@ function ControlPanel({
             if (selectedShape.type === 'lineSegment') {
                 // Initialize edit values for all line segment points
                 selectedShape.points.forEach((point, index) => {
-                    initialValues[`${index}_lat`] = point.lat.toFixed(4);
-                    initialValues[`${index}_lon`] = point.lon.toFixed(4);
+                    initialValues[`${index}_lat`] = decimalToDMM(point.lat, true);
+                    initialValues[`${index}_lon`] = decimalToDMM(point.lon, false);
                 });
             } else if (selectedShape.type === 'circle') {
                 // Initialize edit values for circle center
-                initialValues.centerLat = selectedShape.centerLat.toFixed(4);
-                initialValues.centerLon = selectedShape.centerLon.toFixed(4);
+                initialValues.centerLat = decimalToDMM(selectedShape.centerLat, true);
+                initialValues.centerLon = decimalToDMM(selectedShape.centerLon, false);
             }
 
             setShapePointEditValues(initialValues);
@@ -3445,12 +4053,27 @@ function ControlPanel({
         console.log(`Setting ${targetField} to ${value} for asset ${selectedAsset.id}`);
     };
 
-    const applyGeoPointCoordinate = (field) => {
-        const value = parseFloat(geoPointEditValues[field]);
+    const applyAssetCoordinate = (field) => {
+        const isLatitude = field === 'lat';
+        const value = dmmToDecimal(editValues[field]);
 
         // Validate the value
-        if (isNaN(value)) {
-            alert(`Invalid ${field} value`);
+        if (value === null) {
+            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E054 00.0 or W054 00.0'}`);
+            return;
+        }
+
+        // Apply the coordinate change
+        updateAsset(selectedAsset.id, { [field]: value });
+    };
+
+    const applyGeoPointCoordinate = (field) => {
+        const isLatitude = field === 'lat';
+        const value = dmmToDecimal(geoPointEditValues[field]);
+
+        // Validate the value
+        if (value === null) {
+            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E054 00.0 or W054 00.0'}`);
             return;
         }
 
@@ -3460,11 +4083,12 @@ function ControlPanel({
 
     const applyShapePointCoordinate = (pointIndex, field) => {
         const key = `${pointIndex}_${field}`;
-        const value = parseFloat(shapePointEditValues[key]);
+        const isLatitude = field === 'lat';
+        const value = dmmToDecimal(shapePointEditValues[key]);
 
         // Validate the value
-        if (isNaN(value)) {
-            alert(`Invalid ${field} value`);
+        if (value === null) {
+            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E054 00.0 or W054 00.0'}`);
             return;
         }
 
@@ -3479,11 +4103,12 @@ function ControlPanel({
     };
 
     const applyCircleCoordinate = (field) => {
-        const value = parseFloat(shapePointEditValues[field]);
+        const isLatitude = field === 'centerLat';
+        const value = dmmToDecimal(shapePointEditValues[field]);
 
         // Validate the value
-        if (isNaN(value)) {
-            alert(`Invalid ${field} value`);
+        if (value === null) {
+            alert(`Invalid ${field} format. Use ${isLatitude ? 'N26 30.0 or S26 30.0' : 'E054 00.0 or W054 00.0'}`);
             return;
         }
 
@@ -3513,25 +4138,6 @@ function ControlPanel({
                 </div>
             </div>
 
-            {/* Systems Controls - Hide when asset or geo-point is selected */}
-            {!selectedAsset && !selectedGeoPointId && !selectedShapeId && (
-                <div className="control-section">
-                    <div className="section-header">SYSTEMS</div>
-                    <button
-                        className="control-btn full-width"
-                        onClick={() => setRadarControlsSelected(true)}
-                    >
-                        RADAR
-                    </button>
-                    <button
-                        className="control-btn full-width"
-                        onClick={() => setEsmControlsSelected(true)}
-                    >
-                        ESM
-                    </button>
-                </div>
-            )}
-
             {/* File Management - Only show before simulation has started */}
             {!hasStarted && (
                 <div className="control-section">
@@ -3544,6 +4150,540 @@ function ControlPanel({
                             LOAD
                         </button>
                     </div>
+                </div>
+            )}
+
+            {/* Systems Controls - Hide when asset or geo-point is selected */}
+            {!selectedAsset && !selectedGeoPointId && !selectedShapeId && (
+                <div className="control-section">
+                    <div className="section-header">SYSTEMS</div>
+
+                    {/* System Tab Navigation */}
+                    <div style={{ display: 'flex', gap: '5px', marginBottom: '15px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
+                        <button
+                            onClick={() => setSelectedSystemTab('radar')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedSystemTab === 'radar' ? (radarEnabled ? '#00FF00' : '#FF0000') : 'transparent',
+                                color: selectedSystemTab === 'radar' ? '#000' : (radarEnabled ? '#00FF00' : '#FF0000'),
+                                border: 'none',
+                                borderBottom: selectedSystemTab === 'radar' ? `2px solid ${radarEnabled ? '#00FF00' : '#FF0000'}` : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            RADAR
+                        </button>
+                        <button
+                            onClick={() => setSelectedSystemTab('esm')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedSystemTab === 'esm' ? (esmEnabled ? '#00FF00' : '#FF0000') : 'transparent',
+                                color: selectedSystemTab === 'esm' ? '#000' : (esmEnabled ? '#00FF00' : '#FF0000'),
+                                border: 'none',
+                                borderBottom: selectedSystemTab === 'esm' ? `2px solid ${esmEnabled ? '#00FF00' : '#FF0000'}` : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            ESM
+                        </button>
+                        <button
+                            onClick={() => setSelectedSystemTab('iff')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedSystemTab === 'iff' ? (iffEnabled ? '#00FF00' : '#FF0000') : 'transparent',
+                                color: selectedSystemTab === 'iff' ? '#000' : (iffEnabled ? '#00FF00' : '#FF0000'),
+                                border: 'none',
+                                borderBottom: selectedSystemTab === 'iff' ? `2px solid ${iffEnabled ? '#00FF00' : '#FF0000'}` : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            IFF
+                        </button>
+                        <button
+                            onClick={() => setSelectedSystemTab('datalink')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedSystemTab === 'datalink' ? (datalinkEnabled ? '#00FF00' : '#FF0000') : 'transparent',
+                                color: selectedSystemTab === 'datalink' ? '#000' : (datalinkEnabled ? '#00FF00' : '#FF0000'),
+                                border: 'none',
+                                borderBottom: selectedSystemTab === 'datalink' ? `2px solid ${datalinkEnabled ? '#00FF00' : '#FF0000'}` : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            DATALINK
+                        </button>
+                    </div>
+
+                    {/* RADAR TAB */}
+                    {selectedSystemTab === 'radar' && (
+                        <div>
+                            {/* Radar ON/OFF Button */}
+                            <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                                <button
+                                    className={`control-btn ${radarEnabled ? 'primary' : 'danger'}`}
+                                    onClick={() => setRadarEnabled(!radarEnabled)}
+                                    style={{ width: '100%' }}
+                                >
+                                    {radarEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+
+                            {/* Radar Controls */}
+                            <div className="input-group">
+                                <label className="input-label">Sweep Opacity (%)</label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    value={Math.round(radarSweepOpacity * 100)}
+                                    onChange={(e) => setRadarSweepOpacity(Number(e.target.value) / 100)}
+                                    className="slider"
+                                />
+                                <div style={{ textAlign: 'center', fontSize: '12px', marginTop: '5px' }}>
+                                    {Math.round(radarSweepOpacity * 100)}%
+                                </div>
+                            </div>
+
+                            <div className="input-group">
+                                <label className="input-label">Return Decay (sec)</label>
+                                <input
+                                    type="range"
+                                    min="10"
+                                    max="60"
+                                    value={radarReturnDecay}
+                                    onChange={(e) => setRadarReturnDecay(Number(e.target.value))}
+                                    className="slider"
+                                />
+                                <div style={{ textAlign: 'center', fontSize: '12px', marginTop: '5px' }}>
+                                    {radarReturnDecay}s
+                                </div>
+                            </div>
+
+                            <div className="input-group">
+                                <label className="input-label">Return Intensity (%)</label>
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="100"
+                                    value={radarReturnIntensity}
+                                    onChange={(e) => setRadarReturnIntensity(Number(e.target.value))}
+                                    className="slider"
+                                />
+                                <div style={{ textAlign: 'center', fontSize: '12px', marginTop: '5px' }}>
+                                    {radarReturnIntensity}%
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ESM TAB */}
+                    {selectedSystemTab === 'esm' && (
+                        <div>
+                            {/* ESM ON/OFF Button */}
+                            <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                                <button
+                                    className={`control-btn ${esmEnabled ? 'primary' : 'danger'}`}
+                                    onClick={() => setEsmEnabled(!esmEnabled)}
+                                    style={{ width: '100%' }}
+                                >
+                                    {esmEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+
+                            {/* ESM Contacts List */}
+                            <div style={{ marginBottom: '10px', fontSize: '10px', fontWeight: 'bold', opacity: 0.7 }}>
+                                CONTACTS
+                            </div>
+                            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                                {detectedEmitters.filter(e => !e.isManualLine).map((emitter) => (
+                                    <div
+                                        key={emitter.id}
+                                        onClick={() => setSelectedEsmId(emitter.id)}
+                                        style={{
+                                            padding: '8px',
+                                            marginBottom: '5px',
+                                            background: selectedEsmId === emitter.id ? '#00FF0033' : '#2a2a2a',
+                                            borderRadius: '3px',
+                                            cursor: 'pointer',
+                                            border: selectedEsmId === emitter.id ? '1px solid #00FF00' : '1px solid transparent'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                                            <span style={{ fontSize: '11px', fontWeight: 'bold' }}>{emitter.label}</span>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '9px' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={emitter.visible !== false}
+                                                    onChange={(e) => {
+                                                        e.stopPropagation();
+                                                        setDetectedEmitters(prev =>
+                                                            prev.map(em =>
+                                                                em.id === emitter.id ? { ...em, visible: e.target.checked } : em
+                                                            )
+                                                        );
+                                                    }}
+                                                />
+                                                VIS
+                                            </label>
+                                        </div>
+                                        <div style={{ fontSize: '9px', opacity: 0.7 }}>
+                                            {emitter.assetName} - {emitter.emitterName}
+                                        </div>
+                                        <div style={{ fontSize: '9px', opacity: 0.7, marginTop: '3px' }}>
+                                            BRG: {Math.round(emitter.bearing)}° | AGE: {emitter.age}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Manual Bearing Lines */}
+                            {manualBearingLines.length > 0 && (
+                                <>
+                                    <div style={{ marginTop: '15px', marginBottom: '10px', fontSize: '10px', fontWeight: 'bold', opacity: 0.7 }}>
+                                        MANUAL LINES
+                                    </div>
+                                    <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                                        {manualBearingLines.map((line) => (
+                                            <div
+                                                key={line.id}
+                                                onClick={() => setSelectedEsmId(line.id)}
+                                                style={{
+                                                    padding: '8px',
+                                                    marginBottom: '5px',
+                                                    background: selectedEsmId === line.id ? '#00BFFF33' : '#2a2a2a',
+                                                    borderRadius: '3px',
+                                                    cursor: 'pointer',
+                                                    border: selectedEsmId === line.id ? '1px solid #00BFFF' : '1px solid transparent'
+                                                }}
+                                            >
+                                                <div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '3px' }}>{line.label}</div>
+                                                <div style={{ fontSize: '9px', opacity: 0.7 }}>
+                                                    BRG: {Math.round(line.bearing)}°
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {/* IFF TAB */}
+                    {selectedSystemTab === 'iff' && (
+                        <div>
+                            {/* IFF ON/OFF Button */}
+                            <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                                <button
+                                    className={`control-btn ${iffEnabled ? 'primary' : 'danger'}`}
+                                    onClick={() => setIffEnabled(!iffEnabled)}
+                                    style={{ width: '100%' }}
+                                >
+                                    {iffEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+
+                            {/* Ownship IFF Codes */}
+                            <div style={{ marginBottom: '15px', padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                                <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '10px', opacity: 0.7 }}>
+                                    OWNSHIP CODES
+                                </div>
+
+                                {/* MODE I */}
+                                <div className="input-group" style={{ marginBottom: '10px' }}>
+                                    <label className="input-label">MODE I (2 digit octal)</label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={iffOwnshipModeI}
+                                        key={`mode1-${iffOwnshipModeI}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^[0-7]{0,2}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^[0-7]{0,2}$/.test(val)) {
+                                                    const padded = val.padStart(2, '0');
+                                                    setIffOwnshipModeI(padded);
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="00 (press Enter)"
+                                        maxLength="2"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* MODE II */}
+                                <div className="input-group" style={{ marginBottom: '10px' }}>
+                                    <label className="input-label">MODE II (4 digit octal)</label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={iffOwnshipModeII}
+                                        key={`mode2-${iffOwnshipModeII}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^[0-7]{0,4}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^[0-7]{0,4}$/.test(val)) {
+                                                    const padded = val.padStart(4, '0');
+                                                    setIffOwnshipModeII(padded);
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="0000 (press Enter)"
+                                        maxLength="4"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* MODE III */}
+                                <div className="input-group" style={{ marginBottom: '10px' }}>
+                                    <label className="input-label">MODE III (4 digit octal)</label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={iffOwnshipModeIII}
+                                        key={`mode3-${iffOwnshipModeIII}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^[0-7]{0,4}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^[0-7]{0,4}$/.test(val)) {
+                                                    const padded = val.padStart(4, '0');
+                                                    setIffOwnshipModeIII(padded);
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="0000 (press Enter)"
+                                        maxLength="4"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* MODE IV */}
+                                <div className="input-group">
+                                    <label className="input-label">MODE IV</label>
+                                    <button
+                                        className={`control-btn ${iffOwnshipModeIV ? 'primary' : 'danger'}`}
+                                        onClick={() => setIffOwnshipModeIV(!iffOwnshipModeIV)}
+                                        style={{ width: '100%' }}
+                                    >
+                                        {iffOwnshipModeIV ? 'ON' : 'OFF'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* IFF Return Intensity */}
+                            <div className="input-group">
+                                <label className="input-label">Return Intensity (%)</label>
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="100"
+                                    value={iffReturnIntensity}
+                                    onChange={(e) => setIffReturnIntensity(Number(e.target.value))}
+                                    className="slider"
+                                />
+                                <div style={{ textAlign: 'center', fontSize: '12px', marginTop: '5px' }}>
+                                    {iffReturnIntensity}%
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* DATALINK TAB */}
+                    {selectedSystemTab === 'datalink' && (
+                        <div>
+                            {/* Datalink ON/OFF Button */}
+                            <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                                <button
+                                    className={`control-btn ${datalinkEnabled ? 'primary' : 'danger'}`}
+                                    onClick={() => setDatalinkEnabled(!datalinkEnabled)}
+                                    style={{ width: '100%' }}
+                                >
+                                    {datalinkEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+
+                            {/* Datalink Configuration */}
+                            <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                                {/* NET */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        NET (1-127)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={datalinkNet}
+                                        key={`net-${datalinkNet}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^\d{0,3}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                const num = parseInt(val);
+                                                if (val !== '' && num >= 1 && num <= 127) {
+                                                    setDatalinkNet(val);
+                                                    e.target.style.color = '#00FF00';
+                                                } else {
+                                                    e.target.value = '';
+                                                    setDatalinkNet('');
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="1 (press Enter)"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* JU Code */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        JU (5 digits)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={datalinkJU}
+                                        key={`ju-${datalinkJU}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^\d{0,5}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^\d{1,5}$/.test(val)) {
+                                                    setDatalinkJU(val.padStart(5, '0'));
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="00000 (press Enter)"
+                                        maxLength="5"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* Track Block Start */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        TRACK BLOCK START (5 digits)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={datalinkTrackBlockStart}
+                                        key={`start-${datalinkTrackBlockStart}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^\d{0,5}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^\d{1,5}$/.test(val)) {
+                                                    setDatalinkTrackBlockStart(val);
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="60100 (press Enter)"
+                                        maxLength="5"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* Track Block End */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        TRACK BLOCK END (5 digits)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={datalinkTrackBlockEnd}
+                                        key={`end-${datalinkTrackBlockEnd}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^\d{0,5}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                const num = parseInt(val);
+                                                const startNum = parseInt(datalinkTrackBlockStart);
+                                                if (/^\d{1,5}$/.test(val) && num > startNum) {
+                                                    setDatalinkTrackBlockEnd(val);
+                                                    e.target.style.color = '#00FF00';
+                                                } else {
+                                                    e.target.value = '';
+                                                    setDatalinkTrackBlockEnd('');
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="60200 (press Enter)"
+                                        maxLength="5"
+                                        style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -3561,8 +4701,50 @@ function ControlPanel({
                             placeholder="BULLSEYE"
                         />
                     </div>
+                    <div className="input-group">
+                        <label className="input-label">Latitude</label>
+                        <input
+                            className="input-field"
+                            type="text"
+                            value={bullseyeLatInput}
+                            onChange={(e) => setBullseyeLatInput(e.target.value.toUpperCase())}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    const lat = dmmToDecimal(bullseyeLatInput);
+                                    if (lat !== null && lat >= -90 && lat <= 90) {
+                                        setBullseyePosition({ ...bullseyePosition, lat });
+                                    } else {
+                                        alert('Invalid latitude. Format: N26 30.0 or S26 30.0');
+                                        setBullseyeLatInput(decimalToDMM(bullseyePosition.lat, true));
+                                    }
+                                }
+                            }}
+                            placeholder="N26 30.0"
+                        />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">Longitude</label>
+                        <input
+                            className="input-field"
+                            type="text"
+                            value={bullseyeLonInput}
+                            onChange={(e) => setBullseyeLonInput(e.target.value.toUpperCase())}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    const lon = dmmToDecimal(bullseyeLonInput);
+                                    if (lon !== null && lon >= -180 && lon <= 180) {
+                                        setBullseyePosition({ ...bullseyePosition, lon });
+                                    } else {
+                                        alert('Invalid longitude. Format: E054 00.0 or W054 00.0');
+                                        setBullseyeLonInput(decimalToDMM(bullseyePosition.lon, false));
+                                    }
+                                }
+                            }}
+                            placeholder="E054 00.0"
+                        />
+                    </div>
                     <div className="input-group" style={{ marginTop: '10px', fontSize: '9px', opacity: 0.7 }}>
-                        Reference point for all position calls. Enter a custom name or leave blank for default "BULLSEYE".
+                        Reference point for all position calls. Enter a custom name or leave blank for default "BULLSEYE". You can also drag the bullseye on the map or enter coordinates (press Enter to apply).
                     </div>
                 </div>
             )}
@@ -3619,32 +4801,32 @@ function ControlPanel({
                         <div className="input-group">
                             <label className="input-label">Latitude</label>
                             <input
-                                type="number"
-                                step="0.0001"
+                                type="text"
                                 className="input-field"
                                 value={geoPointEditValues.lat || ''}
-                                onChange={(e) => setGeoPointEditValues(prev => ({ ...prev, lat: e.target.value }))}
+                                onChange={(e) => setGeoPointEditValues(prev => ({ ...prev, lat: e.target.value.toUpperCase() }))}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                         applyGeoPointCoordinate('lat');
                                     }
                                 }}
+                                placeholder="N26 30.0"
                             />
                         </div>
 
                         <div className="input-group">
                             <label className="input-label">Longitude</label>
                             <input
-                                type="number"
-                                step="0.0001"
+                                type="text"
                                 className="input-field"
                                 value={geoPointEditValues.lon || ''}
-                                onChange={(e) => setGeoPointEditValues(prev => ({ ...prev, lon: e.target.value }))}
+                                onChange={(e) => setGeoPointEditValues(prev => ({ ...prev, lon: e.target.value.toUpperCase() }))}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                         applyGeoPointCoordinate('lon');
                                     }
                                 }}
+                                placeholder="E054 00.0"
                             />
                         </div>
 
@@ -3695,40 +4877,40 @@ function ControlPanel({
                                 <div className="input-group">
                                     <label className="input-label">Center Latitude</label>
                                     <input
-                                        type="number"
-                                        step="0.0001"
+                                        type="text"
                                         className="input-field"
                                         value={shapePointEditValues.centerLat !== undefined
                                             ? shapePointEditValues.centerLat
-                                            : selectedShape.centerLat.toFixed(4)}
+                                            : decimalToDMM(selectedShape.centerLat, true)}
                                         onChange={(e) => setShapePointEditValues(prev =>
-                                            ({ ...prev, centerLat: e.target.value }))}
+                                            ({ ...prev, centerLat: e.target.value.toUpperCase() }))}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
                                                 applyCircleCoordinate('centerLat');
                                                 e.target.blur();
                                             }
                                         }}
+                                        placeholder="N26 30.0"
                                     />
                                 </div>
 
                                 <div className="input-group">
                                     <label className="input-label">Center Longitude</label>
                                     <input
-                                        type="number"
-                                        step="0.0001"
+                                        type="text"
                                         className="input-field"
                                         value={shapePointEditValues.centerLon !== undefined
                                             ? shapePointEditValues.centerLon
-                                            : selectedShape.centerLon.toFixed(4)}
+                                            : decimalToDMM(selectedShape.centerLon, false)}
                                         onChange={(e) => setShapePointEditValues(prev =>
-                                            ({ ...prev, centerLon: e.target.value }))}
+                                            ({ ...prev, centerLon: e.target.value.toUpperCase() }))}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
                                                 applyCircleCoordinate('centerLon');
                                                 e.target.blur();
                                             }
                                         }}
+                                        placeholder="E054 00.0"
                                     />
                                 </div>
 
@@ -3781,35 +4963,35 @@ function ControlPanel({
                                             <div style={{ marginBottom: '5px' }}>
                                                 <label style={{ fontSize: '9px', color: '#00FF00', opacity: 0.7, display: 'block', marginBottom: '2px' }}>Latitude</label>
                                                 <input
-                                                    type="number"
-                                                    step="0.0001"
+                                                    type="text"
                                                     className="input-field"
                                                     style={{ fontSize: '10px', padding: '4px' }}
-                                                    value={shapePointEditValues[`${index}_lat`] !== undefined ? shapePointEditValues[`${index}_lat`] : point.lat.toFixed(4)}
-                                                    onChange={(e) => setShapePointEditValues(prev => ({ ...prev, [`${index}_lat`]: e.target.value }))}
+                                                    value={shapePointEditValues[`${index}_lat`] !== undefined ? shapePointEditValues[`${index}_lat`] : decimalToDMM(point.lat, true)}
+                                                    onChange={(e) => setShapePointEditValues(prev => ({ ...prev, [`${index}_lat`]: e.target.value.toUpperCase() }))}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
                                                             applyShapePointCoordinate(index, 'lat');
                                                             e.target.blur();
                                                         }
                                                     }}
+                                                    placeholder="N26 30.0"
                                                 />
                                             </div>
                                             <div>
                                                 <label style={{ fontSize: '9px', color: '#00FF00', opacity: 0.7, display: 'block', marginBottom: '2px' }}>Longitude</label>
                                                 <input
-                                                    type="number"
-                                                    step="0.0001"
+                                                    type="text"
                                                     className="input-field"
                                                     style={{ fontSize: '10px', padding: '4px' }}
-                                                    value={shapePointEditValues[`${index}_lon`] !== undefined ? shapePointEditValues[`${index}_lon`] : point.lon.toFixed(4)}
-                                                    onChange={(e) => setShapePointEditValues(prev => ({ ...prev, [`${index}_lon`]: e.target.value }))}
+                                                    value={shapePointEditValues[`${index}_lon`] !== undefined ? shapePointEditValues[`${index}_lon`] : decimalToDMM(point.lon, false)}
+                                                    onChange={(e) => setShapePointEditValues(prev => ({ ...prev, [`${index}_lon`]: e.target.value.toUpperCase() }))}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
                                                             applyShapePointCoordinate(index, 'lon');
                                                             e.target.blur();
                                                         }
                                                     }}
+                                                    placeholder="E054 00.0"
                                                 />
                                             </div>
                                         </div>
@@ -3850,16 +5032,35 @@ function ControlPanel({
             {/* Radar Controls - Only show when radar controls are selected */}
             {radarControlsSelected && (
                 <div className="control-section">
-                    <div className="section-header">RADAR</div>
-
-                    {/* Back Button */}
-                    <button
-                        className="control-btn full-width"
-                        onClick={() => setRadarControlsSelected(false)}
-                        style={{ marginBottom: '15px' }}
-                    >
-                        ← BACK
-                    </button>
+                    <div className="section-header" style={{ position: 'relative' }}>
+                        RADAR
+                        {/* Close Button */}
+                        <button
+                            onClick={() => setRadarControlsSelected(false)}
+                            style={{
+                                position: 'absolute',
+                                right: '0',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'none',
+                                border: 'none',
+                                color: '#00FF00',
+                                fontSize: '18px',
+                                cursor: 'pointer',
+                                padding: '0',
+                                width: '20px',
+                                height: '20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: '0.7'
+                            }}
+                            onMouseEnter={(e) => e.target.style.opacity = '1'}
+                            onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                        >
+                            ✕
+                        </button>
+                    </div>
 
                     {/* Radar ON/OFF Button */}
                     <div className="playback-controls" style={{ marginBottom: '15px' }}>
@@ -3931,7 +5132,35 @@ function ControlPanel({
             {/* ESM Controls - Only show when ESM controls are selected */}
             {esmControlsSelected && (
                 <div className="control-section">
-                    <div className="section-header">ESM</div>
+                    <div className="section-header" style={{ position: 'relative' }}>
+                        ESM
+                        {/* Close Button */}
+                        <button
+                            onClick={() => setEsmControlsSelected(false)}
+                            style={{
+                                position: 'absolute',
+                                right: '0',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'none',
+                                border: 'none',
+                                color: '#00FF00',
+                                fontSize: '18px',
+                                cursor: 'pointer',
+                                padding: '0',
+                                width: '20px',
+                                height: '20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: '0.7'
+                            }}
+                            onMouseEnter={(e) => e.target.style.opacity = '1'}
+                            onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                        >
+                            ✕
+                        </button>
+                    </div>
 
                     {/* ESM ON/OFF Button */}
                     <div className="playback-controls" style={{ marginBottom: '15px' }}>
@@ -4086,8 +5315,399 @@ function ControlPanel({
                 </div>
             )}
 
-            {/* Asset List - Only show when no asset is selected, bullseye is not selected, geo-point is not selected, and radar/ESM controls are not selected */}
-            {!selectedAsset && !bullseyeSelected && !selectedGeoPointId && !selectedShapeId && !radarControlsSelected && !esmControlsSelected && (
+            {/* IFF Controls - Only show when IFF controls are selected */}
+            {iffControlsSelected && (
+                <div className="control-section">
+                    <div className="section-header" style={{ position: 'relative' }}>
+                        IFF
+                        {/* Close Button */}
+                        <button
+                            onClick={() => setIffControlsSelected(false)}
+                            style={{
+                                position: 'absolute',
+                                right: '0',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'none',
+                                border: 'none',
+                                color: '#00FF00',
+                                fontSize: '18px',
+                                cursor: 'pointer',
+                                padding: '0',
+                                width: '20px',
+                                height: '20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: '0.7'
+                            }}
+                            onMouseEnter={(e) => e.target.style.opacity = '1'}
+                            onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                        >
+                            ✕
+                        </button>
+                    </div>
+
+                    {/* IFF ON/OFF Button */}
+                    <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                        <button
+                            className={`control-btn ${iffEnabled ? 'primary' : 'danger'}`}
+                            onClick={() => setIffEnabled(!iffEnabled)}
+                            style={{ width: '100%' }}
+                        >
+                            {iffEnabled ? 'ON' : 'OFF'}
+                        </button>
+                    </div>
+
+                    {/* Ownship IFF Codes */}
+                    <div style={{ marginBottom: '15px', padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '10px', opacity: 0.7 }}>
+                            OWNSHIP CODES
+                        </div>
+
+                        {/* MODE I */}
+                        <div className="input-group" style={{ marginBottom: '10px' }}>
+                            <label className="input-label">MODE I (2 digit octal)</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                defaultValue={iffOwnshipModeI}
+                                key={`mode1-${iffOwnshipModeI}`}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    // Only allow octal digits (0-7) and max 2 chars
+                                    if (!/^[0-7]{0,2}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
+                                    }
+                                    e.target.style.color = '#00BFFF';
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        if (/^[0-7]{0,2}$/.test(val)) {
+                                            // Pad with zeros to 2 digits
+                                            const padded = val.padStart(2, '0');
+                                            setIffOwnshipModeI(padded);
+                                            e.target.style.color = '#00FF00';
+                                        }
+                                    }
+                                }}
+                                placeholder="00 (press Enter)"
+                                maxLength="2"
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                            />
+                        </div>
+
+                        {/* MODE II */}
+                        <div className="input-group" style={{ marginBottom: '10px' }}>
+                            <label className="input-label">MODE II (4 digit octal)</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                defaultValue={iffOwnshipModeII}
+                                key={`mode2-${iffOwnshipModeII}`}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    // Only allow octal digits (0-7) and max 4 chars
+                                    if (!/^[0-7]{0,4}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
+                                    }
+                                    e.target.style.color = '#00BFFF';
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        if (/^[0-7]{0,4}$/.test(val)) {
+                                            // Pad with zeros to 4 digits
+                                            const padded = val.padStart(4, '0');
+                                            setIffOwnshipModeII(padded);
+                                            e.target.style.color = '#00FF00';
+                                        }
+                                    }
+                                }}
+                                placeholder="0000 (press Enter)"
+                                maxLength="4"
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                            />
+                        </div>
+
+                        {/* MODE III */}
+                        <div className="input-group" style={{ marginBottom: '10px' }}>
+                            <label className="input-label">MODE III (4 digit octal)</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                defaultValue={iffOwnshipModeIII}
+                                key={`mode3-${iffOwnshipModeIII}`}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    // Only allow octal digits (0-7) and max 4 chars
+                                    if (!/^[0-7]{0,4}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
+                                    }
+                                    e.target.style.color = '#00BFFF';
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        if (/^[0-7]{0,4}$/.test(val)) {
+                                            // Pad with zeros to 4 digits
+                                            const padded = val.padStart(4, '0');
+                                            setIffOwnshipModeIII(padded);
+                                            e.target.style.color = '#00FF00';
+                                        }
+                                    }
+                                }}
+                                placeholder="0000 (press Enter)"
+                                maxLength="4"
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                            />
+                        </div>
+
+                        {/* MODE IV */}
+                        <div className="input-group">
+                            <label className="input-label">MODE IV</label>
+                            <button
+                                className={`control-btn ${iffOwnshipModeIV ? 'primary' : 'danger'}`}
+                                onClick={() => setIffOwnshipModeIV(!iffOwnshipModeIV)}
+                                style={{ width: '100%' }}
+                            >
+                                {iffOwnshipModeIV ? 'ON' : 'OFF'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* IFF Return Intensity Slider */}
+                    <div className="input-group" style={{ marginTop: '15px' }}>
+                        <label className="input-label">Return Intensity</label>
+                        <input
+                            type="range"
+                            min="1"
+                            max="100"
+                            step="1"
+                            value={iffReturnIntensity}
+                            onChange={(e) => setIffReturnIntensity(parseInt(e.target.value))}
+                            className="slider"
+                            style={{ width: '100%' }}
+                        />
+                        <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '5px' }}>
+                            {iffReturnIntensity}%
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Datalink Controls Panel */}
+            {datalinkControlsSelected && (
+                <div className="control-section">
+                    <div className="section-header" style={{ position: 'relative' }}>
+                        DATALINK
+                        {/* Close Button */}
+                        <button
+                            onClick={() => setDatalinkControlsSelected(false)}
+                            style={{
+                                position: 'absolute',
+                                right: '0',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'none',
+                                border: 'none',
+                                color: '#00FF00',
+                                fontSize: '18px',
+                                cursor: 'pointer',
+                                padding: '0',
+                                width: '20px',
+                                height: '20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                opacity: '0.7'
+                            }}
+                            onMouseEnter={(e) => e.target.style.opacity = '1'}
+                            onMouseLeave={(e) => e.target.style.opacity = '0.7'}
+                        >
+                            ✕
+                        </button>
+                    </div>
+
+                    {/* Datalink ON/OFF Button */}
+                    <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                        <button
+                            className={`control-btn ${datalinkEnabled ? 'primary' : 'danger'}`}
+                            onClick={() => setDatalinkEnabled(!datalinkEnabled)}
+                            style={{ width: '100%' }}
+                        >
+                            {datalinkEnabled ? 'ON' : 'OFF'}
+                        </button>
+                    </div>
+
+                    {/* Datalink Configuration */}
+                    <div style={{ marginBottom: '15px', padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '10px', opacity: 0.7 }}>
+                            CONFIGURATION
+                        </div>
+
+                        {/* NET */}
+                        <div className="input-group" style={{ marginBottom: '10px' }}>
+                            <label className="input-label">NET (1-127)</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                defaultValue={datalinkNet}
+                                key={`net-${datalinkNet}`}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    // Only allow digits, max 3 chars
+                                    if (!/^\d{0,3}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
+                                    }
+                                    // Blue text for uncommitted value
+                                    e.target.style.color = '#00BFFF';
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        const num = parseInt(val);
+                                        if (val !== '' && num >= 1 && num <= 127) {
+                                            setDatalinkNet(val);
+                                            e.target.style.color = '#00FF00';
+                                        } else {
+                                            e.target.value = '';
+                                            setDatalinkNet('');
+                                            e.target.style.color = '#00FF00';
+                                        }
+                                    }
+                                }}
+                                placeholder="1 (press Enter)"
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                            />
+                        </div>
+
+                        {/* JU Code */}
+                        <div className="input-group" style={{ marginBottom: '10px' }}>
+                            <label className="input-label">JU (5 digits)</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                defaultValue={datalinkJU}
+                                key={`ju-${datalinkJU}`}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    // Only allow digits, max 5 chars
+                                    if (!/^\d{0,5}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
+                                    }
+                                    // Blue text for uncommitted value
+                                    e.target.style.color = '#00BFFF';
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        if (/^\d{1,5}$/.test(val)) {
+                                            // Pad to 5 digits
+                                            setDatalinkJU(val.padStart(5, '0'));
+                                            e.target.style.color = '#00FF00';
+                                        } else {
+                                            e.target.value = '';
+                                            setDatalinkJU('');
+                                            e.target.style.color = '#00FF00';
+                                        }
+                                    }
+                                }}
+                                placeholder="00000 (press Enter)"
+                                maxLength="5"
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                            />
+                        </div>
+
+                        {/* Track Block Start */}
+                        <div className="input-group" style={{ marginBottom: '10px' }}>
+                            <label className="input-label">Track Block Start</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                defaultValue={datalinkTrackBlockStart}
+                                key={`start-${datalinkTrackBlockStart}`}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    // Only allow digits, max 5 chars
+                                    if (!/^\d{0,5}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
+                                    }
+                                    // Blue text for uncommitted value
+                                    e.target.style.color = '#00BFFF';
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        if (/^\d{1,5}$/.test(val)) {
+                                            setDatalinkTrackBlockStart(val);
+                                            setNextDatalinkTrackNumber(parseInt(val));
+                                            e.target.style.color = '#00FF00';
+                                        } else {
+                                            e.target.value = '';
+                                            setDatalinkTrackBlockStart('');
+                                            e.target.style.color = '#00FF00';
+                                        }
+                                    }
+                                }}
+                                placeholder="60000 (press Enter)"
+                                maxLength="5"
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                            />
+                        </div>
+
+                        {/* Track Block End */}
+                        <div className="input-group">
+                            <label className="input-label">Track Block End</label>
+                            <input
+                                className="input-field"
+                                type="text"
+                                defaultValue={datalinkTrackBlockEnd}
+                                key={`end-${datalinkTrackBlockEnd}`}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    // Only allow digits, max 5 chars
+                                    if (!/^\d{0,5}$/.test(val)) {
+                                        e.target.value = e.target.value.slice(0, -1);
+                                    }
+                                    // Blue text for uncommitted value
+                                    e.target.style.color = '#00BFFF';
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = e.target.value;
+                                        const num = parseInt(val);
+                                        const startNum = parseInt(datalinkTrackBlockStart);
+                                        if (/^\d{1,5}$/.test(val) && num > startNum) {
+                                            setDatalinkTrackBlockEnd(val);
+                                            e.target.style.color = '#00FF00';
+                                        } else {
+                                            e.target.value = '';
+                                            setDatalinkTrackBlockEnd('');
+                                            e.target.style.color = '#00FF00';
+                                        }
+                                    }
+                                }}
+                                placeholder="60200 (press Enter)"
+                                maxLength="5"
+                                style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Status Info */}
+                    <div style={{ fontSize: '9px', opacity: 0.7, padding: '10px', background: '#1a1a1a', borderRadius: '3px' }}>
+                        <div>Status: {datalinkEnabled && datalinkNet && datalinkJU.length === 5 && datalinkTrackBlockStart && datalinkTrackBlockEnd ? 'ACTIVE' : 'INACTIVE'}</div>
+                        {nextDatalinkTrackNumber !== null && (
+                            <div style={{ marginTop: '5px' }}>Next Track: {nextDatalinkTrackNumber}</div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Asset List - Only show when no asset is selected, bullseye is not selected, geo-point is not selected, and radar/ESM/IFF/Datalink controls are not selected */}
+            {!selectedAsset && !bullseyeSelected && !selectedGeoPointId && !selectedShapeId && !radarControlsSelected && !esmControlsSelected && !iffControlsSelected && !datalinkControlsSelected && (
                 <div className="control-section">
                     <div className="section-header">ASSETS ({assets.length})</div>
                     <div className="asset-list">
@@ -4119,7 +5739,7 @@ function ControlPanel({
                     </div>
                     <button
                         className="control-btn primary full-width mb-10"
-                        onClick={() => setShowAddAssetDialog({ lat: BULLSEYE.lat, lon: BULLSEYE.lon })}
+                        onClick={() => setShowAddAssetDialog({ lat: bullseyePosition.lat, lon: bullseyePosition.lon })}
                         style={{ marginTop: '10px' }}
                     >
                         + ADD ASSET
@@ -4132,113 +5752,660 @@ function ControlPanel({
                 <div className="control-section">
                     <div className="section-header">SELECTED ASSET</div>
 
-                    <div className="input-group">
-                        <label className="input-label">Name</label>
-                        <input
-                            className="input-field"
-                            type="text"
-                            value={editValues.name || ''}
-                            onChange={(e) => handleUpdate('name', e.target.value)}
-                        />
-                    </div>
-
-                    <div className="input-group">
-                        <label className="input-label">Identity</label>
-                        <select
-                            className="input-field"
-                            value={selectedAsset.type}
-                            onChange={(e) => updateAsset(selectedAsset.id, { type: e.target.value })}
-                            disabled={selectedAsset.type === 'ownship'}
-                        >
-                            {selectedAsset.type === 'ownship' && <option value="ownship">Ownship</option>}
-                            <option value="friendly">Friendly</option>
-                            <option value="hostile">Hostile</option>
-                            <option value="neutral">Neutral</option>
-                            <option value="unknown">Unknown</option>
-                            <option value="unknownUnevaluated">Unknown Unevaluated</option>
-                        </select>
-                    </div>
-
-                    <div className="input-group">
-                        <label className="input-label">Domain</label>
-                        <select
-                            className="input-field"
-                            value={selectedAsset.domain || 'air'}
-                            onChange={(e) => {
-                                const newDomain = e.target.value;
-                                const domainConfig = DOMAIN_TYPES[newDomain];
-                                const updates = {
-                                    domain: newDomain,
-                                    platform: null, // Clear platform when changing domain
-                                    altitude: domainConfig.hasAltitude ? selectedAsset.altitude : 0,
-                                    depth: domainConfig.hasDepth ? (selectedAsset.depth || 50) : null,
-                                    targetAltitude: domainConfig.hasAltitude ? selectedAsset.targetAltitude : null,
-                                    targetDepth: domainConfig.hasDepth ? selectedAsset.targetDepth : null
-                                };
-                                // Apply speed limit if changing to surface/subsurface
-                                if (selectedAsset.speed > domainConfig.maxSpeed) {
-                                    updates.speed = domainConfig.maxSpeed;
-                                    updates.targetSpeed = null;
-                                }
-                                updateAsset(selectedAsset.id, updates);
+                    {/* Tab Navigation */}
+                    <div style={{ display: 'flex', gap: '5px', marginBottom: '15px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
+                        <button
+                            onClick={() => setSelectedAssetTab('general')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedAssetTab === 'general' ? '#00FF00' : 'transparent',
+                                color: selectedAssetTab === 'general' ? '#000' : '#00FF00',
+                                border: 'none',
+                                borderBottom: selectedAssetTab === 'general' ? '2px solid #00FF00' : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
                             }}
-                            disabled={selectedAsset.type === 'ownship'}
                         >
-                            <option value="air">Air</option>
-                            <option value="surface">Surface</option>
-                            <option value="subSurface">Sub-Surface</option>
-                        </select>
+                            GENERAL
+                        </button>
+                        {selectedAsset.type !== 'ownship' && (
+                            <>
+                                <button
+                                    onClick={() => setSelectedAssetTab('iff')}
+                                    style={{
+                                        flex: 1,
+                                        padding: '8px',
+                                        background: selectedAssetTab === 'iff' ? '#00FF00' : 'transparent',
+                                        color: selectedAssetTab === 'iff' ? '#000' : '#00FF00',
+                                        border: 'none',
+                                        borderBottom: selectedAssetTab === 'iff' ? '2px solid #00FF00' : '2px solid transparent',
+                                        cursor: 'pointer',
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    IFF
+                                </button>
+                                <button
+                                    onClick={() => setSelectedAssetTab('datalink')}
+                                    style={{
+                                        flex: 1,
+                                        padding: '8px',
+                                        background: selectedAssetTab === 'datalink' ? '#00FF00' : 'transparent',
+                                        color: selectedAssetTab === 'datalink' ? '#000' : '#00FF00',
+                                        border: 'none',
+                                        borderBottom: selectedAssetTab === 'datalink' ? '2px solid #00FF00' : '2px solid transparent',
+                                        cursor: 'pointer',
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    DATALINK
+                                </button>
+                                {selectedAsset.platform && selectedAsset.platform.emitters && selectedAsset.platform.emitters.length > 0 && (
+                                    <button
+                                        onClick={() => setSelectedAssetTab('emitter')}
+                                        style={{
+                                            flex: 1,
+                                            padding: '8px',
+                                            background: selectedAssetTab === 'emitter' ? '#00FF00' : 'transparent',
+                                            color: selectedAssetTab === 'emitter' ? '#000' : '#00FF00',
+                                            border: 'none',
+                                            borderBottom: selectedAssetTab === 'emitter' ? '2px solid #00FF00' : '2px solid transparent',
+                                            cursor: 'pointer',
+                                            fontSize: '10px',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        EMITTER
+                                    </button>
+                                )}
+                            </>
+                        )}
                     </div>
 
-                    {selectedAsset.hasOwnProperty('platform') && selectedAsset.type !== 'ownship' && (
-                        <div className="input-group">
-                            <label className="input-label">Platform</label>
-                            <select
-                                className="input-field"
-                                value={selectedAsset.platform && selectedAsset.platform.name ? selectedAsset.platform.name : ''}
-                                onChange={(e) => {
-                                    const platformName = e.target.value;
-                                    const domain = selectedAsset.domain || 'air';
-                                    const domainPlatforms = (platforms && platforms[domain]) ? platforms[domain] : [];
-                                    const platform = platformName ? domainPlatforms.find(p => p.name === platformName) : null;
+                    {/* GENERAL TAB */}
+                    {selectedAssetTab === 'general' && (
+                        <>
+                            <div className="input-group">
+                                <label className="input-label">Name</label>
+                                <input
+                                    className="input-field"
+                                    type="text"
+                                    value={editValues.name || ''}
+                                    onChange={(e) => handleUpdate('name', e.target.value)}
+                                />
+                            </div>
 
-                                    const updates = { platform };
+                            <div className="input-group">
+                                <label className="input-label">Identity</label>
+                                <select
+                                    className="input-field"
+                                    value={selectedAsset.identity || 'unknown'}
+                                    onChange={(e) => updateAsset(selectedAsset.id, { identity: e.target.value })}
+                                    disabled={selectedAsset.type === 'ownship'}
+                                >
+                                    {selectedAsset.type === 'ownship' && <option value="ownship">Ownship</option>}
+                                    <option value="friendly">Friendly</option>
+                                    <option value="hostile">Hostile</option>
+                                    <option value="neutral">Neutral</option>
+                                    <option value="unknown">Unknown</option>
+                                    <option value="unknownUnevaluated">Unknown Unevaluated</option>
+                                </select>
+                            </div>
 
-                                    // Initialize emitter states for new platform
-                                    const emitterStates = {};
-                                    if (platform && platform.emitters && platform.emitters.length > 0) {
-                                        platform.emitters.forEach(emitter => {
-                                            emitterStates[emitter] = false; // default: off
-                                        });
-                                    }
-                                    updates.emitterStates = emitterStates;
-
-                                    // Apply platform-specific limits if platform is assigned
-                                    if (platform) {
-                                        const domainConfig = DOMAIN_TYPES[domain];
-                                        if (selectedAsset.speed > platform.maxSpeed) {
-                                            updates.speed = platform.maxSpeed;
+                            <div className="input-group">
+                                <label className="input-label">Domain</label>
+                                <select
+                                    className="input-field"
+                                    value={selectedAsset.domain || 'air'}
+                                    onChange={(e) => {
+                                        const newDomain = e.target.value;
+                                        const domainConfig = DOMAIN_TYPES[newDomain];
+                                        const updates = {
+                                            domain: newDomain,
+                                            platform: null,
+                                            altitude: domainConfig.hasAltitude ? selectedAsset.altitude : 0,
+                                            depth: domainConfig.hasDepth ? (selectedAsset.depth || 50) : null,
+                                            targetAltitude: domainConfig.hasAltitude ? selectedAsset.targetAltitude : null,
+                                            targetDepth: domainConfig.hasDepth ? selectedAsset.targetDepth : null
+                                        };
+                                        if (selectedAsset.speed > domainConfig.maxSpeed) {
+                                            updates.speed = domainConfig.maxSpeed;
                                             updates.targetSpeed = null;
                                         }
-                                        if (domainConfig.hasAltitude && selectedAsset.altitude > platform.maxAltitude) {
-                                            updates.altitude = platform.maxAltitude;
-                                            updates.targetAltitude = null;
-                                        }
-                                    }
+                                        updateAsset(selectedAsset.id, updates);
+                                    }}
+                                    disabled={selectedAsset.type === 'ownship'}
+                                >
+                                    <option value="air">Air</option>
+                                    <option value="surface">Surface</option>
+                                    <option value="subSurface">Sub-Surface</option>
+                                </select>
+                            </div>
 
-                                    updateAsset(selectedAsset.id, updates);
-                                }}
-                            >
-                                <option value="">None (Generic)</option>
-                                {(platforms && platforms[selectedAsset.domain || 'air'] ? platforms[selectedAsset.domain || 'air'] : []).map((platform, idx) => (
-                                    <option key={idx} value={platform.name}>{platform.name}</option>
-                                ))}
-                            </select>
+                            {selectedAsset.hasOwnProperty('platform') && selectedAsset.type !== 'ownship' && (
+                                <div className="input-group">
+                                    <label className="input-label">Platform</label>
+                                    <select
+                                        className="input-field"
+                                        value={selectedAsset.platform && selectedAsset.platform.name ? selectedAsset.platform.name : ''}
+                                        onChange={(e) => {
+                                            const platformName = e.target.value;
+                                            const domain = selectedAsset.domain || 'air';
+                                            const domainPlatforms = (platforms && platforms[domain]) ? platforms[domain] : [];
+                                            const platform = platformName ? domainPlatforms.find(p => p.name === platformName) : null;
+
+                                            const updates = { platform };
+
+                                            const emitterStates = {};
+                                            if (platform && platform.emitters && platform.emitters.length > 0) {
+                                                platform.emitters.forEach(emitter => {
+                                                    emitterStates[emitter] = false;
+                                                });
+                                            }
+                                            updates.emitterStates = emitterStates;
+
+                                            if (platform) {
+                                                const domainConfig = DOMAIN_TYPES[domain];
+                                                if (selectedAsset.speed > platform.maxSpeed) {
+                                                    updates.speed = platform.maxSpeed;
+                                                    updates.targetSpeed = null;
+                                                }
+                                                if (domainConfig.hasAltitude && selectedAsset.altitude > platform.maxAltitude) {
+                                                    updates.altitude = platform.maxAltitude;
+                                                    updates.targetAltitude = null;
+                                                }
+                                            }
+
+                                            updateAsset(selectedAsset.id, updates);
+                                        }}
+                                    >
+                                        <option value="">None (Generic)</option>
+                                        {(platforms && platforms[selectedAsset.domain || 'air'] ? platforms[selectedAsset.domain || 'air'] : []).map((platform, idx) => (
+                                            <option key={idx} value={platform.name}>{platform.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            <div className="input-group">
+                                <label className="input-label">
+                                    Heading (degrees)
+                                    {selectedAsset && (
+                                        <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                            Current: {Math.round(selectedAsset.heading)}°
+                                            {selectedAsset.targetHeading !== null && ` → ${Math.round(selectedAsset.targetHeading)}°`}
+                                        </span>
+                                    )}
+                                </label>
+                                <div style={{ display: 'flex', gap: '5px' }}>
+                                    <input
+                                        className="input-field"
+                                        type="number"
+                                        min="0"
+                                        max="359"
+                                        value={editValues.heading || 0}
+                                        onChange={(e) => {
+                                            handleUpdate('heading', e.target.value);
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                applyTarget('heading');
+                                                e.target.style.color = '#00FF00';
+                                            }
+                                        }}
+                                        style={{ flex: 1, color: '#00FF00' }}
+                                    />
+                                    <button
+                                        className="control-btn"
+                                        onClick={() => applyTarget('heading')}
+                                        style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                    >
+                                        SET
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="input-group">
+                                <label className="input-label">
+                                    Speed (KTAS)
+                                    {selectedAsset && (
+                                        <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                            Current: {Math.round(selectedAsset.speed)} kts
+                                            {selectedAsset.targetSpeed !== null && ` → ${Math.round(selectedAsset.targetSpeed)} kts`}
+                                        </span>
+                                    )}
+                                </label>
+                                <div style={{ display: 'flex', gap: '5px' }}>
+                                    <input
+                                        className="input-field"
+                                        type="number"
+                                        min="0"
+                                        value={editValues.speed || 0}
+                                        onChange={(e) => {
+                                            handleUpdate('speed', e.target.value);
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                applyTarget('speed');
+                                                e.target.style.color = '#00FF00';
+                                            }
+                                        }}
+                                        style={{ flex: 1, color: '#00FF00' }}
+                                    />
+                                    <button
+                                        className="control-btn"
+                                        onClick={() => applyTarget('speed')}
+                                        style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                    >
+                                        SET
+                                    </button>
+                                </div>
+                            </div>
+
+                            {(selectedAsset.domain === 'air' || !selectedAsset.domain) && (
+                                <div className="input-group">
+                                    <label className="input-label">
+                                        Altitude (feet)
+                                        {selectedAsset && (
+                                            <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                                Current: FL{Math.round(selectedAsset.altitude / 100)}
+                                                {selectedAsset.targetAltitude !== null && ` → FL${Math.round(selectedAsset.targetAltitude / 100)}`}
+                                            </span>
+                                        )}
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '5px' }}>
+                                        <input
+                                            className="input-field"
+                                            type="number"
+                                            min="0"
+                                            value={editValues.altitude || 0}
+                                            onChange={(e) => {
+                                                handleUpdate('altitude', e.target.value);
+                                                e.target.style.color = '#00BFFF';
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    applyTarget('altitude');
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }}
+                                            style={{ flex: 1, color: '#00FF00' }}
+                                        />
+                                        <button
+                                            className="control-btn"
+                                            onClick={() => applyTarget('altitude')}
+                                            style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                        >
+                                            SET
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="input-group">
+                                <label className="input-label">Latitude</label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    value={editValues.lat || ''}
+                                    onChange={(e) => setEditValues(prev => ({ ...prev, lat: e.target.value.toUpperCase() }))}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            applyAssetCoordinate('lat');
+                                        }
+                                    }}
+                                    placeholder="N26 30.0"
+                                />
+                            </div>
+
+                            <div className="input-group">
+                                <label className="input-label">Longitude</label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    value={editValues.lon || ''}
+                                    onChange={(e) => setEditValues(prev => ({ ...prev, lon: e.target.value.toUpperCase() }))}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            applyAssetCoordinate('lon');
+                                        }
+                                    }}
+                                    placeholder="E054 00.0"
+                                />
+                            </div>
+
+                            {selectedAsset.domain === 'subSurface' && (
+                                <div className="input-group">
+                                    <label className="input-label">
+                                        Depth (feet)
+                                        {selectedAsset && (
+                                            <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                                Current: {Math.round(selectedAsset.depth || 0)}ft
+                                                {selectedAsset.targetDepth !== null && ` → ${Math.round(selectedAsset.targetDepth)}ft`}
+                                            </span>
+                                        )}
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '5px' }}>
+                                        <input
+                                            className="input-field"
+                                            type="number"
+                                            min="0"
+                                            value={editValues.depth || 0}
+                                            onChange={(e) => {
+                                                handleUpdate('depth', e.target.value);
+                                                e.target.style.color = '#00BFFF';
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    applyTarget('depth');
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }}
+                                            style={{ flex: 1, color: '#00FF00' }}
+                                        />
+                                        <button
+                                            className="control-btn"
+                                            onClick={() => applyTarget('depth')}
+                                            style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                        >
+                                            SET
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {/* IFF TAB */}
+                    {selectedAssetTab === 'iff' && (
+                        <div className="input-group">
+                            <label className="input-label">IFF Codes</label>
+                            <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                                {/* IFF Squawking Toggle */}
+                                <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <span style={{ fontSize: '10px', opacity: 0.8 }}>Squawking</span>
+                                    <button
+                                        className="control-btn"
+                                        style={{
+                                            padding: '6px 8px',
+                                            fontSize: '9px',
+                                            minWidth: '45px',
+                                            background: selectedAsset.iffSquawking ? '#00FF00' : '#FF0000',
+                                            color: '#000',
+                                            fontWeight: 'bold'
+                                        }}
+                                        onClick={() => {
+                                            updateAsset(selectedAsset.id, { iffSquawking: !selectedAsset.iffSquawking });
+                                        }}
+                                    >
+                                        {selectedAsset.iffSquawking ? 'ON' : 'OFF'}
+                                    </button>
+                                </div>
+
+                                {/* MODE I */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        MODE I (2 digit octal)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={selectedAsset.iffModeI || ''}
+                                        key={`asset-mode1-${selectedAsset.id}-${selectedAsset.iffModeI}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^[0-7]{0,2}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^[0-7]{0,2}$/.test(val)) {
+                                                    // Pad with zeros to 2 digits
+                                                    const padded = val.padStart(2, '0');
+                                                    updateAsset(selectedAsset.id, { iffModeI: padded });
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="00 (press Enter)"
+                                        maxLength="2"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* MODE II */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        MODE II (4 digit octal)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={selectedAsset.iffModeII || ''}
+                                        key={`asset-mode2-${selectedAsset.id}-${selectedAsset.iffModeII}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^[0-7]{0,4}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^[0-7]{0,4}$/.test(val)) {
+                                                    // Pad with zeros to 4 digits
+                                                    const padded = val.padStart(4, '0');
+                                                    updateAsset(selectedAsset.id, { iffModeII: padded });
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="0000 (press Enter)"
+                                        maxLength="4"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* MODE III */}
+                                <div>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        MODE III (4 digit octal)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={selectedAsset.iffModeIII || ''}
+                                        key={`asset-mode3-${selectedAsset.id}-${selectedAsset.iffModeIII}`}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!/^[0-7]{0,4}$/.test(val)) {
+                                                e.target.value = e.target.value.slice(0, -1);
+                                            }
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^[0-7]{0,4}$/.test(val)) {
+                                                    // Pad with zeros to 4 digits
+                                                    const padded = val.padStart(4, '0');
+                                                    updateAsset(selectedAsset.id, { iffModeIII: padded });
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="0000 (press Enter)"
+                                        maxLength="4"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
+                                    />
+                                </div>
+                            </div>
                         </div>
                     )}
 
-                    {/* Emitter Controls */}
-                    {selectedAsset.type !== 'ownship' && selectedAsset.platform && selectedAsset.platform.emitters && selectedAsset.platform.emitters.length > 0 && (
+                    {/* DATALINK TAB */}
+                    {selectedAssetTab === 'datalink' && (
+                        <div className="input-group">
+                            <label className="input-label">Datalink</label>
+                            <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                                {/* NET */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        NET (1-127)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={selectedAsset.datalinkNet || ''}
+                                        onChange={(e) => {
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                const num = parseInt(val);
+                                                if (val !== '' && num >= 1 && num <= 127) {
+                                                    updateAsset(selectedAsset.id, { datalinkNet: val });
+                                                    e.target.style.color = '#00FF00';
+                                                } else {
+                                                    e.target.value = '';
+                                                    updateAsset(selectedAsset.id, { datalinkNet: '' });
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="1 (press Enter)"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* JU Code */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        JU (5 digits)
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={selectedAsset.datalinkJU || ''}
+                                        onChange={(e) => {
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^\d{1,5}$/.test(val)) {
+                                                    updateAsset(selectedAsset.id, { datalinkJU: val.padStart(5, '0') });
+                                                    e.target.style.color = '#00FF00';
+                                                } else {
+                                                    e.target.value = '';
+                                                    updateAsset(selectedAsset.id, { datalinkJU: '' });
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="00000 (press Enter)"
+                                        maxLength="5"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* Track Block Start */}
+                                <div style={{ marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        Track Block Start
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={selectedAsset.datalinkTrackBlockStart || ''}
+                                        onChange={(e) => {
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                if (/^\d{1,5}$/.test(val)) {
+                                                    updateAsset(selectedAsset.id, { datalinkTrackBlockStart: val });
+                                                    e.target.style.color = '#00FF00';
+                                                } else {
+                                                    e.target.value = '';
+                                                    updateAsset(selectedAsset.id, { datalinkTrackBlockStart: '' });
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="60000 (press Enter)"
+                                        maxLength="5"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* Track Block End */}
+                                <div>
+                                    <label style={{ fontSize: '9px', opacity: 0.7, display: 'block', marginBottom: '3px' }}>
+                                        Track Block End
+                                    </label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        defaultValue={selectedAsset.datalinkTrackBlockEnd || ''}
+                                        onChange={(e) => {
+                                            e.target.style.color = '#00BFFF';
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const val = e.target.value;
+                                                const num = parseInt(val);
+                                                const startNum = parseInt(selectedAsset.datalinkTrackBlockStart);
+                                                if (/^\d{1,5}$/.test(val) && num > startNum) {
+                                                    updateAsset(selectedAsset.id, { datalinkTrackBlockEnd: val });
+                                                    e.target.style.color = '#00FF00';
+                                                } else {
+                                                    e.target.value = '';
+                                                    updateAsset(selectedAsset.id, { datalinkTrackBlockEnd: '' });
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="60200 (press Enter)"
+                                        maxLength="5"
+                                        style={{ fontFamily: 'monospace', fontSize: '11px', width: '100%', color: '#00FF00' }}
+                                    />
+                                </div>
+
+                                {/* Status */}
+                                {selectedAsset.datalinkActive && (
+                                    <div style={{ marginTop: '10px', fontSize: '9px', opacity: 0.7, padding: '5px', background: '#1a1a1a', borderRadius: '3px' }}>
+                                        <div>Status: ACTIVE</div>
+                                        {selectedAsset.datalinkAssignedTrack && (
+                                            <div>Track: {selectedAsset.datalinkAssignedTrack}</div>
+                                        )}
+                                        {selectedAsset.datalinkJU && selectedAsset.datalinkJU.length === 5 && (
+                                            <div>JU: {selectedAsset.datalinkJU}</div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* EMITTER TAB */}
+                    {selectedAssetTab === 'emitter' && (
                         <div className="input-group">
                             <label className="input-label">Emitters</label>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -4274,141 +6441,16 @@ function ControlPanel({
                         </div>
                     )}
 
-                    <div className="input-group">
-                        <label className="input-label">
-                            Heading (degrees)
-                            {selectedAsset && (
-                                <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
-                                    Current: {Math.round(selectedAsset.heading)}°
-                                    {selectedAsset.targetHeading !== null && ` → ${Math.round(selectedAsset.targetHeading)}°`}
-                                </span>
-                            )}
-                        </label>
-                        <div style={{ display: 'flex', gap: '5px' }}>
-                            <input
-                                className="input-field"
-                                type="number"
-                                min="0"
-                                max="359"
-                                value={editValues.heading || 0}
-                                onChange={(e) => handleUpdate('heading', e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && applyTarget('heading')}
-                                style={{ flex: 1 }}
-                            />
-                            <button
-                                className="control-btn"
-                                onClick={() => applyTarget('heading')}
-                                style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
-                            >
-                                SET
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="input-group">
-                        <label className="input-label">
-                            Speed (KTAS)
-                            {selectedAsset && (
-                                <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
-                                    Current: {Math.round(selectedAsset.speed)} kts
-                                    {selectedAsset.targetSpeed !== null && ` → ${Math.round(selectedAsset.targetSpeed)} kts`}
-                                </span>
-                            )}
-                        </label>
-                        <div style={{ display: 'flex', gap: '5px' }}>
-                            <input
-                                className="input-field"
-                                type="number"
-                                min="0"
-                                value={editValues.speed || 0}
-                                onChange={(e) => handleUpdate('speed', e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && applyTarget('speed')}
-                                style={{ flex: 1 }}
-                            />
-                            <button
-                                className="control-btn"
-                                onClick={() => applyTarget('speed')}
-                                style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
-                            >
-                                SET
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Altitude input - only for air domain */}
-                    {(selectedAsset.domain === 'air' || !selectedAsset.domain) && (
-                        <div className="input-group">
-                            <label className="input-label">
-                                Altitude (feet)
-                                {selectedAsset && (
-                                    <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
-                                        Current: FL{Math.round(selectedAsset.altitude / 100)}
-                                        {selectedAsset.targetAltitude !== null && ` → FL${Math.round(selectedAsset.targetAltitude / 100)}`}
-                                    </span>
-                                )}
-                            </label>
-                            <div style={{ display: 'flex', gap: '5px' }}>
-                                <input
-                                    className="input-field"
-                                    type="number"
-                                    min="0"
-                                    value={editValues.altitude || 0}
-                                    onChange={(e) => handleUpdate('altitude', e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && applyTarget('altitude')}
-                                    style={{ flex: 1 }}
-                                />
-                                <button
-                                    className="control-btn"
-                                    onClick={() => applyTarget('altitude')}
-                                    style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
-                                >
-                                    SET
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Depth input - only for sub-surface domain */}
-                    {selectedAsset.domain === 'subSurface' && (
-                        <div className="input-group">
-                            <label className="input-label">
-                                Depth (feet)
-                                {selectedAsset && (
-                                    <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
-                                        Current: {Math.round(selectedAsset.depth || 0)}ft
-                                        {selectedAsset.targetDepth !== null && ` → ${Math.round(selectedAsset.targetDepth)}ft`}
-                                    </span>
-                                )}
-                            </label>
-                            <div style={{ display: 'flex', gap: '5px' }}>
-                                <input
-                                    className="input-field"
-                                    type="number"
-                                    min="0"
-                                    value={editValues.depth || 0}
-                                    onChange={(e) => handleUpdate('depth', e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && applyTarget('depth')}
-                                    style={{ flex: 1 }}
-                                />
-                                <button
-                                    className="control-btn"
-                                    onClick={() => applyTarget('depth')}
-                                    style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
-                                >
-                                    SET
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
                     <div className="playback-controls" style={{ marginTop: '10px' }}>
-                        <button className="control-btn" onClick={() => reportTrack(selectedAsset.id)}>
-                            REPORT TRACK
-                        </button>
                         {selectedAsset.type !== 'ownship' && (
-                            <button className="control-btn danger" onClick={() => deleteAsset(selectedAsset.id)}>
-                                DELETE
-                            </button>
+                            <>
+                                <button className="control-btn" onClick={() => reportTrack(selectedAsset.id)}>
+                                    REPORT TRACK
+                                </button>
+                                <button className="control-btn danger" onClick={() => deleteAsset(selectedAsset.id)}>
+                                    DELETE
+                                </button>
+                            </>
                         )}
                     </div>
                 </div>
