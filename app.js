@@ -353,6 +353,34 @@ function AICSimulator() {
             });
     }, []);
 
+    // ========================================================================
+    // EO/IR WINDOW DRAGGING
+    // ========================================================================
+
+    useEffect(() => {
+        const handleMouseMove = (e) => {
+            if (eoirDragging) {
+                setEoirWindowPos({
+                    x: e.clientX - eoirDragOffset.x,
+                    y: e.clientY - eoirDragOffset.y
+                });
+            }
+        };
+
+        const handleMouseUp = () => {
+            setEoirDragging(false);
+        };
+
+        if (eoirDragging) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+            return () => {
+                window.removeEventListener('mousemove', handleMouseMove);
+                window.removeEventListener('mouseup', handleMouseUp);
+            };
+        }
+    }, [eoirDragging, eoirDragOffset]);
+
 
     // ========================================================================
     // PHYSICS ENGINE
@@ -3860,31 +3888,6 @@ function AICSimulator() {
                         });
                     }
                 };
-
-                const handleMouseMove = (e) => {
-                    if (eoirDragging) {
-                        setEoirWindowPos({
-                            x: e.clientX - eoirDragOffset.x,
-                            y: e.clientY - eoirDragOffset.y
-                        });
-                    }
-                };
-
-                const handleMouseUp = () => {
-                    setEoirDragging(false);
-                };
-
-                // Add event listeners for dragging
-                React.useEffect(() => {
-                    if (eoirDragging) {
-                        window.addEventListener('mousemove', handleMouseMove);
-                        window.addEventListener('mouseup', handleMouseUp);
-                        return () => {
-                            window.removeEventListener('mousemove', handleMouseMove);
-                            window.removeEventListener('mouseup', handleMouseUp);
-                        };
-                    }
-                }, [eoirDragging, eoirDragOffset]);
 
                 return (
                     <div
