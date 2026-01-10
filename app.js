@@ -297,6 +297,8 @@ function AICSimulator() {
     const [datalinkTrackBlockStart, setDatalinkTrackBlockStart] = useState(''); // Track block start (e.g., 6000)
     const [datalinkTrackBlockEnd, setDatalinkTrackBlockEnd] = useState(''); // Track block end (e.g., 6200)
     const [nextDatalinkTrackNumber, setNextDatalinkTrackNumber] = useState(null); // Next track number to assign
+    const [eoirEnabled, setEoirEnabled] = useState(false); // EO/IR system ON/OFF state (OFF by default)
+    const [eoirSelectedAssetId, setEoirSelectedAssetId] = useState(null); // Asset selected for EO/IR viewing
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
@@ -3815,6 +3817,10 @@ function AICSimulator() {
                 setSelectedAssetTab={setSelectedAssetTab}
                 selectedSystemTab={selectedSystemTab}
                 setSelectedSystemTab={setSelectedSystemTab}
+                eoirEnabled={eoirEnabled}
+                setEoirEnabled={setEoirEnabled}
+                eoirSelectedAssetId={eoirSelectedAssetId}
+                setEoirSelectedAssetId={setEoirSelectedAssetId}
             />
 
             {/* Context Menu */}
@@ -3835,6 +3841,87 @@ function AICSimulator() {
                     deleteManualBearingLine={deleteManualBearingLine}
                 />
             )}
+
+            {/* EO/IR Popup Window */}
+            {eoirEnabled && eoirSelectedAssetId && (() => {
+                const asset = assets.find(a => a.id === eoirSelectedAssetId);
+                if (!asset || !asset.platform || !asset.platform.image) return null;
+
+                return (
+                    <div style={{
+                        position: 'absolute',
+                        top: '20px',
+                        right: '20px',
+                        width: '400px',
+                        background: '#1a1a1a',
+                        border: '2px solid #00FF00',
+                        borderRadius: '5px',
+                        boxShadow: '0 0 20px rgba(0, 255, 0, 0.3)',
+                        zIndex: 1000
+                    }}>
+                        {/* Header */}
+                        <div style={{
+                            background: '#00FF00',
+                            color: '#000',
+                            padding: '10px',
+                            fontWeight: 'bold',
+                            fontSize: '12px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                        }}>
+                            <span>EO/IR - {asset.name}</span>
+                            <button
+                                onClick={() => setEoirSelectedAssetId(null)}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#000',
+                                    fontSize: '18px',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer',
+                                    padding: '0 5px'
+                                }}
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        {/* Image */}
+                        <div style={{
+                            padding: '10px',
+                            background: '#0a0a0a'
+                        }}>
+                            <img
+                                src={`EO-IR/${asset.platform.image}`}
+                                alt={asset.name}
+                                style={{
+                                    width: '100%',
+                                    height: 'auto',
+                                    display: 'block',
+                                    border: '1px solid #00FF00'
+                                }}
+                                onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    e.target.parentElement.innerHTML = '<div style="color: #FF0000; text-align: center; padding: 50px;">Image not found</div>';
+                                }}
+                            />
+                        </div>
+
+                        {/* Footer Info */}
+                        <div style={{
+                            padding: '10px',
+                            background: '#2a2a2a',
+                            color: '#00FF00',
+                            fontSize: '10px',
+                            borderTop: '1px solid rgba(0, 255, 0, 0.3)'
+                        }}>
+                            <div><strong>Platform:</strong> {asset.platform.name}</div>
+                            <div><strong>Domain:</strong> {asset.domain.toUpperCase()}</div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* Add Asset Dialog */}
             {showAddAssetDialog && (
@@ -3951,7 +4038,9 @@ function ControlPanel({
     datalinkTrackBlockEnd, setDatalinkTrackBlockEnd,
     nextDatalinkTrackNumber, setNextDatalinkTrackNumber,
     selectedAssetTab, setSelectedAssetTab,
-    selectedSystemTab, setSelectedSystemTab
+    selectedSystemTab, setSelectedSystemTab,
+    eoirEnabled, setEoirEnabled,
+    eoirSelectedAssetId, setEoirSelectedAssetId
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
@@ -4231,6 +4320,23 @@ function ControlPanel({
                             }}
                         >
                             DATALINK
+                        </button>
+                        <button
+                            onClick={() => setSelectedSystemTab('eoir')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedSystemTab === 'eoir' ? (eoirEnabled ? '#00FF00' : '#FF0000') : 'transparent',
+                                color: selectedSystemTab === 'eoir' ? '#000' : (eoirEnabled ? '#00FF00' : '#FF0000'),
+                                border: 'none',
+                                borderBottom: selectedSystemTab === 'eoir' ? `2px solid ${eoirEnabled ? '#00FF00' : '#FF0000'}` : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            EO/IR
                         </button>
                     </div>
 
@@ -4685,6 +4791,28 @@ function ControlPanel({
                                         style={{ fontFamily: 'monospace', fontSize: '12px', color: '#00FF00' }}
                                     />
                                 </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* EO/IR TAB */}
+                    {selectedSystemTab === 'eoir' && (
+                        <div>
+                            {/* EO/IR ON/OFF Button */}
+                            <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                                <button
+                                    className={`control-btn ${eoirEnabled ? 'primary' : 'danger'}`}
+                                    onClick={() => setEoirEnabled(!eoirEnabled)}
+                                    style={{ width: '100%' }}
+                                >
+                                    {eoirEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+
+                            {/* EO/IR Information */}
+                            <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px', fontSize: '10px', opacity: 0.7 }}>
+                                <p style={{ margin: '0 0 10px 0' }}>Select an asset on the map, then click the EO/IR button in the asset panel to view the optical/infrared image.</p>
+                                <p style={{ margin: 0 }}>System must be powered ON to view images.</p>
                             </div>
                         </div>
                     )}
@@ -5828,6 +5956,30 @@ function ControlPanel({
                                         }}
                                     >
                                         EMITTER
+                                    </button>
+                                )}
+                                {selectedAsset.platform && selectedAsset.platform.image && (
+                                    <button
+                                        onClick={() => {
+                                            if (eoirEnabled) {
+                                                setEoirSelectedAssetId(selectedAsset.id);
+                                            }
+                                        }}
+                                        style={{
+                                            flex: 1,
+                                            padding: '8px',
+                                            background: eoirSelectedAssetId === selectedAsset.id ? '#00FF00' : 'transparent',
+                                            color: eoirSelectedAssetId === selectedAsset.id ? '#000' : (eoirEnabled ? '#00FF00' : '#FF0000'),
+                                            border: 'none',
+                                            borderBottom: eoirSelectedAssetId === selectedAsset.id ? '2px solid #00FF00' : '2px solid transparent',
+                                            cursor: eoirEnabled ? 'pointer' : 'not-allowed',
+                                            fontSize: '10px',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.2s',
+                                            opacity: eoirEnabled ? 1 : 0.5
+                                        }}
+                                    >
+                                        EO/IR
                                     </button>
                                 )}
                             </>

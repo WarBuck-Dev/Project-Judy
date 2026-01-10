@@ -8,7 +8,8 @@
       "maxSpeed": 350,
       "maxAltitude": 37000,
       "maxClimb": 2500,
-      "maxTurn": 5
+      "maxTurn": 5,
+      "image": "E-2D.jpg"
     },
     {
       "name": "F-18E",
@@ -18,7 +19,8 @@
       "maxSpeed": 1190,
       "maxAltitude": 50000,
       "maxClimb": 44000,
-      "maxTurn": 15
+      "maxTurn": 15,
+      "image": "F-18E.jpg"
     },
     {
       "name": "F-18F",
@@ -28,7 +30,8 @@
       "maxSpeed": 1190,
       "maxAltitude": 50000,
       "maxClimb": 44000,
-      "maxTurn": 15
+      "maxTurn": 15,
+      "image": "F-18F.jpg"
     },
     {
       "name": "F-16",
@@ -38,7 +41,8 @@
       "maxSpeed": 1320,
       "maxAltitude": 50000,
       "maxClimb": 50000,
-      "maxTurn": 15
+      "maxTurn": 15,
+      "image": "F-16.jpg"
     },
     {
       "name": "MiG-29",
@@ -48,7 +52,8 @@
       "maxSpeed": 1520,
       "maxAltitude": 59000,
       "maxClimb": 65000,
-      "maxTurn": 17
+      "maxTurn": 17,
+      "image": "MiG-29.jpg"
     },
     {
       "name": "MiG-21",
@@ -58,7 +63,8 @@
       "maxSpeed": 1300,
       "maxAltitude": 57000,
       "maxClimb": 50000,
-      "maxTurn": 16
+      "maxTurn": 16,
+      "image": "MiG-21.jpg"
     },
     {
       "name": "Su-25",
@@ -68,7 +74,8 @@
       "maxSpeed": 590,
       "maxAltitude": 23000,
       "maxClimb": 3000,
-      "maxTurn": 10
+      "maxTurn": 10,
+      "image": "Su-25.jpg"
     },
     {
       "name": "P-8",
@@ -78,7 +85,8 @@
       "maxSpeed": 490,
       "maxAltitude": 41000,
       "maxClimb": 2000,
-      "maxTurn": 4
+      "maxTurn": 4,
+      "image": "P-8.jpg"
     },
     {
       "name": "MH-60R",
@@ -88,7 +96,8 @@
       "maxSpeed": 180,
       "maxAltitude": 14000,
       "maxClimb": 1500,
-      "maxTurn": 8
+      "maxTurn": 8,
+      "image": "MH-60R.jpg"
     }
   ],
   "surface": [
@@ -100,7 +109,8 @@
       "maxSpeed": 30,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Arleigh-Burke.jpg"
     },
     {
       "name": "Ticonderoga (CG)",
@@ -110,7 +120,8 @@
       "maxSpeed": 30,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Ticonderoga.jpg"
     },
     {
       "name": "Nimitz CVN",
@@ -120,7 +131,8 @@
       "maxSpeed": 30,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 0.5
+      "maxTurn": 0.5,
+      "image": "Nimitz.jpg"
     },
     {
       "name": "LCS Freedom",
@@ -130,7 +142,8 @@
       "maxSpeed": 40,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 2
+      "maxTurn": 2,
+      "image": "LCS-Freedom.jpg"
     },
     {
       "name": "Type 052D (DDG)",
@@ -140,7 +153,8 @@
       "maxSpeed": 30,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Type-052D.jpg"
     },
     {
       "name": "Type 055 (DDG)",
@@ -150,7 +164,8 @@
       "maxSpeed": 30,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Type-055.jpg"
     },
     {
       "name": "Admiral Kuznetsov",
@@ -160,7 +175,8 @@
       "maxSpeed": 29,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 0.5
+      "maxTurn": 0.5,
+      "image": "Admiral-Kuznetsov.jpg"
     },
     {
       "name": "Slava (CG)",
@@ -170,7 +186,8 @@
       "maxSpeed": 32,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Slava.jpg"
     },
     {
       "name": "Kirov (CGN)",
@@ -180,7 +197,8 @@
       "maxSpeed": 32,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Kirov.jpg"
     },
     {
       "name": "Patrol Boat",
@@ -190,7 +208,8 @@
       "maxSpeed": 25,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 3
+      "maxTurn": 3,
+      "image": "Patrol-Boat.jpg"
     },
     {
       "name": "Fast Attack Craft",
@@ -200,7 +219,8 @@
       "maxSpeed": 35,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 2
+      "maxTurn": 2,
+      "image": "Fast-Attack-Craft.jpg"
     },
     {
       "name": "FREMM Frigate",
@@ -210,7 +230,8 @@
       "maxSpeed": 27,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "FREMM-Frigate.jpg"
     }
   ],
   "subSurface": [
@@ -222,7 +243,8 @@
       "maxSpeed": 25,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Virginia-SSN.jpg"
     },
     {
       "name": "Los Angeles SSN",
@@ -232,7 +254,8 @@
       "maxSpeed": 23,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Los-Angeles-SSN.jpg"
     },
     {
       "name": "Ohio SSGN",
@@ -242,7 +265,8 @@
       "maxSpeed": 20,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 0.5
+      "maxTurn": 0.5,
+      "image": "Ohio-SSGN.jpg"
     },
     {
       "name": "Seawolf SSN",
@@ -252,7 +276,8 @@
       "maxSpeed": 25,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Seawolf-SSN.jpg"
     },
     {
       "name": "Kilo SSK",
@@ -262,7 +287,8 @@
       "maxSpeed": 17,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Kilo-SSK.jpg"
     },
     {
       "name": "Akula SSN",
@@ -272,7 +298,8 @@
       "maxSpeed": 28,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Akula-SSN.jpg"
     },
     {
       "name": "Yasen SSGN",
@@ -282,7 +309,8 @@
       "maxSpeed": 28,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Yasen-SSGN.jpg"
     },
     {
       "name": "Type 093 SSN",
@@ -292,7 +320,8 @@
       "maxSpeed": 24,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Type-093-SSN.jpg"
     },
     {
       "name": "Type 095 SSN",
@@ -302,7 +331,8 @@
       "maxSpeed": 30,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Type-095-SSN.jpg"
     },
     {
       "name": "Astute SSN",
@@ -312,7 +342,8 @@
       "maxSpeed": 29,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Astute-SSN.jpg"
     },
     {
       "name": "Barracuda SSN",
@@ -322,7 +353,8 @@
       "maxSpeed": 25,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Barracuda-SSN.jpg"
     },
     {
       "name": "Type 212 SSK",
@@ -332,7 +364,8 @@
       "maxSpeed": 20,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1
+      "maxTurn": 1,
+      "image": "Type-212-SSK.jpg"
     }
   ]
 }
