@@ -4567,6 +4567,7 @@ function ControlPanel({
                                         JU (5 digits)
                                     </label>
                                     <input
+                                        className="input-field"
                                         type="text"
                                         defaultValue={datalinkJU}
                                         key={`ju-${datalinkJU}`}
@@ -4598,6 +4599,7 @@ function ControlPanel({
                                         TRACK BLOCK START (5 digits)
                                     </label>
                                     <input
+                                        className="input-field"
                                         type="text"
                                         defaultValue={datalinkTrackBlockStart}
                                         key={`start-${datalinkTrackBlockStart}`}
@@ -4629,6 +4631,7 @@ function ControlPanel({
                                         TRACK BLOCK END (5 digits)
                                     </label>
                                     <input
+                                        className="input-field"
                                         type="text"
                                         defaultValue={datalinkTrackBlockEnd}
                                         key={`end-${datalinkTrackBlockEnd}`}
