@@ -9,7 +9,8 @@
       "maxAltitude": 50000,
       "maxClimb": 44000,
       "maxTurn": 15,
-      "image": "F-18E.jpg"
+      "image": "F-18E.jpg",
+      "threatLevel": 2
     },
     {
       "name": "F-18F",
@@ -20,7 +21,8 @@
       "maxAltitude": 50000,
       "maxClimb": 44000,
       "maxTurn": 15,
-      "image": "F-18F.jpg"
+      "image": "F-18F.jpg",
+      "threatLevel": 2
     },
     {
       "name": "F-16",
@@ -31,7 +33,8 @@
       "maxAltitude": 50000,
       "maxClimb": 50000,
       "maxTurn": 15,
-      "image": "f-16.jpg"
+      "image": "f-16.jpg",
+      "threatLevel": 2
     },
     {
       "name": "F-15",
@@ -42,7 +45,8 @@
       "maxAltitude": 65000,
       "maxClimb": 50000,
       "maxTurn": 15,
-      "image": "f-15.jpg"
+      "image": "f-15.jpg",
+      "threatLevel": 2
     },
     {
       "name": "Com-Air",
@@ -53,7 +57,8 @@
       "maxAltitude": 35000,
       "maxClimb": 2500,
       "maxTurn": 8,
-      "image": "com-air.jpg"
+      "image": "com-air.jpg",
+      "threatLevel": 3
     },
     {
       "name": "MiG-21",
@@ -64,7 +69,8 @@
       "maxAltitude": 57000,
       "maxClimb": 50000,
       "maxTurn": 16,
-      "image": "mig-21.png"
+      "image": "mig-21.png",
+      "threatLevel": 1
     },
     {
       "name": "MiG-29",
@@ -75,7 +81,8 @@
       "maxAltitude": 59000,
       "maxClimb": 65000,
       "maxTurn": 17,
-      "image": "mig-29.jpg"
+      "image": "mig-29.jpg",
+      "threatLevel": 1
     },
     {
       "name": "F-5",
@@ -86,7 +93,8 @@
       "maxAltitude": 51800,
       "maxClimb": 34500,
       "maxTurn": 15,
-      "image": "f-5.png"
+      "image": "f-5.png",
+      "threatLevel": 2
     },
     {
       "name": "F-4",
@@ -97,7 +105,8 @@
       "maxAltitude": 60000,
       "maxClimb": 49800,
       "maxTurn": 13,
-      "image": "f-4.jpg"
+      "image": "f-4.jpg",
+      "threatLevel": 2
     },
     {
       "name": "F-14",
@@ -108,7 +117,8 @@
       "maxAltitude": 53000,
       "maxClimb": 45000,
       "maxTurn": 14,
-      "image": "f-14.jpg"
+      "image": "f-14.jpg",
+      "threatLevel": 2
     },
     {
       "name": "Su-24",
@@ -119,7 +129,8 @@
       "maxAltitude": 36000,
       "maxClimb": 6000,
       "maxTurn": 10,
-      "image": "su-24.jpg"
+      "image": "su-24.jpg",
+      "threatLevel": 1
     },
     {
       "name": "P-3",
@@ -130,7 +141,8 @@
       "maxAltitude": 28300,
       "maxClimb": 1950,
       "maxTurn": 6,
-      "image": "p-3.jpg"
+      "image": "p-3.jpg",
+      "threatLevel": 2
     },
     {
       "name": "Tu-95",
@@ -141,7 +153,8 @@
       "maxAltitude": 41000,
       "maxClimb": 2000,
       "maxTurn": 5,
-      "image": "tu-95.jpg"
+      "image": "tu-95.jpg",
+      "threatLevel": 1
     }
   ],
   "surface": [
@@ -154,7 +167,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 0.5,
-      "image": "container-ship.png"
+      "image": "container-ship.png",
+      "threatLevel": 3
     },
     {
       "name": "Dhow",
@@ -165,7 +179,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 2,
-      "image": "dhow.png"
+      "image": "dhow.png",
+      "threatLevel": 3
     },
     {
       "name": "Cruise-Ship",
@@ -176,7 +191,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 0.5,
-      "image": "cruise-ship.png"
+      "image": "cruise-ship.png",
+      "threatLevel": 3
     },
     {
       "name": "Oil-Tanker",
@@ -187,7 +203,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 0.3,
-      "image": "oil-tanker.png"
+      "image": "oil-tanker.png",
+      "threatLevel": 3
     },
     {
       "name": "Fishing-Vessel",
@@ -198,7 +215,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1.5,
-      "image": "fishing-vessel.png"
+      "image": "fishing-vessel.png",
+      "threatLevel": 3
     },
     {
       "name": "Freighter",
@@ -209,7 +227,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 0.5,
-      "image": "freighter.png"
+      "image": "freighter.png",
+      "threatLevel": 3
     },
     {
       "name": "Houdong",
@@ -220,7 +239,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 2.5,
-      "image": "houdong.jpg"
+      "image": "houdong.jpg",
+      "threatLevel": 1
     },
     {
       "name": "Huangfen",
@@ -231,7 +251,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 2,
-      "image": "huangfen.jpg"
+      "image": "huangfen.jpg",
+      "threatLevel": 1
     },
     {
       "name": "Krivak",
@@ -242,7 +263,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1.5,
-      "image": "krivak.jpg"
+      "image": "krivak.jpg",
+      "threatLevel": 1
     },
     {
       "name": "Najin",
@@ -253,7 +275,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1,
-      "image": "najin.jpg"
+      "image": "najin.jpg",
+      "threatLevel": 1
     },
     {
       "name": "Nanuchka",
@@ -264,7 +287,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 2,
-      "image": "nanuchka.jpg"
+      "image": "nanuchka.jpg",
+      "threatLevel": 1
     },
     {
       "name": "Osa",
@@ -275,7 +299,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 2.5,
-      "image": "osa.jpg"
+      "image": "osa.jpg",
+      "threatLevel": 1
     },
     {
       "name": "Perry FFG",
@@ -286,7 +311,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1.5,
-      "image": "perry-class-FFG.png"
+      "image": "perry-class-FFG.png",
+      "threatLevel": 2
     },
     {
       "name": "Sovremenny",
@@ -297,7 +323,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1.5,
-      "image": "sovremenny.jpg"
+      "image": "sovremenny.jpg",
+      "threatLevel": 1
     },
     {
       "name": "Udaloy",
@@ -308,7 +335,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1.5,
-      "image": "udaloy.jpg"
+      "image": "udaloy.jpg",
+      "threatLevel": 1
     }
   ],
   "subSurface": [
@@ -321,7 +349,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1,
-      "image": "kilo.jpg"
+      "image": "kilo.jpg",
+      "threatLevel": 1
     },
     {
       "name": "Romeo",
@@ -332,7 +361,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1,
-      "image": "romeo.jpg"
+      "image": "romeo.jpg",
+      "threatLevel": 1
     }
   ]
 }
