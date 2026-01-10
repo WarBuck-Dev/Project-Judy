@@ -6,10 +6,12 @@ const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 // BULLSEYE position is now stored in state (bullseyePosition)
 const INITIAL_SCALE = 100; // nautical miles
-const MIN_SCALE = 10;
+const MIN_SCALE = 5;
 const MAX_SCALE = 360;
 const PHYSICS_UPDATE_RATE = 1000 / 60; // 60 Hz
 const WAYPOINT_ARRIVAL_THRESHOLD = 0.5; // nautical miles
+const SONOBUOY_DETECTION_RANGE = 4; // nautical miles
+const YARDS_PER_NAUTICAL_MILE = 2025.37;
 
 // Asset type configurations
 const ASSET_TYPES = {
@@ -147,6 +149,26 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 
     const R = 3440.065; // Earth radius in nautical miles
     return R * c;
+}
+
+// Get SONO tab color based on power and armed state
+function getSonoTabColor(enabled, armed) {
+    if (!enabled) return '#FF0000'; // RED when OFF
+    if (!armed) return '#FFFF00';   // YELLOW when ON but SAFE
+    return '#00FF00';                // GREEN when ON and ARMED
+}
+
+// Format distance based on current zoom scale
+function formatDistance(distanceNM, currentScale) {
+    if (currentScale <= 5) {
+        return Math.round(distanceNM * YARDS_PER_NAUTICAL_MILE).toString();
+    }
+    return Math.round(distanceNM).toString();
+}
+
+// Get distance unit suffix based on current zoom scale
+function getDistanceUnit(currentScale) {
+    return currentScale <= 5 ? ' yds' : '';
 }
 
 // Normalize heading to 0-359 range
@@ -311,6 +333,15 @@ function AICSimulator() {
     const [isarDragging, setIsarDragging] = useState(false); // ISAR window dragging state
     const [isarDragOffset, setIsarDragOffset] = useState({ x: 0, y: 0 }); // ISAR drag offset
     const [isarImageErrors, setIsarImageErrors] = useState(new Set()); // Track which asset IDs have ISAR image load errors
+
+    // SONOBUOY SYSTEM STATE
+    const [sonoEnabled, setSonoEnabled] = useState(false);
+    const [sonoArmed, setSonoArmed] = useState(false);
+    const [sonobuoys, setSonobuoys] = useState([]);
+    const [sonobuoyCount, setSonobuoyCount] = useState(30);
+    const [nextSonobuoyId, setNextSonobuoyId] = useState(1);
+    const [sonoDetections, setSonoDetections] = useState([]);
+
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
@@ -927,6 +958,45 @@ function AICSimulator() {
     }, [esmEnabled, assets, nextEsmSerialNumber, missionTime]);
 
     // ========================================================================
+    // SONOBUOY DETECTION SYSTEM
+    // ========================================================================
+
+    useEffect(() => {
+        if (!sonoEnabled || sonobuoys.length === 0) {
+            setSonoDetections([]);
+            return;
+        }
+
+        const submarines = assets.filter(a => a.domain === 'subSurface');
+        if (submarines.length === 0) {
+            setSonoDetections([]);
+            return;
+        }
+
+        const detections = [];
+        sonobuoys.forEach(sono => {
+            submarines.forEach(sub => {
+                const distance = calculateDistance(sono.lat, sono.lon, sub.lat, sub.lon);
+                if (distance <= SONOBUOY_DETECTION_RANGE) {
+                    const bearing = calculateBearing(sono.lat, sono.lon, sub.lat, sub.lon);
+                    detections.push({
+                        id: `sono-${sono.id}-sub-${sub.id}`,
+                        sonobuoyId: sono.id,
+                        submarineId: sub.id,
+                        bearing: bearing,
+                        sonoLat: sono.lat,
+                        sonoLon: sono.lon,
+                        subLat: sub.lat,
+                        subLon: sub.lon
+                    });
+                }
+            });
+        });
+
+        setSonoDetections(detections);
+    }, [sonoEnabled, sonobuoys, assets, missionTime]);
+
+    // ========================================================================
     // ASSET MANAGEMENT
     // ========================================================================
 
@@ -1455,12 +1525,15 @@ function AICSimulator() {
             geoPoints,
             nextGeoPointId,
             shapes,
-            nextShapeId
+            nextShapeId,
+            sonobuoys,
+            sonobuoyCount,
+            nextSonobuoyId
         };
 
         localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
         alert(`Scenario saved to application: ${name}`);
-    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId]);
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId]);
 
     const saveToFile = useCallback((name) => {
         const saveData = {
@@ -1477,7 +1550,10 @@ function AICSimulator() {
             geoPoints,
             nextGeoPointId,
             shapes,
-            nextShapeId
+            nextShapeId,
+            sonobuoys,
+            sonobuoyCount,
+            nextSonobuoyId
         };
 
         const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' });
@@ -1487,7 +1563,7 @@ function AICSimulator() {
         a.download = `${name}-${new Date().toISOString().split('T')[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
-    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId]);
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId]);
 
     const loadFromLocalStorage = useCallback((name) => {
         const data = localStorage.getItem(`aic-scenario-${name}`);
@@ -1568,6 +1644,9 @@ function AICSimulator() {
             setNextGeoPointId(saveData.nextGeoPointId || 1);
             setShapes(saveData.shapes || []);
             setNextShapeId(saveData.nextShapeId || 1);
+            setSonobuoys(saveData.sonobuoys || []);
+            setSonobuoyCount(saveData.sonobuoyCount !== undefined ? saveData.sonobuoyCount : 30);
+            setNextSonobuoyId(saveData.nextSonobuoyId || 1);
 
             // Find max asset ID
             const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
@@ -1584,7 +1663,10 @@ function AICSimulator() {
                 geoPoints: JSON.parse(JSON.stringify(saveData.geoPoints || [])),
                 nextGeoPointId: saveData.nextGeoPointId || 1,
                 shapes: JSON.parse(JSON.stringify(saveData.shapes || [])),
-                nextShapeId: saveData.nextShapeId || 1
+                nextShapeId: saveData.nextShapeId || 1,
+                sonobuoys: JSON.parse(JSON.stringify(saveData.sonobuoys || [])),
+                sonobuoyCount: saveData.sonobuoyCount !== undefined ? saveData.sonobuoyCount : 30,
+                nextSonobuoyId: saveData.nextSonobuoyId || 1
             });
         }
     }, []);
@@ -1671,6 +1753,9 @@ function AICSimulator() {
                     setNextGeoPointId(saveData.nextGeoPointId || 1);
                     setShapes(saveData.shapes || []);
                     setNextShapeId(saveData.nextShapeId || 1);
+                    setSonobuoys(saveData.sonobuoys || []);
+                    setSonobuoyCount(saveData.sonobuoyCount !== undefined ? saveData.sonobuoyCount : 30);
+                    setNextSonobuoyId(saveData.nextSonobuoyId || 1);
 
                     const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
                     setNextAssetId(maxId + 1);
@@ -1686,7 +1771,10 @@ function AICSimulator() {
                         geoPoints: JSON.parse(JSON.stringify(saveData.geoPoints || [])),
                         nextGeoPointId: saveData.nextGeoPointId || 1,
                         shapes: JSON.parse(JSON.stringify(saveData.shapes || [])),
-                        nextShapeId: saveData.nextShapeId || 1
+                        nextShapeId: saveData.nextShapeId || 1,
+                        sonobuoys: JSON.parse(JSON.stringify(saveData.sonobuoys || [])),
+                        sonobuoyCount: saveData.sonobuoyCount !== undefined ? saveData.sonobuoyCount : 30,
+                        nextSonobuoyId: saveData.nextSonobuoyId || 1
                     });
 
                     alert('Scenario loaded successfully!');
@@ -1715,6 +1803,9 @@ function AICSimulator() {
             setNextGeoPointId(initialScenario.nextGeoPointId || 1);
             setShapes(JSON.parse(JSON.stringify(initialScenario.shapes || [])));
             setNextShapeId(initialScenario.nextShapeId || 1);
+            setSonobuoys(JSON.parse(JSON.stringify(initialScenario.sonobuoys || [])));
+            setSonobuoyCount(initialScenario.sonobuoyCount !== undefined ? initialScenario.sonobuoyCount : 30);
+            setNextSonobuoyId(initialScenario.nextSonobuoyId || 1);
             setSelectedAssetId(null);
             setSelectedGeoPointId(null);
             setSelectedShapeId(null);
@@ -3320,6 +3411,59 @@ function AICSimulator() {
         );
     };
 
+    const renderSonobuoys = (width, height) => {
+        if (sonobuoys.length === 0) return null;
+
+        return (
+            <g className="sonobuoys">
+                {sonobuoys.map(sono => {
+                    const pos = latLonToScreen(sono.lat, sono.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+                    return (
+                        <g key={`sono-${sono.id}`}>
+                            <circle cx={pos.x} cy={pos.y} r={6} fill="#0080FF" stroke="#004080" strokeWidth={2} opacity={0.9} />
+                            <circle cx={pos.x} cy={pos.y} r={2} fill="#FFFFFF" opacity={0.9} />
+                            <text x={pos.x} y={pos.y - 10} fill="#0080FF" fontSize="8" textAnchor="middle" fontWeight="bold">
+                                S{sono.id.toString().padStart(2, '0')}
+                            </text>
+                        </g>
+                    );
+                })}
+            </g>
+        );
+    };
+
+    const renderSonobuoyDetections = (width, height) => {
+        if (sonoDetections.length === 0) return null;
+
+        return (
+            <g className="sonobuoy-detections">
+                {sonoDetections.map(detection => {
+                    const sonoPos = latLonToScreen(detection.sonoLat, detection.sonoLon, mapCenter.lat, mapCenter.lon, scale, width, height);
+                    const bearingRad = (detection.bearing - 90) * Math.PI / 180;
+
+                    // Calculate line to screen edge
+                    const cos = Math.cos(bearingRad);
+                    const sin = Math.sin(bearingRad);
+                    let tMin = Infinity;
+
+                    if (cos > 0) tMin = Math.min(tMin, (width - sonoPos.x) / cos);
+                    if (cos < 0) tMin = Math.min(tMin, -sonoPos.x / cos);
+                    if (sin > 0) tMin = Math.min(tMin, (height - sonoPos.y) / sin);
+                    if (sin < 0) tMin = Math.min(tMin, -sonoPos.y / sin);
+
+                    const endX = sonoPos.x + tMin * cos;
+                    const endY = sonoPos.y + tMin * sin;
+
+                    return (
+                        <g key={detection.id}>
+                            <line x1={sonoPos.x} y1={sonoPos.y} x2={endX} y2={endY} stroke="#FF0000" strokeWidth={2} opacity={0.8} />
+                        </g>
+                    );
+                })}
+            </g>
+        );
+    };
+
     const renderGeoPoint = (geoPoint, width, height) => {
         const pos = latLonToScreen(geoPoint.lat, geoPoint.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
         const isSelected = geoPoint.id === selectedGeoPointId;
@@ -3683,6 +3827,8 @@ function AICSimulator() {
                             {renderRadarSweep(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderRadarReturns(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderIFFReturns(svgRef.current.clientWidth, svgRef.current.clientHeight)}
+                            {renderSonobuoys(svgRef.current.clientWidth, svgRef.current.clientHeight)}
+                            {renderSonobuoyDetections(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {shapes.map(shape => renderShape(shape, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                             {/* Render line segment being created */}
                             {creatingShape && creatingShape.type === 'lineSegment' && creatingShape.points.length > 0 && (() => {
@@ -3766,7 +3912,8 @@ function AICSimulator() {
                             <div className="position-label">FROM {bullseyeName && bullseyeName.trim() ? bullseyeName.toUpperCase() : 'BULLSEYE'}</div>
                             <div className="position-value">
                                 {Math.round(calculateBearing(bullseyePosition.lat, bullseyePosition.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/
-                                {Math.round(calculateDistance(bullseyePosition.lat, bullseyePosition.lon, cursorPos.lat, cursorPos.lon))}
+                                {formatDistance(calculateDistance(bullseyePosition.lat, bullseyePosition.lon, cursorPos.lat, cursorPos.lon), scale)}
+                                {getDistanceUnit(scale)}
                             </div>
                         </div>
 
@@ -3783,10 +3930,10 @@ function AICSimulator() {
                                     </div>
                                     <div className="position-value">
                                         {selectedGeoPoint ?
-                                            `${Math.round(calculateBearing(selectedGeoPoint.lat, selectedGeoPoint.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${Math.round(calculateDistance(selectedGeoPoint.lat, selectedGeoPoint.lon, cursorPos.lat, cursorPos.lon))}` :
+                                            `${Math.round(calculateBearing(selectedGeoPoint.lat, selectedGeoPoint.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${formatDistance(calculateDistance(selectedGeoPoint.lat, selectedGeoPoint.lon, cursorPos.lat, cursorPos.lon), scale)}${getDistanceUnit(scale)}` :
                                             selectedAsset ?
-                                                `${Math.round(calculateBearing(selectedAsset.lat, selectedAsset.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${Math.round(calculateDistance(selectedAsset.lat, selectedAsset.lon, cursorPos.lat, cursorPos.lon))}` :
-                                                `${Math.round(calculateBearing(tempMark.lat, tempMark.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${Math.round(calculateDistance(tempMark.lat, tempMark.lon, cursorPos.lat, cursorPos.lon))}`
+                                                `${Math.round(calculateBearing(selectedAsset.lat, selectedAsset.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${formatDistance(calculateDistance(selectedAsset.lat, selectedAsset.lon, cursorPos.lat, cursorPos.lon), scale)}${getDistanceUnit(scale)}` :
+                                                `${Math.round(calculateBearing(tempMark.lat, tempMark.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${formatDistance(calculateDistance(tempMark.lat, tempMark.lon, cursorPos.lat, cursorPos.lon), scale)}${getDistanceUnit(scale)}`
                                         }
                                     </div>
                                 </div>
@@ -3894,6 +4041,17 @@ function AICSimulator() {
                 setIsarEnabled={setIsarEnabled}
                 isarSelectedAssetId={isarSelectedAssetId}
                 setIsarSelectedAssetId={setIsarSelectedAssetId}
+                sonoEnabled={sonoEnabled}
+                setSonoEnabled={setSonoEnabled}
+                sonoArmed={sonoArmed}
+                setSonoArmed={setSonoArmed}
+                sonobuoys={sonobuoys}
+                setSonobuoys={setSonobuoys}
+                sonobuoyCount={sonobuoyCount}
+                setSonobuoyCount={setSonobuoyCount}
+                nextSonobuoyId={nextSonobuoyId}
+                setNextSonobuoyId={setNextSonobuoyId}
+                sonoDetections={sonoDetections}
             />
 
             {/* Context Menu */}
@@ -4296,7 +4454,13 @@ function ControlPanel({
     eoirEnabled, setEoirEnabled,
     eoirSelectedAssetId, setEoirSelectedAssetId,
     isarEnabled, setIsarEnabled,
-    isarSelectedAssetId, setIsarSelectedAssetId
+    isarSelectedAssetId, setIsarSelectedAssetId,
+    sonoEnabled, setSonoEnabled,
+    sonoArmed, setSonoArmed,
+    sonobuoys, setSonobuoys,
+    sonobuoyCount, setSonobuoyCount,
+    nextSonobuoyId, setNextSonobuoyId,
+    sonoDetections
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
@@ -4610,6 +4774,23 @@ function ControlPanel({
                             }}
                         >
                             ISAR
+                        </button>
+                        <button
+                            onClick={() => setSelectedSystemTab('sono')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedSystemTab === 'sono' ? getSonoTabColor(sonoEnabled, sonoArmed) : 'transparent',
+                                color: selectedSystemTab === 'sono' ? '#000' : getSonoTabColor(sonoEnabled, sonoArmed),
+                                border: 'none',
+                                borderBottom: selectedSystemTab === 'sono' ? `2px solid ${getSonoTabColor(sonoEnabled, sonoArmed)}` : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            SONO
                         </button>
                     </div>
 
@@ -5175,6 +5356,149 @@ function ControlPanel({
                                 <p style={{ margin: '0 0 10px 0' }}>ISAR (Inverse Synthetic Aperture Radar) provides high-resolution radar imagery of surface and subsurface platforms.</p>
                                 <p style={{ margin: '0 0 10px 0' }}>Select a surface or subsurface asset on the map, then click the ISAR button in the asset panel to view the radar image.</p>
                                 <p style={{ margin: 0 }}>System must be powered ON to view images.</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* SONO TAB */}
+                    {selectedSystemTab === 'sono' && (
+                        <div>
+                            {/* SONO Power ON/OFF Button */}
+                            <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                                <button
+                                    className={`control-btn ${sonoEnabled ? 'primary' : 'danger'}`}
+                                    onClick={() => setSonoEnabled(!sonoEnabled)}
+                                    style={{ width: '100%' }}
+                                >
+                                    {sonoEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+
+                            {/* SAFE/ARM Switch */}
+                            <div style={{ marginBottom: '15px' }}>
+                                <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '5px', fontWeight: 'bold' }}>
+                                    MASTER ARM
+                                </div>
+                                <div style={{ display: 'flex', gap: '5px' }}>
+                                    <button
+                                        onClick={() => setSonoArmed(false)}
+                                        disabled={!sonoEnabled}
+                                        style={{
+                                            flex: 1,
+                                            padding: '10px',
+                                            background: !sonoArmed ? '#FFFF00' : '#2a2a2a',
+                                            color: !sonoArmed ? '#000' : '#666',
+                                            border: !sonoArmed ? '2px solid #FFFF00' : '2px solid #444',
+                                            cursor: sonoEnabled ? 'pointer' : 'not-allowed',
+                                            fontSize: '10px',
+                                            fontWeight: 'bold',
+                                            opacity: sonoEnabled ? 1 : 0.4
+                                        }}
+                                    >
+                                        SAFE
+                                    </button>
+                                    <button
+                                        onClick={() => setSonoArmed(true)}
+                                        disabled={!sonoEnabled}
+                                        style={{
+                                            flex: 1,
+                                            padding: '10px',
+                                            background: sonoArmed ? '#00FF00' : '#2a2a2a',
+                                            color: sonoArmed ? '#000' : '#666',
+                                            border: sonoArmed ? '2px solid #00FF00' : '2px solid #444',
+                                            cursor: sonoEnabled ? 'pointer' : 'not-allowed',
+                                            fontSize: '10px',
+                                            fontWeight: 'bold',
+                                            opacity: sonoEnabled ? 1 : 0.4
+                                        }}
+                                    >
+                                        ARM
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Remaining Buoy Count */}
+                            <div style={{ marginBottom: '15px', padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                                <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '5px', fontWeight: 'bold' }}>
+                                    REMAINING BUOYS
+                                </div>
+                                <div style={{
+                                    fontSize: '24px',
+                                    fontWeight: 'bold',
+                                    textAlign: 'center',
+                                    color: sonobuoyCount > 10 ? '#00FF00' : (sonobuoyCount > 0 ? '#FFFF00' : '#FF0000')
+                                }}>
+                                    {sonobuoyCount}
+                                </div>
+                            </div>
+
+                            {/* DEPLOY Button */}
+                            <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                                <button
+                                    className="control-btn primary"
+                                    disabled={!sonoEnabled || !sonoArmed || sonobuoyCount === 0}
+                                    onClick={() => {
+                                        if (sonoEnabled && sonoArmed && sonobuoyCount > 0) {
+                                            const ownship = assets.find(a => a.type === 'ownship');
+                                            if (ownship) {
+                                                const newSonobuoy = {
+                                                    id: nextSonobuoyId,
+                                                    lat: ownship.lat,
+                                                    lon: ownship.lon,
+                                                    deployTime: missionTime
+                                                };
+                                                setSonobuoys([...sonobuoys, newSonobuoy]);
+                                                setSonobuoyCount(sonobuoyCount - 1);
+                                                setNextSonobuoyId(nextSonobuoyId + 1);
+                                            }
+                                        }
+                                    }}
+                                    style={{
+                                        width: '100%',
+                                        opacity: (!sonoEnabled || !sonoArmed || sonobuoyCount === 0) ? 0.4 : 1,
+                                        cursor: (!sonoEnabled || !sonoArmed || sonobuoyCount === 0) ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    DEPLOY
+                                </button>
+                            </div>
+
+                            {/* Deployed Buoys List */}
+                            {sonobuoys.length > 0 && (
+                                <div style={{ marginTop: '15px' }}>
+                                    <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '5px', fontWeight: 'bold' }}>
+                                        DEPLOYED BUOYS ({sonobuoys.length})
+                                    </div>
+                                    <div style={{ maxHeight: '200px', overflowY: 'auto', background: '#2a2a2a', borderRadius: '3px', padding: '5px' }}>
+                                        {sonobuoys.map(sono => {
+                                            const elapsedSeconds = Math.floor(missionTime - sono.deployTime);
+                                            const minutes = Math.floor(elapsedSeconds / 60);
+                                            const seconds = elapsedSeconds % 60;
+                                            const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+                                            return (
+                                                <div key={sono.id} style={{
+                                                    padding: '5px',
+                                                    marginBottom: '3px',
+                                                    background: '#1a1a1a',
+                                                    borderRadius: '2px',
+                                                    fontSize: '9px',
+                                                    color: '#0080FF'
+                                                }}>
+                                                    <div style={{ fontWeight: 'bold' }}>S{sono.id.toString().padStart(2, '0')}</div>
+                                                    <div style={{ opacity: 0.7 }}>Time: {timeStr}</div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* SONO Information */}
+                            <div style={{ marginTop: '15px', padding: '10px', background: '#2a2a2a', borderRadius: '3px', fontSize: '10px', opacity: 0.7 }}>
+                                <p style={{ margin: '0 0 10px 0' }}>SONOBUOY system detects submarines within 4nm range.</p>
+                                <p style={{ margin: '0 0 10px 0' }}>Power ON and ARM system to deploy buoys. Bearing lines indicate submarine direction.</p>
+                                <p style={{ margin: 0 }}>Buoys operate indefinitely. 30 available per mission.</p>
                             </div>
                         </div>
                     )}
