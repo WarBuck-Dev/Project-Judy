@@ -341,6 +341,7 @@ function AICSimulator() {
     const [sonobuoyCount, setSonobuoyCount] = useState(30);
     const [nextSonobuoyId, setNextSonobuoyId] = useState(1);
     const [sonoDetections, setSonoDetections] = useState([]);
+    const [sonoGuardOpen, setSonoGuardOpen] = useState(false);
 
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
@@ -5424,60 +5425,187 @@ function ControlPanel({
 
                             {/* SAFE/ARM Switch */}
                             <div style={{ marginBottom: '15px' }}>
-                                <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '5px', fontWeight: 'bold' }}>
+                                <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '20px', fontWeight: 'bold', textAlign: 'center' }}>
                                     MASTER ARM
                                 </div>
-                                <div
-                                    onClick={() => sonoEnabled && setSonoArmed(!sonoArmed)}
-                                    style={{
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                    opacity: sonoEnabled ? 1 : 0.4,
+                                    pointerEvents: sonoEnabled ? 'auto' : 'none'
+                                }}>
+                                    <div style={{
                                         position: 'relative',
-                                        width: '100%',
-                                        height: '40px',
-                                        background: '#2a2a2a',
-                                        border: '2px solid #444',
-                                        borderRadius: '3px',
-                                        cursor: sonoEnabled ? 'pointer' : 'not-allowed',
-                                        opacity: sonoEnabled ? 1 : 0.4,
-                                        transition: 'all 0.2s'
-                                    }}
-                                >
-                                    {/* Background labels */}
-                                    <div style={{
-                                        position: 'absolute',
-                                        top: 0,
-                                        left: 0,
-                                        right: 0,
-                                        bottom: 0,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        padding: '0 15px',
-                                        fontSize: '10px',
-                                        fontWeight: 'bold',
-                                        color: '#666'
+                                        padding: '10px',
+                                        border: '1px solid #202020',
+                                        borderRadius: '10px',
+                                        outline: '3px solid #a1a1a1',
+                                        background: 'repeating-linear-gradient(-45deg, #f5dd00, #f5dd00 12px, #101010 10px, #101010 23px)'
                                     }}>
-                                        <span>SAFE</span>
-                                        <span>ARM</span>
-                                    </div>
-                                    {/* Sliding switch */}
-                                    <div style={{
-                                        position: 'absolute',
-                                        top: '3px',
-                                        left: sonoArmed ? 'calc(50% + 3px)' : '3px',
-                                        width: 'calc(50% - 6px)',
-                                        height: 'calc(100% - 6px)',
-                                        background: sonoArmed ? '#00FF00' : '#FFFF00',
-                                        borderRadius: '2px',
-                                        transition: 'all 0.3s ease',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        fontSize: '10px',
-                                        fontWeight: 'bold',
-                                        color: '#000',
-                                        boxShadow: sonoArmed ? '0 0 10px #00FF00' : '0 0 10px #FFFF00'
-                                    }}>
-                                        {sonoArmed ? 'ARM' : 'SAFE'}
+                                        <div style={{
+                                            borderRadius: '5px',
+                                            border: '2px solid #202020',
+                                            outline: '2px solid #a1a1a1',
+                                            background: '#404040',
+                                            padding: '3px',
+                                            margin: 0,
+                                            perspective: '300px',
+                                            boxShadow: '0 0 1px #050506, inset 0 0 0 2px #050506, inset 0 3px 1px #66646c',
+                                            position: 'relative',
+                                            width: '50px',
+                                            height: '100px'
+                                        }}>
+                                            {/* Guard (checkbox) */}
+                                            <input
+                                                type="checkbox"
+                                                checked={sonoGuardOpen}
+                                                onChange={(e) => {
+                                                    setSonoGuardOpen(e.target.checked);
+                                                    if (!e.target.checked) setSonoArmed(false);
+                                                }}
+                                                style={{
+                                                    position: 'relative',
+                                                    margin: 0,
+                                                    padding: 0,
+                                                    appearance: 'none',
+                                                    display: 'block',
+                                                    width: '50px',
+                                                    height: '100px',
+                                                    borderRadius: '7px',
+                                                    background: sonoGuardOpen ? 'linear-gradient(180deg, rgba(166,46,41,1) 4%, rgba(210,47,41,1) 38%, rgba(237,71,65,1) 59%, rgba(242,113,108,1) 71%, rgba(242,113,108,1) 94%, rgba(210,47,41,1) 100%)' : 'linear-gradient(0deg, rgba(166,46,41,1) 0%, rgba(210,47,41,1) 6%, rgba(237,71,65,1) 16%, rgba(237,71,65,1) 27%, rgba(210,47,41,1) 68%, rgba(210,47,41,1) 100%)',
+                                                    boxShadow: 'inset -2px -2px 3px rgba(0,0,0,0.3), inset 2px 2px 3px rgba(255,255,255,0.5)',
+                                                    cursor: 'grab',
+                                                    transformOrigin: '50% 0%',
+                                                    transition: 'transform 0.2s ease',
+                                                    transform: sonoGuardOpen ? 'rotateX(70deg)' : 'rotateX(0deg)',
+                                                    border: '1px solid black',
+                                                    zIndex: 3
+                                                }}
+                                            />
+
+                                            {/* Guard sides */}
+                                            <div style={{
+                                                position: 'absolute',
+                                                left: 0,
+                                                top: 0,
+                                                width: '100%',
+                                                height: '100px',
+                                                display: 'block',
+                                                transform: sonoGuardOpen ? 'translateY(0px)' : 'translateY(45px)',
+                                                transition: 'all 0.2s ease',
+                                                pointerEvents: 'none'
+                                            }}>
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    left: '2px',
+                                                    top: '15px',
+                                                    width: '8px',
+                                                    height: '40px',
+                                                    background: 'linear-gradient(0deg, rgba(166,46,41,1) 0%, rgba(210,47,41,1) 6%, rgba(237,71,65,1) 16%, rgba(237,71,65,1) 27%, rgba(210,47,41,1) 68%, rgba(210,47,41,1) 100%)',
+                                                    boxShadow: 'inset -2px -2px 3px rgba(0,0,0,0.3), inset 2px 2px 1px rgba(255,255,255,0.2), 0px 3px 3px rgba(0,0,0,0.4)'
+                                                }} />
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    right: '2px',
+                                                    top: '15px',
+                                                    width: '8px',
+                                                    height: '40px',
+                                                    background: 'linear-gradient(0deg, rgba(166,46,41,1) 0%, rgba(210,47,41,1) 6%, rgba(237,71,65,1) 16%, rgba(237,71,65,1) 27%, rgba(210,47,41,1) 68%, rgba(210,47,41,1) 100%)',
+                                                    boxShadow: 'inset -2px -2px 3px rgba(0,0,0,0.3), inset 2px 2px 1px rgba(255,255,255,0.2), 0px 3px 3px rgba(0,0,0,0.4)'
+                                                }} />
+                                            </div>
+
+                                            {/* Switch (checkbox) */}
+                                            <input
+                                                type="checkbox"
+                                                checked={sonoArmed}
+                                                onChange={(e) => sonoGuardOpen && setSonoArmed(e.target.checked)}
+                                                disabled={!sonoGuardOpen}
+                                                style={{
+                                                    position: 'absolute',
+                                                    margin: 0,
+                                                    padding: 0,
+                                                    appearance: 'none',
+                                                    display: 'block',
+                                                    background: 'linear-gradient(to left, #a1a1a1 0%, #a1a1a1 1%, #c0c0c0 26%, #b1b1b1 48%, #909090 75%, #a1a1a1 100%)',
+                                                    top: '70%',
+                                                    left: '50%',
+                                                    transform: 'translateX(-50%) translateY(-50%) rotate(-90deg)',
+                                                    width: '52px',
+                                                    height: '50px',
+                                                    clipPath: 'polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%)',
+                                                    zIndex: 0,
+                                                    cursor: sonoGuardOpen ? 'pointer' : 'not-allowed',
+                                                    filter: 'drop-shadow(1px 1px 3px rgba(255,255,255,1))'
+                                                }}
+                                            />
+
+                                            {/* Knob */}
+                                            <div style={{
+                                                position: 'absolute',
+                                                display: 'block',
+                                                width: '12px',
+                                                height: '25px',
+                                                bottom: sonoArmed ? '13px' : '15px',
+                                                left: '50%',
+                                                pointerEvents: 'none',
+                                                borderTopLeftRadius: '4px',
+                                                borderTopRightRadius: '4px',
+                                                transform: sonoArmed ? 'translateX(-50%) rotateX(0deg)' : 'translateX(-50%) translateY(-14px) rotateX(-175deg)',
+                                                background: 'linear-gradient(to left, lightgrey 0%, lightgrey 1%, #e0e0e0 26%, #efefef 48%, #d9d9d9 75%, #bcbcbc 100%)',
+                                                border: '1px solid #000',
+                                                zIndex: 2,
+                                                transition: 'all 0.2s ease',
+                                                boxShadow: 'inset 0px -3px 3px rgba(0,0,0,1), inset 0px 3px 3px rgba(0,0,0,0.7)'
+                                            }}>
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    bottom: '-10px',
+                                                    left: '-2px',
+                                                    width: '12px',
+                                                    borderRadius: '6px',
+                                                    height: sonoArmed ? '15px' : '15px',
+                                                    border: '1px solid black',
+                                                    borderTop: 0,
+                                                    background: 'radial-gradient(ellipse at 50% -40%, rgba(38, 38, 38, 0.5), #e6e6e6 25%, #ffffff 38%, #a1a1a1 63%, #e6e6e6 87%, rgba(38, 38, 38, 1))'
+                                                }} />
+                                            </div>
+
+                                            {/* Indicator Light */}
+                                            <div style={{
+                                                position: 'absolute',
+                                                bottom: '-40px',
+                                                display: 'block',
+                                                width: '50px',
+                                                height: '20px',
+                                                left: '50%',
+                                                padding: '2px',
+                                                transform: 'translateX(-50%)',
+                                                backgroundColor: sonoArmed ? '#ed4741' : 'grey',
+                                                borderRadius: '7px',
+                                                border: '2px ridge black',
+                                                zIndex: 0,
+                                                transition: 'all 0.4s ease',
+                                                boxShadow: sonoArmed ? '0px 0px 10px rgba(255,0,0,1)' : 'none'
+                                            }}>
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    left: 0,
+                                                    top: 0,
+                                                    opacity: sonoArmed ? 0.2 : 0.2,
+                                                    backgroundImage: 'radial-gradient(rgba(255,255,255,0.5) 2px, transparent 0)',
+                                                    backgroundSize: '5px 5px',
+                                                    backgroundPosition: '-18px -15px',
+                                                    zIndex: 1,
+                                                    borderRadius: '7px',
+                                                    outline: '2px solid #a1a1a1',
+                                                    border: '1px solid rgba(0,0,0,0.5)',
+                                                    transition: 'all 1s ease'
+                                                }} />
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
