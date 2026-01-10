@@ -1,17 +1,6 @@
 {
   "air": [
     {
-      "name": "E-2D",
-      "domain": "air",
-      "weapons": [],
-      "emitters": ["APY-9"],
-      "maxSpeed": 350,
-      "maxAltitude": 37000,
-      "maxClimb": 2500,
-      "maxTurn": 5,
-      "image": "E-2D.jpg"
-    },
-    {
       "name": "F-18E",
       "domain": "air",
       "weapons": ["AIM-120 AMRAAM", "AIM-9 Sidewinder", "AGM-84 Harpoon"],
@@ -42,18 +31,29 @@
       "maxAltitude": 50000,
       "maxClimb": 50000,
       "maxTurn": 15,
-      "image": "F-16.jpg"
+      "image": "f-16.jpg"
     },
     {
-      "name": "MiG-29",
+      "name": "F-15",
       "domain": "air",
-      "weapons": ["R-27 (AA-10)", "R-73 (AA-11)"],
-      "emitters": ["N019"],
-      "maxSpeed": 1520,
-      "maxAltitude": 59000,
-      "maxClimb": 65000,
-      "maxTurn": 17,
-      "image": "MiG-29.jpg"
+      "weapons": ["AIM-120 AMRAAM", "AIM-9 Sidewinder", "AIM-7 Sparrow"],
+      "emitters": ["APG-63"],
+      "maxSpeed": 1650,
+      "maxAltitude": 65000,
+      "maxClimb": 50000,
+      "maxTurn": 15,
+      "image": "f-15.jpg"
+    },
+    {
+      "name": "Com-Air",
+      "domain": "air",
+      "weapons": [],
+      "emitters": [],
+      "maxSpeed": 450,
+      "maxAltitude": 35000,
+      "maxClimb": 2500,
+      "maxTurn": 8,
+      "image": "com-air.jpg"
     },
     {
       "name": "MiG-21",
@@ -64,223 +64,256 @@
       "maxAltitude": 57000,
       "maxClimb": 50000,
       "maxTurn": 16,
-      "image": "MiG-21.jpg"
+      "image": "mig-21.png"
     },
     {
-      "name": "Su-25",
+      "name": "MiG-29",
       "domain": "air",
-      "weapons": ["S-25 Rockets", "FAB-500", "Kh-25"],
-      "emitters": [],
-      "maxSpeed": 590,
-      "maxAltitude": 23000,
-      "maxClimb": 3000,
+      "weapons": ["R-27 (AA-10)", "R-73 (AA-11)"],
+      "emitters": ["N019"],
+      "maxSpeed": 1520,
+      "maxAltitude": 59000,
+      "maxClimb": 65000,
+      "maxTurn": 17,
+      "image": "mig-29.jpg"
+    },
+    {
+      "name": "F-5",
+      "domain": "air",
+      "weapons": ["AIM-9 Sidewinder"],
+      "emitters": ["APQ-159"],
+      "maxSpeed": 1060,
+      "maxAltitude": 51800,
+      "maxClimb": 34500,
+      "maxTurn": 15,
+      "image": "f-5.png"
+    },
+    {
+      "name": "F-4",
+      "domain": "air",
+      "weapons": ["AIM-7 Sparrow", "AIM-9 Sidewinder"],
+      "emitters": ["APQ-120"],
+      "maxSpeed": 1472,
+      "maxAltitude": 60000,
+      "maxClimb": 49800,
+      "maxTurn": 13,
+      "image": "f-4.jpg"
+    },
+    {
+      "name": "F-14",
+      "domain": "air",
+      "weapons": ["AIM-54 Phoenix", "AIM-7 Sparrow", "AIM-9 Sidewinder"],
+      "emitters": ["AWG-9"],
+      "maxSpeed": 1544,
+      "maxAltitude": 53000,
+      "maxClimb": 45000,
+      "maxTurn": 14,
+      "image": "f-14.jpg"
+    },
+    {
+      "name": "Su-24",
+      "domain": "air",
+      "weapons": ["R-60 (AA-8)", "Kh-25", "FAB-500"],
+      "emitters": ["PNA"],
+      "maxSpeed": 870,
+      "maxAltitude": 36000,
+      "maxClimb": 6000,
       "maxTurn": 10,
-      "image": "Su-25.jpg"
+      "image": "su-24.jpg"
     },
     {
-      "name": "P-8",
+      "name": "P-3",
       "domain": "air",
-      "weapons": ["Mk 54 Torpedo", "Harpoon", "SLAM-ER"],
-      "emitters": ["APY-10"],
-      "maxSpeed": 490,
+      "weapons": ["Mk 46 Torpedo", "Harpoon"],
+      "emitters": ["APS-115"],
+      "maxSpeed": 411,
+      "maxAltitude": 28300,
+      "maxClimb": 1950,
+      "maxTurn": 6,
+      "image": "p-3.jpg"
+    },
+    {
+      "name": "Tu-95",
+      "domain": "air",
+      "weapons": ["Kh-55", "Kh-101"],
+      "emitters": ["RBP-4"],
+      "maxSpeed": 575,
       "maxAltitude": 41000,
       "maxClimb": 2000,
-      "maxTurn": 4,
-      "image": "P-8.jpg"
-    },
-    {
-      "name": "MH-60R",
-      "domain": "air",
-      "weapons": ["Mk 54 Torpedo", "AGM-114 Hellfire"],
-      "emitters": ["APS-147"],
-      "maxSpeed": 180,
-      "maxAltitude": 14000,
-      "maxClimb": 1500,
-      "maxTurn": 8,
-      "image": "MH-60R.jpg"
+      "maxTurn": 5,
+      "image": "tu-95.jpg"
     }
   ],
   "surface": [
     {
-      "name": "Arleigh Burke (DDG)",
+      "name": "Container-Ship",
       "domain": "surface",
-      "weapons": ["SM-2", "SM-6", "Tomahawk", "ESSM", "Harpoon"],
-      "emitters": ["SPY-1D", "SPQ-9B"],
-      "maxSpeed": 30,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Arleigh-Burke.jpg"
-    },
-    {
-      "name": "Ticonderoga (CG)",
-      "domain": "surface",
-      "weapons": ["SM-2", "SM-6", "Tomahawk", "ESSM", "Harpoon"],
-      "emitters": ["SPY-1A", "SPG-62"],
-      "maxSpeed": 30,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Ticonderoga.jpg"
-    },
-    {
-      "name": "Nimitz CVN",
-      "domain": "surface",
-      "weapons": ["RIM-116 RAM", "Sea Sparrow"],
-      "emitters": ["SPS-48E", "SPS-49"],
-      "maxSpeed": 30,
+      "weapons": [],
+      "emitters": ["Navigation Radar"],
+      "maxSpeed": 22,
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 0.5,
-      "image": "Nimitz.jpg"
+      "image": "container-ship.png"
     },
     {
-      "name": "LCS Freedom",
+      "name": "Dhow",
       "domain": "surface",
-      "weapons": ["RIM-116 RAM", "Hellfire", "Griffin"],
-      "emitters": ["TRS-3D"],
-      "maxSpeed": 40,
+      "weapons": [],
+      "emitters": [],
+      "maxSpeed": 8,
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 2,
-      "image": "LCS-Freedom.jpg"
+      "image": "dhow.png"
     },
     {
-      "name": "Type 052D (DDG)",
+      "name": "Cruise-Ship",
       "domain": "surface",
-      "weapons": ["HHQ-9", "YJ-18", "CJ-10"],
-      "emitters": ["Type 346A"],
-      "maxSpeed": 30,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Type-052D.jpg"
-    },
-    {
-      "name": "Type 055 (DDG)",
-      "domain": "surface",
-      "weapons": ["HHQ-9B", "YJ-18", "CJ-10"],
-      "emitters": ["Type 346B"],
-      "maxSpeed": 30,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Type-055.jpg"
-    },
-    {
-      "name": "Admiral Kuznetsov",
-      "domain": "surface",
-      "weapons": ["P-700 Granit", "Kinzhal", "AK-630"],
-      "emitters": ["Fregat-M2EM"],
-      "maxSpeed": 29,
+      "weapons": [],
+      "emitters": ["Navigation Radar"],
+      "maxSpeed": 24,
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 0.5,
-      "image": "Admiral-Kuznetsov.jpg"
+      "image": "cruise-ship.png"
     },
     {
-      "name": "Slava (CG)",
+      "name": "Oil-Tanker",
       "domain": "surface",
-      "weapons": ["P-1000 Vulkan", "S-300F", "OSA-M"],
-      "emitters": ["Voskhod MR-800"],
-      "maxSpeed": 32,
+      "weapons": [],
+      "emitters": ["Navigation Radar"],
+      "maxSpeed": 16,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Slava.jpg"
+      "maxTurn": 0.3,
+      "image": "oil-tanker.png"
     },
     {
-      "name": "Kirov (CGN)",
+      "name": "Fishing-Vessel",
       "domain": "surface",
-      "weapons": ["P-700 Granit", "S-300F", "SA-N-6"],
-      "emitters": ["Fregat-MAE"],
-      "maxSpeed": 32,
+      "weapons": [],
+      "emitters": ["Navigation Radar"],
+      "maxSpeed": 12,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Kirov.jpg"
+      "maxTurn": 1.5,
+      "image": "fishing-vessel.png"
     },
     {
-      "name": "Patrol Boat",
+      "name": "Freighter",
       "domain": "surface",
-      "weapons": ["DShK", "RPG-7"],
-      "emitters": [],
-      "maxSpeed": 25,
+      "weapons": [],
+      "emitters": ["Navigation Radar"],
+      "maxSpeed": 18,
       "maxAltitude": 0,
       "maxClimb": 0,
-      "maxTurn": 3,
-      "image": "Patrol-Boat.jpg"
+      "maxTurn": 0.5,
+      "image": "freighter.png"
     },
     {
-      "name": "Fast Attack Craft",
+      "name": "Houdong",
       "domain": "surface",
       "weapons": ["C-802", "C-701"],
-      "emitters": ["Navigation Radar"],
-      "maxSpeed": 35,
+      "emitters": ["Type 352"],
+      "maxSpeed": 36,
+      "maxAltitude": 0,
+      "maxClimb": 0,
+      "maxTurn": 2.5,
+      "image": "houdong.jpg"
+    },
+    {
+      "name": "Huangfen",
+      "domain": "surface",
+      "weapons": ["HY-2"],
+      "emitters": ["Square Tie"],
+      "maxSpeed": 32,
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 2,
-      "image": "Fast-Attack-Craft.jpg"
+      "image": "huangfen.jpg"
     },
     {
-      "name": "FREMM Frigate",
+      "name": "Krivak",
       "domain": "surface",
-      "weapons": ["Aster 15", "Aster 30", "Exocet MM40"],
-      "emitters": ["EMPAR", "Kronos"],
+      "weapons": ["SS-N-14", "SA-N-4", "76mm Gun"],
+      "emitters": ["Head Net-C"],
+      "maxSpeed": 32,
+      "maxAltitude": 0,
+      "maxClimb": 0,
+      "maxTurn": 1.5,
+      "image": "krivak.jpg"
+    },
+    {
+      "name": "Najin",
+      "domain": "surface",
+      "weapons": ["SS-N-2 Styx", "57mm Gun"],
+      "emitters": ["Skin Head"],
       "maxSpeed": 27,
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1,
-      "image": "FREMM-Frigate.jpg"
+      "image": "najin.jpg"
+    },
+    {
+      "name": "Nanuchka",
+      "domain": "surface",
+      "weapons": ["SS-N-9", "SA-N-4"],
+      "emitters": ["Band Stand"],
+      "maxSpeed": 32,
+      "maxAltitude": 0,
+      "maxClimb": 0,
+      "maxTurn": 2,
+      "image": "nanuchka.jpg"
+    },
+    {
+      "name": "Osa",
+      "domain": "surface",
+      "weapons": ["SS-N-2 Styx"],
+      "emitters": ["Square Tie"],
+      "maxSpeed": 35,
+      "maxAltitude": 0,
+      "maxClimb": 0,
+      "maxTurn": 2.5,
+      "image": "osa.jpg"
+    },
+    {
+      "name": "Perry FFG",
+      "domain": "surface",
+      "weapons": ["SM-1", "Harpoon", "76mm Gun"],
+      "emitters": ["SPS-49"],
+      "maxSpeed": 29,
+      "maxAltitude": 0,
+      "maxClimb": 0,
+      "maxTurn": 1.5,
+      "image": "perry-class-FFG.png"
+    },
+    {
+      "name": "Sovremenny",
+      "domain": "surface",
+      "weapons": ["SS-N-22", "SA-N-7", "130mm Gun"],
+      "emitters": ["Top Steer"],
+      "maxSpeed": 32,
+      "maxAltitude": 0,
+      "maxClimb": 0,
+      "maxTurn": 1.5,
+      "image": "sovremenny.jpg"
+    },
+    {
+      "name": "Udaloy",
+      "domain": "surface",
+      "weapons": ["SS-N-14", "SA-N-9", "100mm Gun"],
+      "emitters": ["Top Plate"],
+      "maxSpeed": 30,
+      "maxAltitude": 0,
+      "maxClimb": 0,
+      "maxTurn": 1.5,
+      "image": "udaloy.jpg"
     }
   ],
   "subSurface": [
     {
-      "name": "Virginia SSN",
-      "domain": "subSurface",
-      "weapons": ["Mk 48 Torpedo", "Tomahawk", "Harpoon"],
-      "emitters": ["AN/BQQ-10"],
-      "maxSpeed": 25,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Virginia-SSN.jpg"
-    },
-    {
-      "name": "Los Angeles SSN",
-      "domain": "subSurface",
-      "weapons": ["Mk 48 Torpedo", "Tomahawk", "Harpoon"],
-      "emitters": ["AN/BQQ-5"],
-      "maxSpeed": 23,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Los-Angeles-SSN.jpg"
-    },
-    {
-      "name": "Ohio SSGN",
-      "domain": "subSurface",
-      "weapons": ["Tomahawk", "Mk 48 Torpedo"],
-      "emitters": ["AN/BQQ-6"],
-      "maxSpeed": 20,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 0.5,
-      "image": "Ohio-SSGN.jpg"
-    },
-    {
-      "name": "Seawolf SSN",
-      "domain": "subSurface",
-      "weapons": ["Mk 48 Torpedo", "Tomahawk", "Harpoon"],
-      "emitters": ["AN/BQQ-5D"],
-      "maxSpeed": 25,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Seawolf-SSN.jpg"
-    },
-    {
-      "name": "Kilo SSK",
+      "name": "Kilo",
       "domain": "subSurface",
       "weapons": ["53-65 Torpedo", "3M-54 Klub"],
       "emitters": ["MGK-400"],
@@ -288,84 +321,18 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1,
-      "image": "Kilo-SSK.jpg"
+      "image": "kilo.jpg"
     },
     {
-      "name": "Akula SSN",
+      "name": "Romeo",
       "domain": "subSurface",
-      "weapons": ["53-65 Torpedo", "RPK-6 Vodopad", "3M-54 Klub"],
-      "emitters": ["MGK-503"],
-      "maxSpeed": 28,
+      "weapons": ["53-56 Torpedo"],
+      "emitters": ["Tamir-11"],
+      "maxSpeed": 13,
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1,
-      "image": "Akula-SSN.jpg"
-    },
-    {
-      "name": "Yasen SSGN",
-      "domain": "subSurface",
-      "weapons": ["3M-54 Kalibr", "P-800 Oniks", "53-65 Torpedo"],
-      "emitters": ["Irtysh-Amfora"],
-      "maxSpeed": 28,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Yasen-SSGN.jpg"
-    },
-    {
-      "name": "Type 093 SSN",
-      "domain": "subSurface",
-      "weapons": ["Yu-6 Torpedo", "YJ-82"],
-      "emitters": ["H/SQG-207"],
-      "maxSpeed": 24,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Type-093-SSN.jpg"
-    },
-    {
-      "name": "Type 095 SSN",
-      "domain": "subSurface",
-      "weapons": ["Yu-10 Torpedo", "YJ-18"],
-      "emitters": ["H/SQG-207A"],
-      "maxSpeed": 30,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Type-095-SSN.jpg"
-    },
-    {
-      "name": "Astute SSN",
-      "domain": "subSurface",
-      "weapons": ["Spearfish Torpedo", "Tomahawk"],
-      "emitters": ["Sonar 2076"],
-      "maxSpeed": 29,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Astute-SSN.jpg"
-    },
-    {
-      "name": "Barracuda SSN",
-      "domain": "subSurface",
-      "weapons": ["F21 Torpedo", "SM39 Exocet", "SCALP Naval"],
-      "emitters": ["DMUX 80"],
-      "maxSpeed": 25,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Barracuda-SSN.jpg"
-    },
-    {
-      "name": "Type 212 SSK",
-      "domain": "subSurface",
-      "weapons": ["DM2A4 Torpedo"],
-      "emitters": ["DBQS-40"],
-      "maxSpeed": 20,
-      "maxAltitude": 0,
-      "maxClimb": 0,
-      "maxTurn": 1,
-      "image": "Type-212-SSK.jpg"
+      "image": "romeo.jpg"
     }
   ]
 }
