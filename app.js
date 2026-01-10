@@ -303,6 +303,12 @@ function AICSimulator() {
     const [eoirWindowSize, setEoirWindowSize] = useState({ width: 400, height: 500 }); // EO/IR window size
     const [eoirDragging, setEoirDragging] = useState(false); // EO/IR window dragging state
     const [eoirDragOffset, setEoirDragOffset] = useState({ x: 0, y: 0 }); // EO/IR drag offset
+    const [isarEnabled, setIsarEnabled] = useState(false); // ISAR system ON/OFF state (OFF by default)
+    const [isarSelectedAssetId, setIsarSelectedAssetId] = useState(null); // Asset selected for ISAR viewing
+    const [isarWindowPos, setIsarWindowPos] = useState({ x: typeof window !== 'undefined' ? window.innerWidth - 420 : 20, y: 20 }); // ISAR window position (upper right)
+    const [isarWindowSize, setIsarWindowSize] = useState({ width: 400, height: 500 }); // ISAR window size
+    const [isarDragging, setIsarDragging] = useState(false); // ISAR window dragging state
+    const [isarDragOffset, setIsarDragOffset] = useState({ x: 0, y: 0 }); // ISAR drag offset
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
@@ -380,6 +386,34 @@ function AICSimulator() {
             };
         }
     }, [eoirDragging, eoirDragOffset]);
+
+    // ========================================================================
+    // ISAR WINDOW DRAGGING
+    // ========================================================================
+
+    useEffect(() => {
+        const handleMouseMove = (e) => {
+            if (isarDragging) {
+                setIsarWindowPos({
+                    x: e.clientX - isarDragOffset.x,
+                    y: e.clientY - isarDragOffset.y
+                });
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsarDragging(false);
+        };
+
+        if (isarDragging) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+            return () => {
+                window.removeEventListener('mousemove', handleMouseMove);
+                window.removeEventListener('mouseup', handleMouseUp);
+            };
+        }
+    }, [isarDragging, isarDragOffset]);
 
 
     // ========================================================================
@@ -3853,6 +3887,10 @@ function AICSimulator() {
                 setEoirEnabled={setEoirEnabled}
                 eoirSelectedAssetId={eoirSelectedAssetId}
                 setEoirSelectedAssetId={setEoirSelectedAssetId}
+                isarEnabled={isarEnabled}
+                setIsarEnabled={setIsarEnabled}
+                isarSelectedAssetId={isarSelectedAssetId}
+                setIsarSelectedAssetId={setIsarSelectedAssetId}
             />
 
             {/* Context Menu */}
@@ -3998,6 +4036,131 @@ function AICSimulator() {
                 );
             })()}
 
+            {/* ISAR Popup Window */}
+            {isarEnabled && isarSelectedAssetId && (() => {
+                const asset = assets.find(a => a.id === isarSelectedAssetId);
+                if (!asset || !asset.platform || !asset.platform.isar) return null;
+
+                const handleMouseDown = (e) => {
+                    if (e.target.closest('.isar-header') && !e.target.closest('button')) {
+                        setIsarDragging(true);
+                        setIsarDragOffset({
+                            x: e.clientX - isarWindowPos.x,
+                            y: e.clientY - isarWindowPos.y
+                        });
+                    }
+                };
+
+                return (
+                    <div
+                        style={{
+                            position: 'absolute',
+                            left: `${isarWindowPos.x}px`,
+                            top: `${isarWindowPos.y}px`,
+                            width: `${isarWindowSize.width}px`,
+                            minWidth: '300px',
+                            minHeight: '200px',
+                            background: '#1a1a1a',
+                            border: '2px solid #00FF00',
+                            borderRadius: '5px',
+                            boxShadow: '0 0 20px rgba(0, 255, 0, 0.3)',
+                            zIndex: 1000,
+                            resize: 'both',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            flexDirection: 'column'
+                        }}
+                        onMouseDown={(e) => {
+                            // Update size when user resizes
+                            const observer = new ResizeObserver((entries) => {
+                                for (let entry of entries) {
+                                    setIsarWindowSize({
+                                        width: entry.contentRect.width,
+                                        height: entry.contentRect.height
+                                    });
+                                }
+                            });
+                            observer.observe(e.currentTarget);
+                        }}
+                    >
+                        {/* Header */}
+                        <div
+                            className="isar-header"
+                            onMouseDown={handleMouseDown}
+                            style={{
+                                background: '#00FF00',
+                                color: '#000',
+                                padding: '10px',
+                                fontWeight: 'bold',
+                                fontSize: '12px',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                cursor: isarDragging ? 'grabbing' : 'grab',
+                                userSelect: 'none'
+                            }}
+                        >
+                            <span>ISAR - {asset.name}</span>
+                            <button
+                                onClick={() => setIsarSelectedAssetId(null)}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#000',
+                                    fontSize: '18px',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer',
+                                    padding: '0 5px'
+                                }}
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        {/* Image */}
+                        <div style={{
+                            padding: '10px',
+                            background: '#0a0a0a',
+                            flex: 1,
+                            overflow: 'auto',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}>
+                            <img
+                                src={`ISAR/${asset.platform.isar}`}
+                                alt={asset.name}
+                                style={{
+                                    maxWidth: '100%',
+                                    maxHeight: '100%',
+                                    display: 'block',
+                                    border: '1px solid #00FF00',
+                                    objectFit: 'contain'
+                                }}
+                                onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    e.target.parentElement.innerHTML = '<div style="color: #FF0000; text-align: center; padding: 50px;">ISAR image not found</div>';
+                                }}
+                            />
+                        </div>
+
+                        {/* Footer Info */}
+                        <div style={{
+                            padding: '10px',
+                            background: '#2a2a2a',
+                            color: '#00FF00',
+                            fontSize: '10px',
+                            borderTop: '1px solid rgba(0, 255, 0, 0.3)',
+                            flexShrink: 0
+                        }}>
+                            <div><strong>Platform:</strong> {asset.platform.name}</div>
+                            <div><strong>Domain:</strong> {asset.domain.toUpperCase()}</div>
+                            <div><strong>Type:</strong> ISAR IMAGERY</div>
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* Add Asset Dialog */}
             {showAddAssetDialog && (
                 <AddAssetDialog
@@ -4116,7 +4279,9 @@ function ControlPanel({
     selectedAssetTab, setSelectedAssetTab,
     selectedSystemTab, setSelectedSystemTab,
     eoirEnabled, setEoirEnabled,
-    eoirSelectedAssetId, setEoirSelectedAssetId
+    eoirSelectedAssetId, setEoirSelectedAssetId,
+    isarEnabled, setIsarEnabled,
+    isarSelectedAssetId, setIsarSelectedAssetId
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
@@ -4413,6 +4578,23 @@ function ControlPanel({
                             }}
                         >
                             EO/IR
+                        </button>
+                        <button
+                            onClick={() => setSelectedSystemTab('isar')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedSystemTab === 'isar' ? (isarEnabled ? '#00FF00' : '#FF0000') : 'transparent',
+                                color: selectedSystemTab === 'isar' ? '#000' : (isarEnabled ? '#00FF00' : '#FF0000'),
+                                border: 'none',
+                                borderBottom: selectedSystemTab === 'isar' ? `2px solid ${isarEnabled ? '#00FF00' : '#FF0000'}` : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            ISAR
                         </button>
                     </div>
 
@@ -4954,6 +5136,29 @@ function ControlPanel({
                             {/* EO/IR Information */}
                             <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px', fontSize: '10px', opacity: 0.7 }}>
                                 <p style={{ margin: '0 0 10px 0' }}>Select an asset on the map, then click the EO/IR button in the asset panel to view the optical/infrared image.</p>
+                                <p style={{ margin: 0 }}>System must be powered ON to view images.</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ISAR TAB */}
+                    {selectedSystemTab === 'isar' && (
+                        <div>
+                            {/* ISAR ON/OFF Button */}
+                            <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                                <button
+                                    className={`control-btn ${isarEnabled ? 'primary' : 'danger'}`}
+                                    onClick={() => setIsarEnabled(!isarEnabled)}
+                                    style={{ width: '100%' }}
+                                >
+                                    {isarEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+
+                            {/* ISAR Information */}
+                            <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px', fontSize: '10px', opacity: 0.7 }}>
+                                <p style={{ margin: '0 0 10px 0' }}>ISAR (Inverse Synthetic Aperture Radar) provides high-resolution radar imagery of surface and subsurface platforms.</p>
+                                <p style={{ margin: '0 0 10px 0' }}>Select a surface or subsurface asset on the map, then click the ISAR button in the asset panel to view the radar image.</p>
                                 <p style={{ margin: 0 }}>System must be powered ON to view images.</p>
                             </div>
                         </div>
@@ -6122,6 +6327,30 @@ function ControlPanel({
                                         }}
                                     >
                                         EO/IR
+                                    </button>
+                                )}
+                                {selectedAsset.platform && selectedAsset.platform.isar && (
+                                    <button
+                                        onClick={() => {
+                                            if (isarEnabled) {
+                                                setIsarSelectedAssetId(selectedAsset.id);
+                                            }
+                                        }}
+                                        style={{
+                                            flex: 1,
+                                            padding: '8px',
+                                            background: isarSelectedAssetId === selectedAsset.id ? '#00FF00' : 'transparent',
+                                            color: isarSelectedAssetId === selectedAsset.id ? '#000' : (isarEnabled ? '#00FF00' : '#FF0000'),
+                                            border: 'none',
+                                            borderBottom: isarSelectedAssetId === selectedAsset.id ? '2px solid #00FF00' : '2px solid transparent',
+                                            cursor: isarEnabled ? 'pointer' : 'not-allowed',
+                                            fontSize: '10px',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.2s',
+                                            opacity: isarEnabled ? 1 : 0.5
+                                        }}
+                                    >
+                                        ISAR
                                     </button>
                                 )}
                             </>

@@ -168,6 +168,7 @@
       "maxClimb": 0,
       "maxTurn": 0.5,
       "image": "container-ship.png",
+      "isar": "group-1-merchant.png",
       "threatLevel": 3
     },
     {
@@ -180,6 +181,7 @@
       "maxClimb": 0,
       "maxTurn": 2,
       "image": "dhow.png",
+      "isar": "small-craft.png",
       "threatLevel": 3
     },
     {
@@ -192,6 +194,7 @@
       "maxClimb": 0,
       "maxTurn": 0.5,
       "image": "cruise-ship.png",
+      "isar": "group-3-merchant.png",
       "threatLevel": 3
     },
     {
@@ -204,6 +207,7 @@
       "maxClimb": 0,
       "maxTurn": 0.3,
       "image": "oil-tanker.png",
+      "isar": "group-1-merchant.png",
       "threatLevel": 3
     },
     {
@@ -216,6 +220,7 @@
       "maxClimb": 0,
       "maxTurn": 1.5,
       "image": "fishing-vessel.png",
+      "isar": "group-3-merchant.png",
       "threatLevel": 3
     },
     {
@@ -228,6 +233,7 @@
       "maxClimb": 0,
       "maxTurn": 0.5,
       "image": "freighter.png",
+      "isar": "group-1-merchant.png",
       "threatLevel": 3
     },
     {
@@ -240,6 +246,7 @@
       "maxClimb": 0,
       "maxTurn": 2.5,
       "image": "combattante.png",
+      "isar": "minor-combatant.png",
       "threatLevel": 1
     },
     {
@@ -252,6 +259,7 @@
       "maxClimb": 0,
       "maxTurn": 2.5,
       "image": "houdong.jpg",
+      "isar": "minor-combatant.png",
       "threatLevel": 1
     },
     {
@@ -264,6 +272,7 @@
       "maxClimb": 0,
       "maxTurn": 2,
       "image": "huangfen.png",
+      "isar": "small-craft.png",
       "threatLevel": 1
     },
     {
@@ -276,6 +285,7 @@
       "maxClimb": 0,
       "maxTurn": 1.5,
       "image": "krivak.png",
+      "isar": "combatant.png",
       "threatLevel": 1
     },
     {
@@ -288,6 +298,7 @@
       "maxClimb": 0,
       "maxTurn": 1,
       "image": "najin.png",
+      "isar": "minor-combatant.png",
       "threatLevel": 1
     },
     {
@@ -300,6 +311,7 @@
       "maxClimb": 0,
       "maxTurn": 2,
       "image": "nanuchka.png",
+      "isar": "minor-combatant.png",
       "threatLevel": 1
     },
     {
@@ -312,6 +324,7 @@
       "maxClimb": 0,
       "maxTurn": 2.5,
       "image": "osa.png",
+      "isar": "small-craft.png",
       "threatLevel": 1
     },
     {
@@ -324,6 +337,7 @@
       "maxClimb": 0,
       "maxTurn": 1.5,
       "image": "perry-class-FFG.png",
+      "isar": "combatant.png",
       "threatLevel": 2
     },
     {
@@ -336,6 +350,7 @@
       "maxClimb": 0,
       "maxTurn": 1.5,
       "image": "sovremenny.png",
+      "isar": "combatant.png",
       "threatLevel": 1
     },
     {
@@ -348,6 +363,7 @@
       "maxClimb": 0,
       "maxTurn": 1.5,
       "image": "udaloy.png",
+      "isar": "combatant.png",
       "threatLevel": 1
     }
   ],
@@ -362,6 +378,7 @@
       "maxClimb": 0,
       "maxTurn": 1,
       "image": "kilo.png",
+      "isar": "submarine.png",
       "threatLevel": 1
     },
     {
@@ -374,6 +391,7 @@
       "maxClimb": 0,
       "maxTurn": 1,
       "image": "romeo.png",
+      "isar": "submarine.png",
       "threatLevel": 1
     }
   ]
