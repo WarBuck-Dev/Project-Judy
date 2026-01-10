@@ -588,15 +588,37 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - Orange lines of bearing (LOB) from ownship to detected emitters
   - Gray LOB and labels for inactive emitters (last seen position)
   - ESM contact labels (E01, E02, etc.) with white border when selected
+  - Serial number labels displayed in orange for auto-detected emitters
+  - Serial number labels displayed in cyan for manual bearing lines (M01, M02, etc.)
+  - Emitter names shown in 12px font for better readability
   - VIS checkbox per emitter to show/hide individual LOBs
   - AGE timer (MM+SS format) tracks time since last detection
-  - Manual bearing lines for triangulation (M01, M02, etc.)
-  - Manual lines create fixed reference snapshots from ownship position
-  - Cyan dashed styling for manual lines vs orange/gray auto lines
-  - Right-click context menu to delete manual bearing lines
-  - Click manual line to select and open ESM control panel
+    - Right-justified display with 12px bold font
+    - Green color when emitter is active (00+00)
+    - Red color when timer counts up (inactive emitters)
+  - Bearing information displayed in 10px font
+  - Threat level sorting: Level 1 (enemy) at top, then 2 (friendly), then 3 (civilian)
+  - Manual bearing lines for triangulation
+    - Manual lines create fixed reference snapshots from ownship position
+    - Cyan dashed styling for manual lines vs orange/gray auto lines
+    - Right-click context menu to delete manual bearing lines
+    - Click manual line to select and open ESM tab
+  - BEARING LINE button to create manual bearing snapshots
+  - Clicking ESM emitter label on map opens ESM tab in SYSTEMS section
   - ESM list displays both auto-detected emitters and manual lines
   - Bearing lines dynamically recalculate as ownship moves
+  - Access via ESM tab in SYSTEMS section
+- **EO/IR (Electro-Optical/Infrared) System**: Visual imaging of platform targets
+  - EO/IR button displayed in asset control panel for platforms with images
+  - Click EO/IR button to open popup window with platform image
+  - Draggable window: Click and drag header bar to reposition
+  - Resizable window: Drag edges/corners to adjust size
+  - Minimum window size: 300px × 200px
+  - Default size: 400px × 500px
+  - Image scales to fit window with proper aspect ratio (object-fit: contain)
+  - Close button (×) to dismiss window
+  - Only available for platforms with assigned image files
+  - Platform images stored in EO-IR/ folder
 
 #### Communications & Identification Systems
 - **IFF (Identify Friend or Foe) System**: Interrogation and identification system
@@ -627,9 +649,34 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - Report track function to add assets to datalink
   - Access via DATALINK button in SYSTEMS section
 
+### Platform Database
+- **31 Military Platforms** across air, surface, and subsurface domains
+  - **Air Domain (13 platforms)**:
+    - US/Allied: F-18E, F-18F, F-16, F-15, F-5, F-4, F-14, P-3
+    - Enemy: MiG-21, MiG-29, Su-24, Tu-95
+    - Civilian: Com-Air (commercial aircraft)
+  - **Surface Domain (16 platforms)**:
+    - US/Allied: Perry FFG
+    - Enemy: Combattante, Houdong, Huangfen, Krivak, Najin, Nanuchka, Osa, Sovremenny, Udaloy
+    - Civilian: Container-Ship, Dhow, Cruise-Ship, Oil-Tanker, Fishing-Vessel, Freighter
+  - **Sub-Surface Domain (2 platforms)**:
+    - Enemy: Kilo, Romeo (diesel-electric submarines)
+- **Platform Attributes**:
+  - Name, domain, weapons loadout, emitters (radar systems)
+  - Performance: max speed, max altitude/depth, climb rate, turn rate
+  - Image file for EO/IR visual identification
+  - Threat level classification (1=enemy, 2=friendly, 3=civilian)
+- **Threat Level System**:
+  - Level 1 (Enemy): Soviet/Russian/Chinese military platforms - highest priority
+  - Level 2 (Friendly): US/Allied military platforms - medium priority
+  - Level 3 (Civilian): Commercial vessels and aircraft - lowest priority
+  - Used for automatic sorting in ESM contacts list
+  - Enables threat-based prioritization and filtering
+
 ### UI Improvements
 - SYSTEMS section added under PLAYBACK controls
 - RADAR control panel integrates with existing UI pattern
+- ESM control panel with tabbed interface (RADAR/ESM/IFF/DATALINK)
 - IFF control panel with ownship code configuration
 - DATALINK control panel with NET/JU/Track Block configuration
 - Tabbed asset control panel (GENERAL, IFF, DATALINK, EMITTER)
@@ -641,6 +688,10 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 - Identity field (formerly "Type") for clearer terminology
 - File management only visible before simulation starts
 - Custom slider styling with green glow effects
+- EO/IR popup window with drag-and-drop and resize functionality
+- Enhanced ESM tab with improved typography and color-coded age display
+- Clicking ESM labels on map opens ESM tab (not duplicate panel)
+- Null-safe rendering prevents crashes when selecting assets without platforms
 
 ---
 
