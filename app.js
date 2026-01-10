@@ -460,6 +460,8 @@ function AICSimulator() {
                         assetId: asset.id,
                         lat: asset.lat,
                         lon: asset.lon,
+                        ownshipLat: ownship.lat,  // Store ownship position at time of detection
+                        ownshipLon: ownship.lon,  // Store ownship position at time of detection
                         bearing: bearing,
                         distance: distance,
                         missionTime: missionTime,
@@ -2073,8 +2075,10 @@ function AICSimulator() {
                         idHash = idHash & idHash;
                     }
 
-                    // Calculate angle from ownship to target for perpendicular spread
-                    const bearingToTarget = Math.atan2(targetPos.y - ownshipPos.y, targetPos.x - ownshipPos.x);
+                    // Calculate angle from ownship (at time of detection) to target for perpendicular spread
+                    // Use stored ownship position so returns don't move when ownship moves
+                    const returnOwnshipPos = latLonToScreen(ret.ownshipLat, ret.ownshipLon, mapCenter.lat, mapCenter.lon, scale, width, height);
+                    const bearingToTarget = Math.atan2(targetPos.y - returnOwnshipPos.y, targetPos.x - returnOwnshipPos.x);
 
                     for (let i = 0; i < numSegments; i++) {
                         // Spread segments perpendicular to the bearing from ownship
