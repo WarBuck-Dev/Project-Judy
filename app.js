@@ -604,6 +604,9 @@ function AICSimulator() {
                 // Skip ownship itself
                 if (asset.type === 'ownship') return;
 
+                // Skip subsurface assets deeper than 15 feet (fully submerged)
+                if (asset.domain === 'subSurface' && asset.depth > 15) return;
+
                 // Calculate bearing from ownship to asset
                 const bearing = calculateBearing(ownship.lat, ownship.lon, asset.lat, asset.lon);
                 const distance = calculateDistance(ownship.lat, ownship.lon, asset.lat, asset.lon);
@@ -665,6 +668,9 @@ function AICSimulator() {
             assets.forEach(asset => {
                 // Skip ownship itself
                 if (asset.type === 'ownship') return;
+
+                // Skip subsurface assets deeper than 15 feet (fully submerged)
+                if (asset.domain === 'subSurface' && asset.depth > 15) return;
 
                 // Skip assets not squawking IFF
                 if (!asset.iffSquawking) return;
