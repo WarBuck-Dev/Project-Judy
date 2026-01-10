@@ -342,7 +342,8 @@ function AICSimulator() {
 
     useEffect(() => {
         // Load platform configurations from platforms.json
-        fetch('platforms.json', {
+        // Add timestamp to URL to prevent caching
+        fetch(`platforms.json?t=${Date.now()}`, {
             cache: 'no-store',
             headers: {
                 'Cache-Control': 'no-cache'
