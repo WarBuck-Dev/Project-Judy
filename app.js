@@ -6232,8 +6232,8 @@ function ControlPanel({
                 <div className="control-section">
                     <div className="section-header">SELECTED ASSET</div>
 
-                    {/* Tab Navigation */}
-                    <div style={{ display: 'flex', gap: '5px', marginBottom: '15px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
+                    {/* Tab Navigation - Row 1: Configuration Tabs */}
+                    <div style={{ display: 'flex', gap: '5px', marginBottom: '5px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
                         <button
                             onClick={() => setSelectedAssetTab('general')}
                             style={{
@@ -6306,57 +6306,63 @@ function ControlPanel({
                                         EMITTER
                                     </button>
                                 )}
-                                {selectedAsset.platform && selectedAsset.platform.image && (
-                                    <button
-                                        onClick={() => {
-                                            if (eoirEnabled) {
-                                                setEoirSelectedAssetId(selectedAsset.id);
-                                            }
-                                        }}
-                                        style={{
-                                            flex: 1,
-                                            padding: '8px',
-                                            background: eoirSelectedAssetId === selectedAsset.id ? '#00FF00' : 'transparent',
-                                            color: eoirSelectedAssetId === selectedAsset.id ? '#000' : (eoirEnabled ? '#00FF00' : '#FF0000'),
-                                            border: 'none',
-                                            borderBottom: eoirSelectedAssetId === selectedAsset.id ? '2px solid #00FF00' : '2px solid transparent',
-                                            cursor: eoirEnabled ? 'pointer' : 'not-allowed',
-                                            fontSize: '10px',
-                                            fontWeight: 'bold',
-                                            transition: 'all 0.2s',
-                                            opacity: eoirEnabled ? 1 : 0.5
-                                        }}
-                                    >
-                                        EO/IR
-                                    </button>
-                                )}
-                                {selectedAsset.platform && selectedAsset.platform.isar && (
-                                    <button
-                                        onClick={() => {
-                                            if (isarEnabled) {
-                                                setIsarSelectedAssetId(selectedAsset.id);
-                                            }
-                                        }}
-                                        style={{
-                                            flex: 1,
-                                            padding: '8px',
-                                            background: isarSelectedAssetId === selectedAsset.id ? '#00FF00' : 'transparent',
-                                            color: isarSelectedAssetId === selectedAsset.id ? '#000' : (isarEnabled ? '#00FF00' : '#FF0000'),
-                                            border: 'none',
-                                            borderBottom: isarSelectedAssetId === selectedAsset.id ? '2px solid #00FF00' : '2px solid transparent',
-                                            cursor: isarEnabled ? 'pointer' : 'not-allowed',
-                                            fontSize: '10px',
-                                            fontWeight: 'bold',
-                                            transition: 'all 0.2s',
-                                            opacity: isarEnabled ? 1 : 0.5
-                                        }}
-                                    >
-                                        ISAR
-                                    </button>
-                                )}
                             </>
                         )}
                     </div>
+
+                    {/* Tab Navigation - Row 2: Sensor Systems */}
+                    {selectedAsset.type !== 'ownship' && (selectedAsset.platform?.image || selectedAsset.platform?.isar) && (
+                        <div style={{ display: 'flex', gap: '5px', marginBottom: '15px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
+                            {selectedAsset.platform && selectedAsset.platform.image && (
+                                <button
+                                    onClick={() => {
+                                        if (eoirEnabled) {
+                                            setEoirSelectedAssetId(selectedAsset.id);
+                                        }
+                                    }}
+                                    style={{
+                                        flex: 1,
+                                        padding: '8px',
+                                        background: eoirSelectedAssetId === selectedAsset.id ? '#00FF00' : 'transparent',
+                                        color: eoirSelectedAssetId === selectedAsset.id ? '#000' : (eoirEnabled ? '#00FF00' : '#FF0000'),
+                                        border: 'none',
+                                        borderBottom: eoirSelectedAssetId === selectedAsset.id ? '2px solid #00FF00' : '2px solid transparent',
+                                        cursor: eoirEnabled ? 'pointer' : 'not-allowed',
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        transition: 'all 0.2s',
+                                        opacity: eoirEnabled ? 1 : 0.5
+                                    }}
+                                >
+                                    EO/IR
+                                </button>
+                            )}
+                            {selectedAsset.platform && selectedAsset.platform.isar && (
+                                <button
+                                    onClick={() => {
+                                        if (isarEnabled) {
+                                            setIsarSelectedAssetId(selectedAsset.id);
+                                        }
+                                    }}
+                                    style={{
+                                        flex: 1,
+                                        padding: '8px',
+                                        background: isarSelectedAssetId === selectedAsset.id ? '#00FF00' : 'transparent',
+                                        color: isarSelectedAssetId === selectedAsset.id ? '#000' : (isarEnabled ? '#00FF00' : '#FF0000'),
+                                        border: 'none',
+                                        borderBottom: isarSelectedAssetId === selectedAsset.id ? '2px solid #00FF00' : '2px solid transparent',
+                                        cursor: isarEnabled ? 'pointer' : 'not-allowed',
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        transition: 'all 0.2s',
+                                        opacity: isarEnabled ? 1 : 0.5
+                                    }}
+                                >
+                                    ISAR
+                                </button>
+                            )}
+                        </div>
+                    )}
 
                     {/* GENERAL TAB */}
                     {selectedAssetTab === 'general' && (
