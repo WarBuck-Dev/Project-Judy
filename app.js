@@ -3418,11 +3418,39 @@ function AICSimulator() {
             <g className="sonobuoys">
                 {sonobuoys.map(sono => {
                     const pos = latLonToScreen(sono.lat, sono.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+                    const sonoColor = '#00BFFF'; // Friendly asset light blue color
+                    const circleRadius = 6;
+                    const lineHeight = 12;
+
                     return (
                         <g key={`sono-${sono.id}`}>
-                            <circle cx={pos.x} cy={pos.y} r={6} fill="#0080FF" stroke="#004080" strokeWidth={2} opacity={0.9} />
-                            <circle cx={pos.x} cy={pos.y} r={2} fill="#FFFFFF" opacity={0.9} />
-                            <text x={pos.x} y={pos.y - 10} fill="#0080FF" fontSize="8" textAnchor="middle" fontWeight="bold">
+                            {/* Vertical line extending upward from circle */}
+                            <line
+                                x1={pos.x}
+                                y1={pos.y - circleRadius}
+                                x2={pos.x}
+                                y2={pos.y - circleRadius - lineHeight}
+                                stroke={sonoColor}
+                                strokeWidth={2}
+                            />
+                            {/* Circle */}
+                            <circle
+                                cx={pos.x}
+                                cy={pos.y}
+                                r={circleRadius}
+                                fill="none"
+                                stroke={sonoColor}
+                                strokeWidth={2}
+                            />
+                            {/* Label */}
+                            <text
+                                x={pos.x}
+                                y={pos.y - circleRadius - lineHeight - 4}
+                                fill={sonoColor}
+                                fontSize="8"
+                                textAnchor="middle"
+                                fontWeight="bold"
+                            >
                                 S{sono.id.toString().padStart(2, '0')}
                             </text>
                         </g>
