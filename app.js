@@ -4134,6 +4134,21 @@ function ControlPanel({
                 </div>
             </div>
 
+            {/* File Management - Only show before simulation has started */}
+            {!hasStarted && (
+                <div className="control-section">
+                    <div className="section-header">FILE</div>
+                    <div className="playback-controls">
+                        <button className="control-btn" onClick={() => setShowSaveDialog(true)}>
+                            SAVE
+                        </button>
+                        <button className="control-btn" onClick={() => setShowLoadDialog(true)}>
+                            LOAD
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Systems Controls - Hide when asset or geo-point is selected */}
             {!selectedAsset && !selectedGeoPointId && !selectedShapeId && (
                 <div className="control-section">
@@ -4665,21 +4680,6 @@ function ControlPanel({
                             </div>
                         </div>
                     )}
-                </div>
-            )}
-
-            {/* File Management - Only show before simulation has started */}
-            {!hasStarted && (
-                <div className="control-section">
-                    <div className="section-header">FILE</div>
-                    <div className="playback-controls">
-                        <button className="control-btn" onClick={() => setShowSaveDialog(true)}>
-                            SAVE
-                        </button>
-                        <button className="control-btn" onClick={() => setShowLoadDialog(true)}>
-                            LOAD
-                        </button>
-                    </div>
                 </div>
             )}
 
