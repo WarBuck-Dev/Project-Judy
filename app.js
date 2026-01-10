@@ -5614,7 +5614,7 @@ function ControlPanel({
                             </div>
 
                             {/* Remaining Buoy Count */}
-                            <div style={{ marginBottom: '15px', padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
+                            <div style={{ marginTop: '50px', marginBottom: '15px', padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
                                 <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '5px', fontWeight: 'bold' }}>
                                     REMAINING BUOYS
                                 </div>
@@ -5689,13 +5689,6 @@ function ControlPanel({
                                     </div>
                                 </div>
                             )}
-
-                            {/* SONO Information */}
-                            <div style={{ marginTop: '15px', padding: '10px', background: '#2a2a2a', borderRadius: '3px', fontSize: '10px', opacity: 0.7 }}>
-                                <p style={{ margin: '0 0 10px 0' }}>SONOBUOY system detects submarines within 4nm range.</p>
-                                <p style={{ margin: '0 0 10px 0' }}>Power ON and ARM system to deploy buoys. Bearing lines indicate submarine direction.</p>
-                                <p style={{ margin: 0 }}>Buoys operate indefinitely. 30 available per mission.</p>
-                            </div>
                         </div>
                     )}
                 </div>
