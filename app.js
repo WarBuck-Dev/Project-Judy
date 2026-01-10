@@ -299,6 +299,10 @@ function AICSimulator() {
     const [nextDatalinkTrackNumber, setNextDatalinkTrackNumber] = useState(null); // Next track number to assign
     const [eoirEnabled, setEoirEnabled] = useState(false); // EO/IR system ON/OFF state (OFF by default)
     const [eoirSelectedAssetId, setEoirSelectedAssetId] = useState(null); // Asset selected for EO/IR viewing
+    const [eoirWindowPos, setEoirWindowPos] = useState({ x: 20, y: 20 }); // EO/IR window position
+    const [eoirWindowSize, setEoirWindowSize] = useState({ width: 400, height: 500 }); // EO/IR window size
+    const [eoirDragging, setEoirDragging] = useState(false); // EO/IR window dragging state
+    const [eoirDragOffset, setEoirDragOffset] = useState({ x: 0, y: 0 }); // EO/IR drag offset
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
@@ -3847,29 +3851,90 @@ function AICSimulator() {
                 const asset = assets.find(a => a.id === eoirSelectedAssetId);
                 if (!asset || !asset.platform || !asset.platform.image) return null;
 
+                const handleMouseDown = (e) => {
+                    if (e.target.closest('.eoir-header') && !e.target.closest('button')) {
+                        setEoirDragging(true);
+                        setEoirDragOffset({
+                            x: e.clientX - eoirWindowPos.x,
+                            y: e.clientY - eoirWindowPos.y
+                        });
+                    }
+                };
+
+                const handleMouseMove = (e) => {
+                    if (eoirDragging) {
+                        setEoirWindowPos({
+                            x: e.clientX - eoirDragOffset.x,
+                            y: e.clientY - eoirDragOffset.y
+                        });
+                    }
+                };
+
+                const handleMouseUp = () => {
+                    setEoirDragging(false);
+                };
+
+                // Add event listeners for dragging
+                React.useEffect(() => {
+                    if (eoirDragging) {
+                        window.addEventListener('mousemove', handleMouseMove);
+                        window.addEventListener('mouseup', handleMouseUp);
+                        return () => {
+                            window.removeEventListener('mousemove', handleMouseMove);
+                            window.removeEventListener('mouseup', handleMouseUp);
+                        };
+                    }
+                }, [eoirDragging, eoirDragOffset]);
+
                 return (
-                    <div style={{
-                        position: 'absolute',
-                        top: '20px',
-                        right: '20px',
-                        width: '400px',
-                        background: '#1a1a1a',
-                        border: '2px solid #00FF00',
-                        borderRadius: '5px',
-                        boxShadow: '0 0 20px rgba(0, 255, 0, 0.3)',
-                        zIndex: 1000
-                    }}>
-                        {/* Header */}
-                        <div style={{
-                            background: '#00FF00',
-                            color: '#000',
-                            padding: '10px',
-                            fontWeight: 'bold',
-                            fontSize: '12px',
+                    <div
+                        style={{
+                            position: 'absolute',
+                            left: `${eoirWindowPos.x}px`,
+                            top: `${eoirWindowPos.y}px`,
+                            width: `${eoirWindowSize.width}px`,
+                            minWidth: '300px',
+                            minHeight: '200px',
+                            background: '#1a1a1a',
+                            border: '2px solid #00FF00',
+                            borderRadius: '5px',
+                            boxShadow: '0 0 20px rgba(0, 255, 0, 0.3)',
+                            zIndex: 1000,
+                            resize: 'both',
+                            overflow: 'hidden',
                             display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center'
-                        }}>
+                            flexDirection: 'column'
+                        }}
+                        onMouseDown={(e) => {
+                            // Update size when user resizes
+                            const observer = new ResizeObserver((entries) => {
+                                for (let entry of entries) {
+                                    setEoirWindowSize({
+                                        width: entry.contentRect.width,
+                                        height: entry.contentRect.height
+                                    });
+                                }
+                            });
+                            observer.observe(e.currentTarget);
+                        }}
+                    >
+                        {/* Header */}
+                        <div
+                            className="eoir-header"
+                            onMouseDown={handleMouseDown}
+                            style={{
+                                background: '#00FF00',
+                                color: '#000',
+                                padding: '10px',
+                                fontWeight: 'bold',
+                                fontSize: '12px',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                cursor: eoirDragging ? 'grabbing' : 'grab',
+                                userSelect: 'none'
+                            }}
+                        >
                             <span>EO/IR - {asset.name}</span>
                             <button
                                 onClick={() => setEoirSelectedAssetId(null)}
@@ -3890,16 +3955,22 @@ function AICSimulator() {
                         {/* Image */}
                         <div style={{
                             padding: '10px',
-                            background: '#0a0a0a'
+                            background: '#0a0a0a',
+                            flex: 1,
+                            overflow: 'auto',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
                         }}>
                             <img
                                 src={`EO-IR/${asset.platform.image}`}
                                 alt={asset.name}
                                 style={{
-                                    width: '100%',
-                                    height: 'auto',
+                                    maxWidth: '100%',
+                                    maxHeight: '100%',
                                     display: 'block',
-                                    border: '1px solid #00FF00'
+                                    border: '1px solid #00FF00',
+                                    objectFit: 'contain'
                                 }}
                                 onError={(e) => {
                                     e.target.style.display = 'none';
@@ -3914,7 +3985,8 @@ function AICSimulator() {
                             background: '#2a2a2a',
                             color: '#00FF00',
                             fontSize: '10px',
-                            borderTop: '1px solid rgba(0, 255, 0, 0.3)'
+                            borderTop: '1px solid rgba(0, 255, 0, 0.3)',
+                            flexShrink: 0
                         }}>
                             <div><strong>Platform:</strong> {asset.platform.name}</div>
                             <div><strong>Domain:</strong> {asset.domain.toUpperCase()}</div>
