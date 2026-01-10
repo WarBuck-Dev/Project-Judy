@@ -303,12 +303,14 @@ function AICSimulator() {
     const [eoirWindowSize, setEoirWindowSize] = useState({ width: 400, height: 500 }); // EO/IR window size
     const [eoirDragging, setEoirDragging] = useState(false); // EO/IR window dragging state
     const [eoirDragOffset, setEoirDragOffset] = useState({ x: 0, y: 0 }); // EO/IR drag offset
+    const [eoirImageErrors, setEoirImageErrors] = useState(new Set()); // Track which asset IDs have EO/IR image load errors
     const [isarEnabled, setIsarEnabled] = useState(false); // ISAR system ON/OFF state (OFF by default)
     const [isarSelectedAssetId, setIsarSelectedAssetId] = useState(null); // Asset selected for ISAR viewing
     const [isarWindowPos, setIsarWindowPos] = useState({ x: typeof window !== 'undefined' ? window.innerWidth - 420 : 20, y: 20 }); // ISAR window position (upper right)
     const [isarWindowSize, setIsarWindowSize] = useState({ width: 400, height: 500 }); // ISAR window size
     const [isarDragging, setIsarDragging] = useState(false); // ISAR window dragging state
     const [isarDragOffset, setIsarDragOffset] = useState({ x: 0, y: 0 }); // ISAR drag offset
+    const [isarImageErrors, setIsarImageErrors] = useState(new Set()); // Track which asset IDs have ISAR image load errors
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
@@ -4004,21 +4006,27 @@ function AICSimulator() {
                             alignItems: 'center',
                             justifyContent: 'center'
                         }}>
-                            <img
-                                src={`EO-IR/${asset.platform.image}`}
-                                alt={asset.name}
-                                style={{
-                                    maxWidth: '100%',
-                                    maxHeight: '100%',
-                                    display: 'block',
-                                    border: '1px solid #00FF00',
-                                    objectFit: 'contain'
-                                }}
-                                onError={(e) => {
-                                    e.target.style.display = 'none';
-                                    e.target.parentElement.innerHTML = '<div style="color: #FF0000; text-align: center; padding: 50px;">Image not found</div>';
-                                }}
-                            />
+                            {eoirImageErrors.has(asset.id) ? (
+                                <div style={{ color: '#FF0000', textAlign: 'center', padding: '50px' }}>
+                                    Image not found
+                                </div>
+                            ) : (
+                                <img
+                                    key={asset.id}
+                                    src={`EO-IR/${asset.platform.image}`}
+                                    alt={asset.name}
+                                    style={{
+                                        maxWidth: '100%',
+                                        maxHeight: '100%',
+                                        display: 'block',
+                                        border: '1px solid #00FF00',
+                                        objectFit: 'contain'
+                                    }}
+                                    onError={() => {
+                                        setEoirImageErrors(prev => new Set([...prev, asset.id]));
+                                    }}
+                                />
+                            )}
                         </div>
 
                         {/* Footer Info */}
@@ -4128,21 +4136,27 @@ function AICSimulator() {
                             alignItems: 'center',
                             justifyContent: 'center'
                         }}>
-                            <img
-                                src={`ISAR/${asset.platform.isar}`}
-                                alt={asset.name}
-                                style={{
-                                    maxWidth: '100%',
-                                    maxHeight: '100%',
-                                    display: 'block',
-                                    border: '1px solid #00FF00',
-                                    objectFit: 'contain'
-                                }}
-                                onError={(e) => {
-                                    e.target.style.display = 'none';
-                                    e.target.parentElement.innerHTML = '<div style="color: #FF0000; text-align: center; padding: 50px;">ISAR image not found</div>';
-                                }}
-                            />
+                            {isarImageErrors.has(asset.id) ? (
+                                <div style={{ color: '#FF0000', textAlign: 'center', padding: '50px' }}>
+                                    ISAR image not found
+                                </div>
+                            ) : (
+                                <img
+                                    key={asset.id}
+                                    src={`ISAR/${asset.platform.isar}`}
+                                    alt={asset.name}
+                                    style={{
+                                        maxWidth: '100%',
+                                        maxHeight: '100%',
+                                        display: 'block',
+                                        border: '1px solid #00FF00',
+                                        objectFit: 'contain'
+                                    }}
+                                    onError={() => {
+                                        setIsarImageErrors(prev => new Set([...prev, asset.id]));
+                                    }}
+                                />
+                            )}
                         </div>
 
                         {/* Footer Info */}
