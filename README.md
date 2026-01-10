@@ -479,11 +479,62 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 2.3
-**Last Updated**: January 5, 2026
+**Version**: 2.4
+**Last Updated**: January 10, 2026
 **Status**: Production Ready
 
 ## Recent Updates
+
+### Version 2.4 (January 2026)
+
+#### Sonobuoy Anti-Submarine Warfare System
+- **SONOBUOY Deployment System**: Active submarine detection and tracking
+  - SONO tab in SYSTEMS section with tri-color state indicator
+    - RED: System powered OFF
+    - YELLOW: System ON, master arm SAFE
+    - GREEN: System ON, master arm ARMED
+  - Power ON/OFF toggle for sonobuoy system
+  - 3D master arm switch with safety guard
+    - Realistic toggle switch with red safety cover
+    - Guard must be lifted before switch can be armed
+    - 3D perspective effects with metallic styling
+    - Yellow/black hazard stripe background panel
+    - Red indicator light illuminates when armed
+    - Closing guard automatically returns switch to SAFE
+  - 30 sonobuoys available per mission
+  - DEPLOY button (requires: Power ON + Armed + Buoys remaining)
+  - Color-coded buoy counter (green >10, yellow 1-10, red 0)
+  - Deployed buoys list with elapsed time display
+
+- **Submarine Detection**:
+  - Automatic detection of submarines within 4nm range
+  - Red bearing lines from sonobuoy to submarine direction
+  - Bearing lines update continuously while submarine in range
+  - Lines disappear immediately when submarine exits 4nm range
+  - Multiple sonobuoys can detect same submarine independently
+  - Submarines deeper than 15 feet invisible to radar/IFF (fully submerged)
+
+- **Sonobuoy Visualization**:
+  - Light blue sonobuoy symbols on map
+  - Circle with vertical line and horizontal flag design
+  - Serial number labels (S01, S02, etc.)
+  - Visible at all zoom levels
+  - No radar returns generated for sonobuoys
+  - Buoys operate indefinitely (no battery limit)
+
+#### Enhanced Zoom System
+- **5nm Minimum Zoom**: Reduced from 10nm to 5nm for closer tactical view
+- **Yard Display at 5nm**: Distance measurements converted to yards at closest zoom
+  - FROM MARK displays in yards (XXX/YYYY yds format)
+  - FROM BULLSEYE remains in nautical miles at all zoom levels
+  - Conversion: 1 nautical mile = 2025.37 yards
+  - FROM MARK returns to nautical miles at zoom levels >5nm
+
+#### Bug Fixes & Improvements
+- Fixed depth display to show whole feet only (no decimal places)
+- Subsurface assets deeper than 15ft no longer produce radar or IFF returns
+- Improved SONO tab layout with proper spacing
+- SYSTEMS tabs reorganized into two rows for better organization
 
 ### Version 2.3 (January 2026)
 - **Platform System**: Assign specific aircraft, ships, and submarines to assets
@@ -692,57 +743,6 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 - Enhanced ESM tab with improved typography and color-coded age display
 - Clicking ESM labels on map opens ESM tab (not duplicate panel)
 - Null-safe rendering prevents crashes when selecting assets without platforms
-
-### Version 2.4 (January 2026)
-
-#### Sonobuoy Anti-Submarine Warfare System
-- **SONOBUOY Deployment System**: Active submarine detection and tracking
-  - SONO tab in SYSTEMS section with tri-color state indicator
-    - RED: System powered OFF
-    - YELLOW: System ON, master arm SAFE
-    - GREEN: System ON, master arm ARMED
-  - Power ON/OFF toggle for sonobuoy system
-  - 3D master arm switch with safety guard
-    - Realistic toggle switch with red safety cover
-    - Guard must be lifted before switch can be armed
-    - 3D perspective effects with metallic styling
-    - Yellow/black hazard stripe background panel
-    - Red indicator light illuminates when armed
-    - Closing guard automatically returns switch to SAFE
-  - 30 sonobuoys available per mission
-  - DEPLOY button (requires: Power ON + Armed + Buoys remaining)
-  - Color-coded buoy counter (green >10, yellow 1-10, red 0)
-  - Deployed buoys list with elapsed time display
-
-- **Submarine Detection**:
-  - Automatic detection of submarines within 4nm range
-  - Red bearing lines from sonobuoy to submarine direction
-  - Bearing lines update continuously while submarine in range
-  - Lines disappear immediately when submarine exits 4nm range
-  - Multiple sonobuoys can detect same submarine independently
-  - Submarines deeper than 15 feet invisible to radar/IFF (fully submerged)
-
-- **Sonobuoy Visualization**:
-  - Light blue sonobuoy symbols on map
-  - Circle with vertical line and horizontal flag design
-  - Serial number labels (S01, S02, etc.)
-  - Visible at all zoom levels
-  - No radar returns generated for sonobuoys
-  - Buoys operate indefinitely (no battery limit)
-
-#### Enhanced Zoom System
-- **5nm Minimum Zoom**: Reduced from 10nm to 5nm for closer tactical view
-- **Yard Display at 5nm**: Distance measurements converted to yards at closest zoom
-  - FROM MARK displays in yards (XXX/YYYY yds format)
-  - FROM BULLSEYE remains in nautical miles at all zoom levels
-  - Conversion: 1 nautical mile = 2025.37 yards
-  - FROM MARK returns to nautical miles at zoom levels >5nm
-
-#### Bug Fixes & Improvements
-- Fixed depth display to show whole feet only (no decimal places)
-- Subsurface assets deeper than 15ft no longer produce radar or IFF returns
-- Improved SONO tab layout with proper spacing
-- SYSTEMS tabs reorganized into two rows for better organization
 
 ---
 
