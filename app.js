@@ -3950,8 +3950,7 @@ function AICSimulator() {
                             <div className="position-label">FROM {bullseyeName && bullseyeName.trim() ? bullseyeName.toUpperCase() : 'BULLSEYE'}</div>
                             <div className="position-value">
                                 {Math.round(calculateBearing(bullseyePosition.lat, bullseyePosition.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/
-                                {formatDistance(calculateDistance(bullseyePosition.lat, bullseyePosition.lon, cursorPos.lat, cursorPos.lon), scale)}
-                                {getDistanceUnit(scale)}
+                                {Math.round(calculateDistance(bullseyePosition.lat, bullseyePosition.lon, cursorPos.lat, cursorPos.lon))}
                             </div>
                         </div>
 
