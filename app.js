@@ -4232,12 +4232,12 @@ function ControlPanel({
                                     type="range"
                                     min="0"
                                     max="100"
-                                    value={radarSweepOpacity}
-                                    onChange={(e) => setRadarSweepOpacity(Number(e.target.value))}
+                                    value={Math.round(radarSweepOpacity * 100)}
+                                    onChange={(e) => setRadarSweepOpacity(Number(e.target.value) / 100)}
                                     className="slider"
                                 />
                                 <div style={{ textAlign: 'center', fontSize: '12px', marginTop: '5px' }}>
-                                    {radarSweepOpacity}%
+                                    {Math.round(radarSweepOpacity * 100)}%
                                 </div>
                             </div>
 
