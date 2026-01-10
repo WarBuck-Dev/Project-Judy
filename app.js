@@ -5427,41 +5427,58 @@ function ControlPanel({
                                 <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '5px', fontWeight: 'bold' }}>
                                     MASTER ARM
                                 </div>
-                                <div style={{ display: 'flex', gap: '5px' }}>
-                                    <button
-                                        onClick={() => setSonoArmed(false)}
-                                        disabled={!sonoEnabled}
-                                        style={{
-                                            flex: 1,
-                                            padding: '10px',
-                                            background: !sonoArmed ? '#FFFF00' : '#2a2a2a',
-                                            color: !sonoArmed ? '#000' : '#666',
-                                            border: !sonoArmed ? '2px solid #FFFF00' : '2px solid #444',
-                                            cursor: sonoEnabled ? 'pointer' : 'not-allowed',
-                                            fontSize: '10px',
-                                            fontWeight: 'bold',
-                                            opacity: sonoEnabled ? 1 : 0.4
-                                        }}
-                                    >
-                                        SAFE
-                                    </button>
-                                    <button
-                                        onClick={() => setSonoArmed(true)}
-                                        disabled={!sonoEnabled}
-                                        style={{
-                                            flex: 1,
-                                            padding: '10px',
-                                            background: sonoArmed ? '#00FF00' : '#2a2a2a',
-                                            color: sonoArmed ? '#000' : '#666',
-                                            border: sonoArmed ? '2px solid #00FF00' : '2px solid #444',
-                                            cursor: sonoEnabled ? 'pointer' : 'not-allowed',
-                                            fontSize: '10px',
-                                            fontWeight: 'bold',
-                                            opacity: sonoEnabled ? 1 : 0.4
-                                        }}
-                                    >
-                                        ARM
-                                    </button>
+                                <div
+                                    onClick={() => sonoEnabled && setSonoArmed(!sonoArmed)}
+                                    style={{
+                                        position: 'relative',
+                                        width: '100%',
+                                        height: '40px',
+                                        background: '#2a2a2a',
+                                        border: '2px solid #444',
+                                        borderRadius: '3px',
+                                        cursor: sonoEnabled ? 'pointer' : 'not-allowed',
+                                        opacity: sonoEnabled ? 1 : 0.4,
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {/* Background labels */}
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: 0,
+                                        right: 0,
+                                        bottom: 0,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        padding: '0 15px',
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        color: '#666'
+                                    }}>
+                                        <span>SAFE</span>
+                                        <span>ARM</span>
+                                    </div>
+                                    {/* Sliding switch */}
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '3px',
+                                        left: sonoArmed ? 'calc(50% + 3px)' : '3px',
+                                        width: 'calc(50% - 6px)',
+                                        height: 'calc(100% - 6px)',
+                                        background: sonoArmed ? '#00FF00' : '#FFFF00',
+                                        borderRadius: '2px',
+                                        transition: 'all 0.3s ease',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        color: '#000',
+                                        boxShadow: sonoArmed ? '0 0 10px #00FF00' : '0 0 10px #FFFF00'
+                                    }}>
+                                        {sonoArmed ? 'ARM' : 'SAFE'}
+                                    </div>
                                 </div>
                             </div>
 
