@@ -3927,6 +3927,7 @@ function AICSimulator() {
             {showAddAssetDialog && (
                 <AddAssetDialog
                     initialData={showAddAssetDialog}
+                    platforms={platforms}
                     onClose={() => setShowAddAssetDialog(null)}
                     onAdd={(data) => {
                         addAsset(data);
@@ -6788,15 +6789,41 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
 // DIALOG COMPONENTS
 // ============================================================================
 
-function AddAssetDialog({ initialData, onClose, onAdd }) {
+function AddAssetDialog({ initialData, platforms, onClose, onAdd }) {
     const [formData, setFormData] = useState({
         name: `Asset ${Date.now()}`,
         type: 'unknown',
+        domain: 'air',
+        platformName: '',
         heading: 0,
         speed: 350,
         altitude: 25000,
         ...initialData
     });
+
+    // Get platforms for selected domain
+    const availablePlatforms = platforms && platforms[formData.domain] ? platforms[formData.domain] : [];
+
+    // Handle domain change
+    const handleDomainChange = (newDomain) => {
+        const newPlatforms = platforms && platforms[newDomain] ? platforms[newDomain] : [];
+        setFormData({
+            ...formData,
+            domain: newDomain,
+            platformName: newPlatforms.length > 0 ? newPlatforms[0].name : '',
+            // Set appropriate altitude for domain
+            altitude: newDomain === 'surface' || newDomain === 'subSurface' ? 0 : 25000
+        });
+    };
+
+    // Handle add with platform data
+    const handleAdd = () => {
+        const selectedPlatform = availablePlatforms.find(p => p.name === formData.platformName);
+        onAdd({
+            ...formData,
+            platform: selectedPlatform
+        });
+    };
 
     return (
         <div className="modal-overlay" onClick={onClose}>
@@ -6825,6 +6852,34 @@ function AddAssetDialog({ initialData, onClose, onAdd }) {
                         <option value="neutral">Neutral</option>
                         <option value="unknown">Unknown</option>
                         <option value="unknownUnevaluated">Unknown Unevaluated</option>
+                    </select>
+                </div>
+
+                <div className="input-group">
+                    <label className="input-label">Domain</label>
+                    <select
+                        className="input-field"
+                        value={formData.domain}
+                        onChange={(e) => handleDomainChange(e.target.value)}
+                    >
+                        <option value="air">Air</option>
+                        <option value="surface">Surface</option>
+                        <option value="subSurface">Sub-Surface</option>
+                    </select>
+                </div>
+
+                <div className="input-group">
+                    <label className="input-label">Platform</label>
+                    <select
+                        className="input-field"
+                        value={formData.platformName}
+                        onChange={(e) => setFormData({ ...formData, platformName: e.target.value })}
+                    >
+                        {availablePlatforms.map(platform => (
+                            <option key={platform.name} value={platform.name}>
+                                {platform.name}
+                            </option>
+                        ))}
                     </select>
                 </div>
 
@@ -6859,12 +6914,13 @@ function AddAssetDialog({ initialData, onClose, onAdd }) {
                         min="0"
                         value={formData.altitude}
                         onChange={(e) => setFormData({ ...formData, altitude: parseFloat(e.target.value) })}
+                        disabled={formData.domain === 'surface' || formData.domain === 'subSurface'}
                     />
                 </div>
 
                 <div className="modal-buttons">
                     <button className="control-btn" onClick={onClose}>CANCEL</button>
-                    <button className="control-btn primary" onClick={() => onAdd(formData)}>ADD</button>
+                    <button className="control-btn primary" onClick={handleAdd}>ADD</button>
                 </div>
             </div>
         </div>
