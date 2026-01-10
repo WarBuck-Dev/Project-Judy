@@ -3419,8 +3419,9 @@ function AICSimulator() {
                 {sonobuoys.map(sono => {
                     const pos = latLonToScreen(sono.lat, sono.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
                     const sonoColor = '#00BFFF'; // Friendly asset light blue color
-                    const circleRadius = 6;
-                    const lineHeight = 12;
+                    const circleRadius = 12; // 2x larger (was 6)
+                    const lineHeight = 24; // 2x larger (was 12)
+                    const horizontalLineLength = 12; // Length of horizontal line at top
 
                     return (
                         <g key={`sono-${sono.id}`}>
@@ -3429,6 +3430,15 @@ function AICSimulator() {
                                 x1={pos.x}
                                 y1={pos.y - circleRadius}
                                 x2={pos.x}
+                                y2={pos.y - circleRadius - lineHeight}
+                                stroke={sonoColor}
+                                strokeWidth={2}
+                            />
+                            {/* Horizontal line extending to the right from top of vertical line */}
+                            <line
+                                x1={pos.x}
+                                y1={pos.y - circleRadius - lineHeight}
+                                x2={pos.x + horizontalLineLength}
                                 y2={pos.y - circleRadius - lineHeight}
                                 stroke={sonoColor}
                                 strokeWidth={2}
