@@ -834,7 +834,8 @@ function AICSimulator() {
                         emitterName: emitterName,
                         bearing: bearing,
                         lat: asset.lat,
-                        lon: asset.lon
+                        lon: asset.lon,
+                        threatLevel: asset.platform.threatLevel || 3 // Default to 3 if not specified
                     });
                 }
             });
@@ -2782,7 +2783,7 @@ function AICSimulator() {
 
                     const handleEsmClick = (e) => {
                         e.stopPropagation();
-                        setEsmControlsSelected(true);
+                        setSelectedSystemTab('esm');
                         setSelectedEsmId(emitter.id);
                     };
 
@@ -2914,8 +2915,7 @@ function AICSimulator() {
                     const handleManualLineClick = (e) => {
                         e.stopPropagation();
                         setSelectedEsmId(line.id);
-                        setEsmControlsSelected(true);
-                        setRadarControlsSelected(false);
+                        setSelectedSystemTab('esm');
                         setSelectedAssetId(null);
                         setSelectedGeoPointId(null);
                         setSelectedShapeId(null);
@@ -4492,50 +4492,111 @@ function ControlPanel({
                                 </button>
                             </div>
 
+                            {/* Bearing Line Button */}
+                            <button
+                                className="control-btn full-width"
+                                onClick={() => {
+                                    if (!selectedEsmId) {
+                                        alert('Please select an emitter from the list first');
+                                        return;
+                                    }
+                                    const selectedEmitter = detectedEmitters.find(e => e.id === selectedEsmId);
+                                    if (!selectedEmitter) return;
+
+                                    const ownship = assets.find(a => a.type === 'ownship');
+                                    if (!ownship) return;
+
+                                    // Create manual bearing line - snapshot of current ownship position and bearing
+                                    const newLine = {
+                                        id: `manual-${nextManualLineSerialNumber}`,
+                                        bearing: selectedEmitter.bearing, // Fixed bearing at time of creation
+                                        serialNumber: nextManualLineSerialNumber,
+                                        ownshipLat: ownship.lat, // Store ownship position at time of creation
+                                        ownshipLon: ownship.lon,
+                                        emitterName: selectedEmitter.emitterName
+                                    };
+                                    setManualBearingLines(prev => [...prev, newLine]);
+                                    setNextManualLineSerialNumber(prev => prev + 1);
+                                }}
+                                style={{ marginBottom: '15px' }}
+                                disabled={!selectedEsmId}
+                            >
+                                BEARING LINE
+                            </button>
+
                             {/* ESM Contacts List */}
                             <div style={{ marginBottom: '10px', fontSize: '10px', fontWeight: 'bold', opacity: 0.7 }}>
                                 CONTACTS
                             </div>
                             <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                                {detectedEmitters.filter(e => !e.isManualLine).map((emitter) => (
-                                    <div
-                                        key={emitter.id}
-                                        onClick={() => setSelectedEsmId(emitter.id)}
-                                        style={{
-                                            padding: '8px',
-                                            marginBottom: '5px',
-                                            background: selectedEsmId === emitter.id ? '#00FF0033' : '#2a2a2a',
-                                            borderRadius: '3px',
-                                            cursor: 'pointer',
-                                            border: selectedEsmId === emitter.id ? '1px solid #00FF00' : '1px solid transparent'
-                                        }}
-                                    >
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                                            <span style={{ fontSize: '11px', fontWeight: 'bold' }}>{emitter.label}</span>
-                                            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '9px' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={emitter.visible !== false}
-                                                    onChange={(e) => {
-                                                        e.stopPropagation();
-                                                        setDetectedEmitters(prev =>
-                                                            prev.map(em =>
-                                                                em.id === emitter.id ? { ...em, visible: e.target.checked } : em
-                                                            )
-                                                        );
-                                                    }}
-                                                />
-                                                VIS
-                                            </label>
+                                {detectedEmitters
+                                    .filter(e => !e.isManualLine)
+                                    .sort((a, b) => (a.threatLevel || 3) - (b.threatLevel || 3)) // Sort by threat level: 1 (enemy) first, then 2 (friendly), then 3 (civilian)
+                                    .map((emitter) => {
+                                    // Calculate age (time since last seen)
+                                    const age = emitter.active ? 0 : (missionTime - (emitter.lastSeenTime || missionTime));
+                                    const ageMinutes = Math.floor(age / 60);
+                                    const ageSeconds = Math.floor(age % 60);
+                                    const ageDisplay = `${ageMinutes.toString().padStart(2, '0')}+${ageSeconds.toString().padStart(2, '0')}`;
+
+                                    return (
+                                        <div
+                                            key={emitter.id}
+                                            onClick={() => setSelectedEsmId(emitter.id)}
+                                            style={{
+                                                padding: '8px',
+                                                marginBottom: '5px',
+                                                background: selectedEsmId === emitter.id ? '#00FF0033' : '#2a2a2a',
+                                                borderRadius: '3px',
+                                                cursor: 'pointer',
+                                                border: selectedEsmId === emitter.id ? '1px solid #00FF00' : '1px solid transparent',
+                                                opacity: emitter.active ? 1 : 0.6
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '5px' }}>
+                                                <div>
+                                                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#FF8800' }}>
+                                                        E{emitter.serialNumber.toString().padStart(2, '0')}
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', opacity: 0.9, fontWeight: '500', marginTop: '2px' }}>
+                                                        {emitter.emitterName}
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px' }}>
+                                                    <div style={{ textAlign: 'right' }}>
+                                                        <div style={{ fontSize: '8px', opacity: 0.5 }}>AGE</div>
+                                                        <div style={{
+                                                            fontSize: '12px',
+                                                            fontWeight: 'bold',
+                                                            color: emitter.active ? '#00FF00' : '#FF0000'
+                                                        }}>
+                                                            {ageDisplay}
+                                                        </div>
+                                                    </div>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '9px', cursor: 'pointer' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={emitter.visible !== false}
+                                                            onChange={(e) => {
+                                                                e.stopPropagation();
+                                                                setDetectedEmitters(prev =>
+                                                                    prev.map(em =>
+                                                                        em.id === emitter.id ? { ...em, visible: e.target.checked } : em
+                                                                    )
+                                                                );
+                                                            }}
+                                                            style={{ cursor: 'pointer' }}
+                                                        />
+                                                        VIS
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div style={{ fontSize: '10px', opacity: 0.7 }}>
+                                                BRG: {Math.round(emitter.bearing)}°
+                                            </div>
                                         </div>
-                                        <div style={{ fontSize: '9px', opacity: 0.7 }}>
-                                            {emitter.assetName} - {emitter.emitterName}
-                                        </div>
-                                        <div style={{ fontSize: '9px', opacity: 0.7, marginTop: '3px' }}>
-                                            BRG: {Math.round(emitter.bearing)}° | AGE: {emitter.age}
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
 
                             {/* Manual Bearing Lines */}
@@ -4558,8 +4619,13 @@ function ControlPanel({
                                                     border: selectedEsmId === line.id ? '1px solid #00BFFF' : '1px solid transparent'
                                                 }}
                                             >
-                                                <div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '3px' }}>{line.label}</div>
-                                                <div style={{ fontSize: '9px', opacity: 0.7 }}>
+                                                <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#00CCFF', marginBottom: '3px' }}>
+                                                    M{line.serialNumber.toString().padStart(2, '0')}
+                                                </div>
+                                                <div style={{ fontSize: '12px', opacity: 0.9, fontWeight: '500', marginBottom: '3px' }}>
+                                                    {line.emitterName}
+                                                </div>
+                                                <div style={{ fontSize: '10px', opacity: 0.7 }}>
                                                     BRG: {Math.round(line.bearing)}°
                                                 </div>
                                             </div>
@@ -6641,34 +6707,40 @@ function ControlPanel({
                         <div className="input-group">
                             <label className="input-label">Emitters</label>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {selectedAsset.platform.emitters.map((emitter, idx) => (
-                                    <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px', background: '#2a2a2a', borderRadius: '3px', gap: '10px' }}>
-                                        <span style={{ fontSize: '10px', opacity: 0.8, flex: 1 }}>{emitter}</span>
-                                        <button
-                                            className="control-btn"
-                                            style={{
-                                                padding: '6px 8px',
-                                                fontSize: '9px',
-                                                minWidth: '45px',
-                                                width: '45px',
-                                                height: '28px',
-                                                background: selectedAsset.emitterStates && selectedAsset.emitterStates[emitter] ? '#00FF00' : '#FF0000',
-                                                color: '#000',
-                                                fontWeight: 'bold',
-                                                flexShrink: 0
-                                            }}
-                                            onClick={() => {
-                                                const newEmitterStates = {
-                                                    ...(selectedAsset.emitterStates || {}),
-                                                    [emitter]: !(selectedAsset.emitterStates && selectedAsset.emitterStates[emitter])
-                                                };
-                                                updateAsset(selectedAsset.id, { emitterStates: newEmitterStates });
-                                            }}
-                                        >
-                                            {selectedAsset.emitterStates && selectedAsset.emitterStates[emitter] ? 'ON' : 'OFF'}
-                                        </button>
+                                {selectedAsset.platform && selectedAsset.platform.emitters && selectedAsset.platform.emitters.length > 0 ? (
+                                    selectedAsset.platform.emitters.map((emitter, idx) => (
+                                        <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px', background: '#2a2a2a', borderRadius: '3px', gap: '10px' }}>
+                                            <span style={{ fontSize: '10px', opacity: 0.8, flex: 1 }}>{emitter}</span>
+                                            <button
+                                                className="control-btn"
+                                                style={{
+                                                    padding: '6px 8px',
+                                                    fontSize: '9px',
+                                                    minWidth: '45px',
+                                                    width: '45px',
+                                                    height: '28px',
+                                                    background: selectedAsset.emitterStates && selectedAsset.emitterStates[emitter] ? '#00FF00' : '#FF0000',
+                                                    color: '#000',
+                                                    fontWeight: 'bold',
+                                                    flexShrink: 0
+                                                }}
+                                                onClick={() => {
+                                                    const newEmitterStates = {
+                                                        ...(selectedAsset.emitterStates || {}),
+                                                        [emitter]: !(selectedAsset.emitterStates && selectedAsset.emitterStates[emitter])
+                                                    };
+                                                    updateAsset(selectedAsset.id, { emitterStates: newEmitterStates });
+                                                }}
+                                            >
+                                                {selectedAsset.emitterStates && selectedAsset.emitterStates[emitter] ? 'ON' : 'OFF'}
+                                            </button>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div style={{ padding: '10px', opacity: 0.5, fontSize: '10px', textAlign: 'center' }}>
+                                        No emitters available
                                     </div>
-                                ))}
+                                )}
                             </div>
                         </div>
                     )}

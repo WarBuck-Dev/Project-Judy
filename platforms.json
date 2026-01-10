@@ -234,7 +234,7 @@
       "name": "Combattante",
       "domain": "surface",
       "weapons": ["C-802", "76mm Gun"],
-      "emitters": ["THD-1040", "Selex Galileo"],
+      "emitters": ["DECCA 1226", "SIGNAAL WM28"],
       "maxSpeed": 36,
       "maxAltitude": 0,
       "maxClimb": 0,
