@@ -487,6 +487,30 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ### Version 2.5 (January 2026)
 
+#### Weapon System Overhaul
+- **Individual Weapon Variants**: Complete redesign from generic weapon types to specific variants
+  - Transitioned from 5 generic types (AAM, AGM, ASM, SAM, Torpedo) to 30+ individual weapons
+  - Each weapon has unique performance characteristics (speed, range, acceleration)
+  - MiG-29 firing R-27 uses R-27 ballistics, not AIM-120
+  - F-18E firing AIM-120 uses AIM-120 ballistics, not R-27
+  - Platform-specific weapon loadouts determine available missiles
+  - Realistic weapon selection based on platform configuration
+
+- **Platform-Based Weapon Inventory**:
+  - numberOfAAM, numberOfAGM, numberOfASM, numberOfSAM, numberOfTorpedo attributes
+  - Ownship inventory initialized from platform configuration
+  - All 31 platforms updated with weapon counts
+  - Backward compatibility for old platforms/scenarios
+  - UI tracks inventory by TYPE (not individual variants)
+
+- **Weapon Symbology System**:
+  - SVG-based weapon symbols (friendly missile, hostile weapon, friendly torpedo)
+  - North-up orientation with heading indicator lines
+  - Size matched to air track symbols (12px diameter)
+  - Solid direction lines (30px length)
+  - Smart torpedo detection for different symbols
+  - Blue friendly missiles (#00BFFF), red hostile weapons (#FF0000)
+
 #### Weapon Fuel/Energy System
 - **Realistic Fuel Consumption**: All 30+ weapon variants now have finite flight times
   - Time-based fuel model with configurable parameters per weapon

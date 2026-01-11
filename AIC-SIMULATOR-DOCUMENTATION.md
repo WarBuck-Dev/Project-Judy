@@ -333,6 +333,50 @@ Results in degrees true and nautical miles
 
 ### Weapon Physics (Version 2.5+)
 
+#### Weapon System Architecture
+
+**Individual Weapon Variants**
+- Transitioned from 5 generic weapon types to 30+ individual weapon variants
+- Each weapon has unique performance characteristics from [weapons.json](weapons.json)
+- Weapons include: maxSpeed, maxRange, maxAcceleration, targetType, symbol
+- Platform weapons array specifies available weapon variants
+- Weapon selection uses first matching variant from platform
+
+**Weapon Variant Selection**
+```javascript
+// Example: MiG-29 platform configuration
+{
+  "name": "MiG-29",
+  "weapons": ["R-27 (AA-10)", "R-73 (AA-11)"],
+  "numberOfAAM": 6
+}
+
+// When firing AAM:
+// 1. Check platform.weapons array
+// 2. Find first weapon where type === "AAM"
+// 3. Returns "R-27 (AA-10)"
+// 4. Use R-27 ballistics (maxSpeed: 2300, maxRange: 43nm)
+```
+
+**Platform-Based Inventory System**
+- numberOfAAM: Air-to-air missile count
+- numberOfAGM: Air-to-ground missile count
+- numberOfASM: Anti-ship missile count
+- numberOfSAM: Surface-to-air missile count
+- numberOfTorpedo: Torpedo count
+- Ownship inventory initialized from platform configuration
+- Non-ownship assets have unlimited weapons
+- UI displays TYPE-based inventory (not individual variants)
+
+**Weapon Symbology**
+- SVG path-based rendering for realistic weapon symbols
+- Friendly missile: Blue (#00BFFF) arc-topped symbol
+- Hostile weapon: Red (#FF0000) diamond-shaped symbol
+- Friendly torpedo: Blue (#0054b0) horizontal symbol
+- North-up orientation (symbols don't rotate with heading)
+- Solid direction line shows actual heading (30px length)
+- Size matched to air track symbols (scale: 0.114)
+
 #### Fuel/Energy System
 All weapon variants implement a three-phase propulsion model:
 
