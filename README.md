@@ -479,11 +479,69 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 2.4
+**Version**: 2.5
 **Last Updated**: January 10, 2026
 **Status**: Production Ready
 
 ## Recent Updates
+
+### Version 2.5 (January 2026)
+
+#### Weapon Fuel/Energy System
+- **Realistic Fuel Consumption**: All 30+ weapon variants now have finite flight times
+  - Time-based fuel model with configurable parameters per weapon
+  - Fuel time calculated as (maxRange / maxSpeed) × 1.2 for 20% maneuvering margin
+  - Two-phase propulsion system: booster + cruise
+  - Energy bleed-off after fuel depletion (50 knots/sec drag)
+  - Self-destruct timer prevents infinite flight (2x fuel time)
+
+- **Booster Phase System**:
+  - High-thrust initial acceleration phase (10-20% of total fuel time)
+  - Booster acceleration typically 2x cruise acceleration
+  - Console logging when booster burns out
+  - Different booster durations per weapon type
+    - Short-range AAM (AIM-9): 8 seconds
+    - Medium-range AAM (AIM-120): 15 seconds
+    - Long-range cruise missiles (Kh-101): 180 seconds
+    - Torpedoes (Mk 46): 60 seconds
+
+- **Cruise Phase System**:
+  - Sustained thrust maintains max speed until fuel depletion
+  - Standard acceleration using maxAcceleration parameter
+  - Fuel consumption tracked via mission time
+  - Proportional navigation guidance continues normally
+
+- **Energy Bleed-Off Phase**:
+  - Unpowered flight after fuel depletion
+  - 50 knots/sec deceleration due to drag
+  - Weapons below 10 knots fall and self-destruct
+  - Console logging for energy depletion events
+
+- **Self-Destruct System**:
+  - Automatic detonation after maximum flight time exceeded
+  - Prevents runaway weapons from flying indefinitely
+  - Safety margin: 2x fuel time
+  - Console logging for self-destruct events
+  - Weapons removed from simulation on self-destruct
+
+- **Realistic Weapon Behavior**:
+  - Maneuvering targets at max range cause fuel exhaustion
+  - Target loss doesn't prevent fuel consumption
+  - Weapons can't chase targets indefinitely
+  - Distance-appropriate fuel parameters
+    - Short-range (R-60): 13s fuel, 26s max flight
+    - Medium-range (AIM-120): 130s fuel, 260s max flight
+    - Long-range cruise (Kh-101): 5.6hr fuel, 11.2hr max flight
+    - Anti-ship (Harpoon): 9min fuel, 18min max flight
+    - Torpedoes (Mk 46): 9.6min fuel, 19.2min max flight
+
+- **Weapon Database Updates** ([weapons.json](weapons.json)):
+  - All 30+ weapons have fuelTime, boosterTime, boosterAcceleration, selfDestructTime
+  - 8 AAM variants (AIM-120, AIM-9, AIM-7, AIM-54, R-27, R-73, R-60, R-3S)
+  - 5 AGM variants (AGM-65, Kh-25, Kh-55, Kh-101, FAB-500)
+  - 10 ASM variants (AGM-84, Harpoon, C-802, C-701, HY-2, SS-N-2, SS-N-9, SS-N-14, SS-N-22, 3M-54 Klub)
+  - 5 SAM variants (SM-1, RIM-7, SA-N-4, SA-N-7, SA-N-9)
+  - 3 Torpedo variants (Mk 46, 53-65, 53-56)
 
 ### Version 2.4 (January 2026)
 

@@ -1,8 +1,8 @@
 # AIC Simulator - Requirements & Features Documentation
 
 **Air Intercept Control Simulator**
-Version 2.0
-Last Updated: January 3, 2026
+Version 2.5
+Last Updated: January 10, 2026
 
 ---
 
@@ -330,6 +330,103 @@ Results in degrees true and nautical miles
 - **Rate**: 6000 feet per minute (100 ft/sec)
 - **Direction**: Climb or descent
 - **Completion**: Clears target when within 1 foot
+
+### Weapon Physics (Version 2.5+)
+
+#### Fuel/Energy System
+All weapon variants implement a three-phase propulsion model:
+
+**Phase 1: Booster Phase**
+- High-thrust initial acceleration (boosterAcceleration parameter)
+- Duration: 10-20% of total fuel time
+- Console logging when booster burns out
+- Example durations:
+  - Short-range AAM (AIM-9): 8 seconds
+  - Medium-range AAM (AIM-120): 15 seconds
+  - Anti-ship missile (Harpoon): 60 seconds
+  - Torpedo (Mk 46): 60 seconds
+  - Long-range cruise (Kh-101): 180 seconds
+
+**Phase 2: Cruise Phase**
+- Sustained thrust using maxAcceleration parameter
+- Maintains max speed until fuel depletion
+- Fuel consumption tracked via mission time
+- Duration: fuelTime parameter (calculated per weapon)
+
+**Phase 3: Energy Bleed-Off**
+- Unpowered flight after fuel depletion
+- 50 knots/sec deceleration due to drag
+- Weapons below 10 knots fall and self-destruct
+- Console logging for energy depletion
+
+**Self-Destruct System**
+- Maximum flight time: selfDestructTime parameter (2x fuelTime)
+- Automatic detonation when timer expires
+- Prevents runaway weapons
+- Console logging for all self-destruct events
+
+#### Fuel Calculation Formula
+```
+baseTime = maxRange / (maxSpeed / 3600)
+fuelTime = baseTime × 1.2  (20% maneuvering margin)
+boosterTime = fuelTime × 0.10-0.20  (weapon-dependent)
+selfDestructTime = fuelTime × 2.0
+```
+
+#### Weapon Guidance
+- **Method**: Proportional navigation (bearing-to-waypoint)
+- **Turn Rate**: 30 degrees per second (fixed)
+- **Acceleration**: Booster or cruise (phase-dependent)
+- **Impact Threshold**: 0.1 NM range to target
+- **Fuel Impact**: Maneuvering doesn't directly consume fuel (time-based only)
+
+#### Weapon Termination Conditions
+1. **Successful Impact**: Range to target < 0.1 NM
+2. **Self-Destruct**: Mission time >= selfDestructTime
+3. **Energy Loss**: Speed < 10 knots after fuel depletion
+4. **Target Loss**: Continues on last heading until fuel/self-destruct
+
+#### Fuel Parameters by Weapon Type
+
+**Air-to-Air Missiles (AAM)**
+- R-60 (AA-8): 13s fuel, 26s max flight
+- AIM-9 Sidewinder: 46s fuel, 92s max flight
+- R-73 (AA-11): 41s fuel, 82s max flight
+- AIM-7 Sparrow: 81s fuel, 162s max flight
+- R-27 (AA-10): 81s fuel, 162s max flight
+- AIM-120 AMRAAM: 130s fuel, 260s max flight
+- AIM-54 Phoenix: 144s fuel, 288s max flight
+
+**Air-to-Ground Missiles (AGM)**
+- FAB-500: 22s fuel, 44s max flight
+- Kh-25: 36s fuel, 72s max flight
+- AGM-65 Maverick: 88s fuel, 176s max flight
+- Kh-55: 3.35hr fuel, 6.7hr max flight
+- Kh-101: 5.6hr fuel, 11.2hr max flight
+
+**Anti-Ship Missiles (ASM)**
+- C-701: 110s fuel, 220s max flight
+- SS-N-22: 220s fuel, 440s max flight
+- SS-N-14: 219s fuel, 438s max flight
+- SS-N-2 Styx: 336s fuel, 672s max flight
+- HY-2: 395s fuel, 790s max flight
+- 3M-54 Klub: 396s fuel, 792s max flight
+- SS-N-9: 475s fuel, 950s max flight
+- AGM-84 Harpoon: 538s fuel, 1076s max flight
+- Harpoon: 538s fuel, 1076s max flight
+- C-802: 548s fuel, 1096s max flight
+
+**Surface-to-Air Missiles (SAM)**
+- SA-N-9: 14s fuel, 28s max flight
+- RIM-7 Sea Sparrow: 16s fuel, 32s max flight
+- SA-N-4: 20s fuel, 40s max flight
+- SA-N-7: 24s fuel, 48s max flight
+- SM-1: 41s fuel, 82s max flight
+
+**Torpedoes**
+- Mk 46 Torpedo: 576s fuel, 1152s max flight (9.6min / 19.2min)
+- 53-56 Torpedo: 864s fuel, 1728s max flight (14.4min / 28.8min)
+- 53-65 Torpedo: 1188s fuel, 2376s max flight (19.8min / 39.6min)
 
 ### State Preservation
 
