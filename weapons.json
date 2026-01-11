@@ -1,0 +1,47 @@
+{
+  "ASM": {
+    "name": "AGM-84 Harpoon",
+    "type": "ASM",
+    "maxSpeed": 537,
+    "maxRange": 67,
+    "targetType": "surface",
+    "maxAcceleration": 50,
+    "symbol": "missile"
+  },
+  "AAM": {
+    "name": "AIM-120 AMRAAM",
+    "type": "AAM",
+    "maxSpeed": 2500,
+    "maxRange": 75,
+    "targetType": "air",
+    "maxAcceleration": 300,
+    "symbol": "missile"
+  },
+  "AGM": {
+    "name": "AGM-65 Maverick",
+    "type": "AGM",
+    "maxSpeed": 684,
+    "maxRange": 14,
+    "targetType": "surface",
+    "maxAcceleration": 60,
+    "symbol": "missile"
+  },
+  "SAM": {
+    "name": "RIM-7 Sea Sparrow",
+    "type": "SAM",
+    "maxSpeed": 2660,
+    "maxRange": 10,
+    "targetType": "air",
+    "maxAcceleration": 350,
+    "symbol": "missile"
+  },
+  "Torpedo": {
+    "name": "Mk 46 Torpedo",
+    "type": "Torpedo",
+    "maxSpeed": 45,
+    "maxRange": 6,
+    "targetType": "subSurface",
+    "maxAcceleration": 5,
+    "symbol": "torpedo"
+  }
+}

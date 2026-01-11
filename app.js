@@ -158,6 +158,54 @@ function getSonoTabColor(enabled, armed) {
     return '#00FF00';                // GREEN when ON and ARMED
 }
 
+// Get WEAPON tab color based on power and armed state
+function getWeaponTabColor(enabled, armed) {
+    if (!enabled) return '#FF0000'; // RED when OFF
+    if (!armed) return '#FFFF00';   // YELLOW when ON but SAFE
+    return '#00FF00';                // GREEN when ON and ARMED
+}
+
+// Check if weapon can engage target domain
+function canEngageTarget(weaponType, targetDomain, weaponConfigs) {
+    const config = weaponConfigs[weaponType];
+    if (!config) return false;
+
+    const domainToTargetType = {
+        'air': 'air',
+        'surface': 'surface',
+        'subSurface': 'subSurface'
+    };
+
+    return config.targetType === domainToTargetType[targetDomain];
+}
+
+// Get available weapons for engagement
+function getAvailableWeapons(firingAsset, targetAsset, weaponInventory, weaponConfigs) {
+    const availableWeapons = [];
+    let weaponList = [];
+
+    if (firingAsset.type === 'ownship') {
+        weaponList = Object.keys(weaponInventory).filter(key => weaponInventory[key] > 0);
+    } else if (firingAsset.platform?.weapons) {
+        weaponList = firingAsset.platform.weapons.map(weaponName => {
+            if (weaponName.includes('AIM-') || weaponName.includes('R-')) return 'AAM';
+            if (weaponName.includes('AGM-') || weaponName.includes('Kh-') || weaponName.includes('Maverick')) return 'AGM';
+            if (weaponName.includes('Harpoon') || weaponName.includes('C-802') || weaponName.includes('SS-N-') || weaponName.includes('HY-')) return 'ASM';
+            if (weaponName.includes('SM-') || weaponName.includes('SA-N-')) return 'SAM';
+            if (weaponName.includes('Torpedo') || weaponName.includes('53-')) return 'Torpedo';
+            return null;
+        }).filter(w => w !== null);
+    }
+
+    for (const weaponType of weaponList) {
+        if (canEngageTarget(weaponType, targetAsset.domain, weaponConfigs)) {
+            availableWeapons.push(weaponType);
+        }
+    }
+
+    return [...new Set(availableWeapons)];
+}
+
 // Format distance based on current zoom scale
 function formatDistance(distanceNM, currentScale) {
     if (currentScale <= 5) {
@@ -343,6 +391,23 @@ function AICSimulator() {
     const [sonoDetections, setSonoDetections] = useState([]);
     const [sonoGuardOpen, setSonoGuardOpen] = useState(false);
 
+    // WEAPON SYSTEM STATE
+    const [weaponEnabled, setWeaponEnabled] = useState(false);
+    const [weaponArmed, setWeaponArmed] = useState(false);
+    const [weaponGuardOpen, setWeaponGuardOpen] = useState(false);
+    const [weapons, setWeapons] = useState([]); // Active weapons in flight
+    const [nextWeaponId, setNextWeaponId] = useState(1);
+    const [weaponInventory, setWeaponInventory] = useState({
+        ASM: 0,
+        AAM: 0,
+        AGM: 0,
+        SAM: 0,
+        Torpedo: 0
+    });
+    const [weaponConfigs, setWeaponConfigs] = useState({});
+    const [selectedTargetAssetId, setSelectedTargetAssetId] = useState(null);
+    const [showRangeWarning, setShowRangeWarning] = useState(false);
+
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
@@ -391,6 +456,20 @@ function AICSimulator() {
                 console.error('Error loading platforms:', error);
                 // Set empty arrays if loading fails
                 setPlatforms({ air: [], surface: [], subSurface: [] });
+            });
+    }, []);
+
+    // Load weapon configurations from weapons.json
+    useEffect(() => {
+        fetch(`weapons.json?t=${Date.now()}`, {
+            cache: 'no-store',
+            headers: { 'Cache-Control': 'no-cache' }
+        })
+            .then(response => response.json())
+            .then(data => setWeaponConfigs(data))
+            .catch(error => {
+                console.error('Error loading weapons:', error);
+                setWeaponConfigs({});
             });
     }, []);
 
@@ -550,7 +629,79 @@ function AICSimulator() {
 
             return updated;
         }));
-    }, []);
+
+        // Update weapons (proportional navigation guidance)
+        setWeapons(prevWeapons => {
+            let currentAssets = assets; // Store reference to current assets
+            const updatedWeapons = prevWeapons.map(weapon => {
+                let updated = { ...weapon };
+                const deltaTime = PHYSICS_UPDATE_RATE / 1000;
+
+                const target = currentAssets.find(a => a.id === weapon.targetId);
+
+                if (!target) {
+                    // Target lost, continue on last heading
+                    const speedNMPerSec = weapon.speed / 3600;
+                    const distance = speedNMPerSec * deltaTime;
+                    const headingRad = weapon.heading * Math.PI / 180;
+                    const latRad = weapon.lat * Math.PI / 180;
+
+                    const deltaLat = (distance * Math.cos(headingRad)) / 60;
+                    const deltaLon = (distance * Math.sin(headingRad)) / (60 * Math.cos(latRad));
+
+                    updated.lat = weapon.lat + deltaLat;
+                    updated.lon = weapon.lon + deltaLon;
+                    return updated;
+                }
+
+                // Proportional navigation
+                const bearing = calculateBearing(weapon.lat, weapon.lon, target.lat, target.lon);
+                const distance = calculateDistance(weapon.lat, weapon.lon, target.lat, target.lon);
+
+                // Accelerate to max speed
+                const config = weaponConfigs[weapon.weaponType];
+                if (config && weapon.speed < config.maxSpeed) {
+                    const accel = Math.min(config.maxAcceleration * deltaTime, config.maxSpeed - weapon.speed);
+                    updated.speed = weapon.speed + accel;
+                }
+
+                // Update heading (max turn rate 30°/sec)
+                const turnAmount = shortestTurn(weapon.heading, bearing);
+                const maxTurnRate = 30;
+                const turnDelta = Math.sign(turnAmount) * Math.min(Math.abs(turnAmount), maxTurnRate * deltaTime);
+                updated.heading = normalizeHeading(weapon.heading + turnDelta);
+
+                // Update position
+                const speedNMPerSec = updated.speed / 3600;
+                const travelDistance = speedNMPerSec * deltaTime;
+                const headingRad = updated.heading * Math.PI / 180;
+                const latRad = updated.lat * Math.PI / 180;
+
+                const deltaLat = (travelDistance * Math.cos(headingRad)) / 60;
+                const deltaLon = (travelDistance * Math.sin(headingRad)) / (60 * Math.cos(latRad));
+
+                updated.lat = weapon.lat + deltaLat;
+                updated.lon = weapon.lon + deltaLon;
+
+                // Check for impact (0.1 NM threshold)
+                if (distance < 0.1) {
+                    updated.impact = true;
+                    updated.impactTargetId = weapon.targetId;
+                }
+
+                return updated;
+            });
+
+            // Remove impacted weapons and their targets
+            const impactedWeapons = updatedWeapons.filter(w => w.impact);
+            if (impactedWeapons.length > 0) {
+                const targetIdsToRemove = impactedWeapons.map(w => w.impactTargetId);
+                setAssets(prevAssets => prevAssets.filter(a => !targetIdsToRemove.includes(a.id)));
+            }
+
+            return updatedWeapons.filter(w => !w.impact);
+        });
+    }, [weaponConfigs, assets]);
 
     // Start/stop physics engine
     useEffect(() => {
@@ -1045,6 +1196,33 @@ function AICSimulator() {
             });
         }
 
+        // Initialize weapon inventory for ownship
+        if (assetData.type === 'ownship' && platform?.weapons) {
+            let initialInventory = {
+                ASM: 0, AAM: 0, AGM: 0, SAM: 0, Torpedo: 0
+            };
+
+            platform.weapons.forEach(weaponName => {
+                if (weaponName.includes('AIM-') || weaponName.includes('Sidewinder') || weaponName.includes('AMRAAM') || weaponName.includes('Phoenix') || weaponName.includes('Sparrow') || weaponName.includes('R-')) {
+                    initialInventory.AAM += 4;
+                }
+                if (weaponName.includes('Harpoon') || weaponName.includes('AGM-84')) {
+                    initialInventory.ASM += 2;
+                }
+                if (weaponName.includes('AGM-65') || weaponName.includes('Maverick')) {
+                    initialInventory.AGM += 2;
+                }
+                if (weaponName.includes('Torpedo') || weaponName.includes('Mk 46') || weaponName.includes('Mk 50')) {
+                    initialInventory.Torpedo += 4;
+                }
+                if (weaponName.includes('SM-') || weaponName.includes('RIM-') || weaponName.includes('Sea Sparrow')) {
+                    initialInventory.SAM += 4;
+                }
+            });
+
+            setWeaponInventory(initialInventory);
+        }
+
         const newAsset = {
             id: nextAssetId,
             name: assetData.name || `Asset ${nextAssetId}`,
@@ -1102,6 +1280,50 @@ function AICSimulator() {
             setMapCenter({ lat: asset.lat, lon: asset.lon });
         }
     }, [assets]);
+
+    const fireWeapon = useCallback((firingAssetId, targetAssetId, weaponType) => {
+        const firingAsset = assets.find(a => a.id === firingAssetId);
+        const targetAsset = assets.find(a => a.id === targetAssetId);
+
+        if (!firingAsset || !targetAsset) return;
+
+        const range = calculateDistance(firingAsset.lat, firingAsset.lon, targetAsset.lat, targetAsset.lon);
+        const config = weaponConfigs[weaponType];
+
+        if (!config) return;
+
+        if (range > config.maxRange) {
+            setShowRangeWarning(true);
+            setTimeout(() => setShowRangeWarning(false), 2000);
+            return;
+        }
+
+        const affiliation = firingAsset.identity === 'friendly' || firingAsset.type === 'ownship' ? 'friendly' : 'hostile';
+
+        const newWeapon = {
+            id: nextWeaponId,
+            weaponType: weaponType,
+            lat: firingAsset.lat,
+            lon: firingAsset.lon,
+            heading: calculateBearing(firingAsset.lat, firingAsset.lon, targetAsset.lat, targetAsset.lon),
+            speed: 100,
+            altitude: firingAsset.altitude || 0,
+            targetId: targetAssetId,
+            firingAssetId: firingAssetId,
+            affiliation: affiliation,
+            launchTime: missionTime
+        };
+
+        setWeapons(prev => [...prev, newWeapon]);
+        setNextWeaponId(prev => prev + 1);
+
+        if (firingAsset.type === 'ownship') {
+            setWeaponInventory(prev => ({
+                ...prev,
+                [weaponType]: Math.max(0, prev[weaponType] - 1)
+            }));
+        }
+    }, [assets, weaponConfigs, nextWeaponId, missionTime]);
 
     const updateAsset = useCallback((assetId, updates) => {
         setAssets(prev => prev.map(a => {
@@ -1535,12 +1757,17 @@ function AICSimulator() {
             nextShapeId,
             sonobuoys,
             sonobuoyCount,
-            nextSonobuoyId
+            nextSonobuoyId,
+            weapons,
+            weaponInventory,
+            nextWeaponId,
+            weaponEnabled,
+            weaponArmed
         };
 
         localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
         alert(`Scenario saved to application: ${name}`);
-    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId]);
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed]);
 
     const saveToFile = useCallback((name) => {
         const saveData = {
@@ -1560,7 +1787,12 @@ function AICSimulator() {
             nextShapeId,
             sonobuoys,
             sonobuoyCount,
-            nextSonobuoyId
+            nextSonobuoyId,
+            weapons,
+            weaponInventory,
+            nextWeaponId,
+            weaponEnabled,
+            weaponArmed
         };
 
         const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' });
@@ -1570,7 +1802,7 @@ function AICSimulator() {
         a.download = `${name}-${new Date().toISOString().split('T')[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
-    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId]);
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed]);
 
     const loadFromLocalStorage = useCallback((name) => {
         const data = localStorage.getItem(`aic-scenario-${name}`);
@@ -1654,6 +1886,12 @@ function AICSimulator() {
             setSonobuoys(saveData.sonobuoys || []);
             setSonobuoyCount(saveData.sonobuoyCount !== undefined ? saveData.sonobuoyCount : 30);
             setNextSonobuoyId(saveData.nextSonobuoyId || 1);
+            setWeapons(saveData.weapons || []);
+            setWeaponInventory(saveData.weaponInventory || { ASM: 0, AAM: 0, AGM: 0, SAM: 0, Torpedo: 0 });
+            setNextWeaponId(saveData.nextWeaponId || 1);
+            setWeaponEnabled(saveData.weaponEnabled || false);
+            setWeaponArmed(saveData.weaponArmed || false);
+            setWeaponGuardOpen(false);
 
             // Find max asset ID
             const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
@@ -1763,6 +2001,12 @@ function AICSimulator() {
                     setSonobuoys(saveData.sonobuoys || []);
                     setSonobuoyCount(saveData.sonobuoyCount !== undefined ? saveData.sonobuoyCount : 30);
                     setNextSonobuoyId(saveData.nextSonobuoyId || 1);
+                    setWeapons(saveData.weapons || []);
+                    setWeaponInventory(saveData.weaponInventory || { ASM: 0, AAM: 0, AGM: 0, SAM: 0, Torpedo: 0 });
+                    setNextWeaponId(saveData.nextWeaponId || 1);
+                    setWeaponEnabled(saveData.weaponEnabled || false);
+                    setWeaponArmed(saveData.weaponArmed || false);
+                    setWeaponGuardOpen(false);
 
                     const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
                     setNextAssetId(maxId + 1);
@@ -2028,6 +2272,28 @@ function AICSimulator() {
             }
         }
 
+        // Check if clicking on an asset for weapon engagement
+        let clickedTargetAsset = null;
+        for (const asset of assets) {
+            const pos = latLonToScreen(asset.lat, asset.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+            const dist = Math.sqrt((x - pos.x) ** 2 + (y - pos.y) ** 2);
+            if (dist < 15 && asset.id !== selectedAssetId && asset.type !== 'ownship') {
+                clickedTargetAsset = asset;
+                break;
+            }
+        }
+
+        if (clickedTargetAsset && selectedAsset) {
+            setContextMenu({
+                x: e.clientX,
+                y: e.clientY,
+                type: 'engage',
+                targetAssetId: clickedTargetAsset.id,
+                firingAssetId: selectedAsset.id
+            });
+            return;
+        }
+
         // Context menu for asset or empty space
         setContextMenu({
             x: e.clientX,
@@ -2036,7 +2302,7 @@ function AICSimulator() {
             lat: latLon.lat,
             lon: latLon.lon
         });
-    }, [selectedAsset, assets, geoPoints, shapes, mapCenter, scale]);
+    }, [selectedAsset, assets, geoPoints, shapes, mapCenter, scale, selectedAssetId]);
 
     const handleMouseMove = useCallback((e) => {
         const svg = svgRef.current;
@@ -3509,6 +3775,49 @@ function AICSimulator() {
         );
     };
 
+    const renderWeapons = (width, height) => {
+        if (weapons.length === 0) return null;
+
+        return (
+            <g className="weapons">
+                {weapons.map(wpn => {
+                    const pos = latLonToScreen(wpn.lat, wpn.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+                    const color = wpn.affiliation === 'friendly' ? '#00BFFF' : '#FF0000';
+
+                    const size = 8;
+                    const headingRad = (wpn.heading - 90) * Math.PI / 180;
+
+                    const point1X = pos.x + size * Math.cos(headingRad);
+                    const point1Y = pos.y + size * Math.sin(headingRad);
+                    const point2X = pos.x + size * 0.5 * Math.cos(headingRad + 2.5);
+                    const point2Y = pos.y + size * 0.5 * Math.sin(headingRad + 2.5);
+                    const point3X = pos.x + size * 0.5 * Math.cos(headingRad - 2.5);
+                    const point3Y = pos.y + size * 0.5 * Math.sin(headingRad - 2.5);
+
+                    return (
+                        <g key={`weapon-${wpn.id}`}>
+                            <polygon
+                                points={`${point1X},${point1Y} ${point2X},${point2Y} ${point3X},${point3Y}`}
+                                fill={color}
+                                stroke={color}
+                                strokeWidth={1.5}
+                            />
+                            <line
+                                x1={pos.x}
+                                y1={pos.y}
+                                x2={pos.x - 15 * Math.cos(headingRad)}
+                                y2={pos.y - 15 * Math.sin(headingRad)}
+                                stroke={color}
+                                strokeWidth={1}
+                                opacity={0.5}
+                            />
+                        </g>
+                    );
+                })}
+            </g>
+        );
+    };
+
     const renderGeoPoint = (geoPoint, width, height) => {
         const pos = latLonToScreen(geoPoint.lat, geoPoint.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
         const isSelected = geoPoint.id === selectedGeoPointId;
@@ -3874,6 +4183,7 @@ function AICSimulator() {
                             {renderIFFReturns(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderSonobuoys(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderSonobuoyDetections(svgRef.current.clientWidth, svgRef.current.clientHeight)}
+                            {renderWeapons(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {shapes.map(shape => renderShape(shape, svgRef.current.clientWidth, svgRef.current.clientHeight))}
                             {/* Render line segment being created */}
                             {creatingShape && creatingShape.type === 'lineSegment' && creatingShape.points.length > 0 && (() => {
@@ -4098,6 +4408,18 @@ function AICSimulator() {
                 nextSonobuoyId={nextSonobuoyId}
                 setNextSonobuoyId={setNextSonobuoyId}
                 sonoDetections={sonoDetections}
+                weaponEnabled={weaponEnabled}
+                setWeaponEnabled={setWeaponEnabled}
+                weaponArmed={weaponArmed}
+                setWeaponArmed={setWeaponArmed}
+                weaponGuardOpen={weaponGuardOpen}
+                setWeaponGuardOpen={setWeaponGuardOpen}
+                weaponInventory={weaponInventory}
+                weapons={weapons}
+                fireWeapon={fireWeapon}
+                selectedTargetAssetId={selectedTargetAssetId}
+                setSelectedTargetAssetId={setSelectedTargetAssetId}
+                weaponConfigs={weaponConfigs}
             />
 
             {/* Context Menu */}
@@ -4116,6 +4438,10 @@ function AICSimulator() {
                     platforms={platforms}
                     setShowPlatformDialog={setShowPlatformDialog}
                     deleteManualBearingLine={deleteManualBearingLine}
+                    assets={assets}
+                    weaponInventory={weaponInventory}
+                    weaponConfigs={weaponConfigs}
+                    fireWeapon={fireWeapon}
                 />
             )}
 
@@ -4456,6 +4782,27 @@ function AICSimulator() {
                     }}
                 />
             )}
+
+            {/* Range Warning Popup */}
+            {showRangeWarning && (
+                <div style={{
+                    position: 'fixed',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    padding: '20px 40px',
+                    background: 'rgba(255, 0, 0, 0.9)',
+                    color: '#FFFFFF',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    borderRadius: '10px',
+                    border: '3px solid #FF0000',
+                    boxShadow: '0 0 20px rgba(255, 0, 0, 0.8)',
+                    zIndex: 10000
+                }}>
+                    OUTSIDE MAX RANGE
+                </div>
+            )}
         </div>
     );
 }
@@ -4507,7 +4854,15 @@ function ControlPanel({
     sonobuoys, setSonobuoys,
     sonobuoyCount, setSonobuoyCount,
     nextSonobuoyId, setNextSonobuoyId,
-    sonoDetections
+    sonoDetections,
+    weaponEnabled, setWeaponEnabled,
+    weaponArmed, setWeaponArmed,
+    weaponGuardOpen, setWeaponGuardOpen,
+    weaponInventory,
+    weapons,
+    fireWeapon,
+    selectedTargetAssetId, setSelectedTargetAssetId,
+    weaponConfigs
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
@@ -4843,6 +5198,23 @@ function ControlPanel({
                             }}
                         >
                             SONO
+                        </button>
+                        <button
+                            onClick={() => setSelectedSystemTab('weapon')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedSystemTab === 'weapon' ? getWeaponTabColor(weaponEnabled, weaponArmed) : 'transparent',
+                                color: selectedSystemTab === 'weapon' ? '#000' : getWeaponTabColor(weaponEnabled, weaponArmed),
+                                border: 'none',
+                                borderBottom: selectedSystemTab === 'weapon' ? `2px solid ${getWeaponTabColor(weaponEnabled, weaponArmed)}` : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            WEAPON
                         </button>
                     </div>
 
@@ -5683,6 +6055,289 @@ function ControlPanel({
                                                 }}>
                                                     <div style={{ fontWeight: 'bold' }}>S{sono.id.toString().padStart(2, '0')}</div>
                                                     <div style={{ opacity: 0.7 }}>Time: {timeStr}</div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* WEAPON TAB */}
+                    {selectedSystemTab === 'weapon' && (
+                        <div>
+                            {/* Power ON/OFF */}
+                            <div className="playback-controls" style={{ marginBottom: '15px' }}>
+                                <button
+                                    className={`control-btn ${weaponEnabled ? 'primary' : 'danger'}`}
+                                    onClick={() => setWeaponEnabled(!weaponEnabled)}
+                                    style={{ width: '100%' }}
+                                >
+                                    {weaponEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+
+                            {/* Master Arm Switch (same as SONO) */}
+                            <div style={{ marginBottom: '15px' }}>
+                                <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '20px', fontWeight: 'bold', textAlign: 'center' }}>
+                                    MASTER ARM
+                                </div>
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                    opacity: weaponEnabled ? 1 : 0.4,
+                                    pointerEvents: weaponEnabled ? 'auto' : 'none'
+                                }}>
+                                    <div style={{
+                                        position: 'relative',
+                                        padding: '10px',
+                                        border: '1px solid #202020',
+                                        borderRadius: '10px',
+                                        outline: '3px solid #a1a1a1',
+                                        background: 'repeating-linear-gradient(-45deg, #f5dd00, #f5dd00 12px, #101010 10px, #101010 23px)'
+                                    }}>
+                                        <div style={{
+                                            borderRadius: '5px',
+                                            border: '2px solid #202020',
+                                            outline: '2px solid #a1a1a1',
+                                            background: '#404040',
+                                            padding: '3px',
+                                            margin: 0,
+                                            perspective: '300px',
+                                            boxShadow: '0 0 1px #050506, inset 0 0 0 2px #050506, inset 0 3px 1px #66646c',
+                                            position: 'relative',
+                                            width: '50px',
+                                            height: '100px'
+                                        }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={weaponGuardOpen}
+                                                onChange={(e) => {
+                                                    setWeaponGuardOpen(e.target.checked);
+                                                    if (!e.target.checked) setWeaponArmed(false);
+                                                }}
+                                                style={{
+                                                    position: 'relative',
+                                                    margin: 0,
+                                                    padding: 0,
+                                                    appearance: 'none',
+                                                    display: 'block',
+                                                    width: '50px',
+                                                    height: '100px',
+                                                    borderRadius: '7px',
+                                                    background: weaponGuardOpen ? 'linear-gradient(180deg, rgba(166,46,41,1) 4%, rgba(210,47,41,1) 38%, rgba(237,71,65,1) 59%, rgba(242,113,108,1) 71%, rgba(242,113,108,1) 94%, rgba(210,47,41,1) 100%)' : 'linear-gradient(0deg, rgba(166,46,41,1) 0%, rgba(210,47,41,1) 6%, rgba(237,71,65,1) 16%, rgba(237,71,65,1) 27%, rgba(210,47,41,1) 68%, rgba(210,47,41,1) 100%)',
+                                                    boxShadow: 'inset -2px -2px 3px rgba(0,0,0,0.3), inset 2px 2px 3px rgba(255,255,255,0.5)',
+                                                    cursor: 'grab',
+                                                    transformOrigin: '50% 0%',
+                                                    transition: 'transform 0.2s ease',
+                                                    transform: weaponGuardOpen ? 'rotateX(70deg)' : 'rotateX(0deg)',
+                                                    border: '1px solid black',
+                                                    zIndex: 3
+                                                }}
+                                            />
+                                            <div style={{
+                                                position: 'absolute',
+                                                left: 0,
+                                                top: 0,
+                                                width: '100%',
+                                                height: '100px',
+                                                display: 'block',
+                                                transform: weaponGuardOpen ? 'translateY(0px)' : 'translateY(45px)',
+                                                transition: 'all 0.2s ease',
+                                                pointerEvents: 'none'
+                                            }}>
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    left: '2px',
+                                                    top: '15px',
+                                                    width: '8px',
+                                                    height: '40px',
+                                                    background: 'linear-gradient(0deg, rgba(166,46,41,1) 0%, rgba(210,47,41,1) 6%, rgba(237,71,65,1) 16%, rgba(237,71,65,1) 27%, rgba(210,47,41,1) 68%, rgba(210,47,41,1) 100%)',
+                                                    boxShadow: 'inset -2px -2px 3px rgba(0,0,0,0.3), inset 2px 2px 1px rgba(255,255,255,0.2), 0px 3px 3px rgba(0,0,0,0.4)'
+                                                }} />
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    right: '2px',
+                                                    top: '15px',
+                                                    width: '8px',
+                                                    height: '40px',
+                                                    background: 'linear-gradient(0deg, rgba(166,46,41,1) 0%, rgba(210,47,41,1) 6%, rgba(237,71,65,1) 16%, rgba(237,71,65,1) 27%, rgba(210,47,41,1) 68%, rgba(210,47,41,1) 100%)',
+                                                    boxShadow: 'inset -2px -2px 3px rgba(0,0,0,0.3), inset 2px 2px 1px rgba(255,255,255,0.2), 0px 3px 3px rgba(0,0,0,0.4)'
+                                                }} />
+                                            </div>
+                                            <input
+                                                type="checkbox"
+                                                checked={weaponArmed}
+                                                onChange={(e) => weaponGuardOpen && setWeaponArmed(e.target.checked)}
+                                                disabled={!weaponGuardOpen}
+                                                style={{
+                                                    position: 'absolute',
+                                                    margin: 0,
+                                                    padding: 0,
+                                                    appearance: 'none',
+                                                    display: 'block',
+                                                    background: 'linear-gradient(to left, #a1a1a1 0%, #a1a1a1 1%, #c0c0c0 26%, #b1b1b1 48%, #909090 75%, #a1a1a1 100%)',
+                                                    top: '70%',
+                                                    left: '50%',
+                                                    transform: 'translateX(-50%) translateY(-50%) rotate(-90deg)',
+                                                    width: '52px',
+                                                    height: '50px',
+                                                    clipPath: 'polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%)',
+                                                    zIndex: 0,
+                                                    cursor: weaponGuardOpen ? 'pointer' : 'not-allowed',
+                                                    filter: 'drop-shadow(1px 1px 3px rgba(255,255,255,1))'
+                                                }}
+                                            />
+                                            <div style={{
+                                                position: 'absolute',
+                                                display: 'block',
+                                                width: '12px',
+                                                height: '25px',
+                                                bottom: weaponArmed ? '13px' : '15px',
+                                                left: '50%',
+                                                pointerEvents: 'none',
+                                                borderTopLeftRadius: '4px',
+                                                borderTopRightRadius: '4px',
+                                                transform: weaponArmed ? 'translateX(-50%) rotateX(0deg)' : 'translateX(-50%) translateY(-14px) rotateX(-175deg)',
+                                                background: 'linear-gradient(to left, lightgrey 0%, lightgrey 1%, #e0e0e0 26%, #efefef 48%, #d9d9d9 75%, #bcbcbc 100%)',
+                                                border: '1px solid #000',
+                                                zIndex: 2,
+                                                transition: 'all 0.2s ease',
+                                                boxShadow: 'inset 0px -3px 3px rgba(0,0,0,1), inset 0px 3px 3px rgba(0,0,0,0.7)'
+                                            }}>
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    bottom: '-10px',
+                                                    left: '-2px',
+                                                    width: '12px',
+                                                    borderRadius: '6px',
+                                                    height: weaponArmed ? '15px' : '15px',
+                                                    border: '1px solid black',
+                                                    borderTop: 0,
+                                                    background: 'radial-gradient(ellipse at 50% -40%, rgba(38, 38, 38, 0.5), #e6e6e6 25%, #ffffff 38%, #a1a1a1 63%, #e6e6e6 87%, rgba(38, 38, 38, 1))'
+                                                }} />
+                                            </div>
+                                            <div style={{
+                                                position: 'absolute',
+                                                bottom: '-40px',
+                                                display: 'block',
+                                                width: '50px',
+                                                height: '20px',
+                                                left: '50%',
+                                                padding: '2px',
+                                                transform: 'translateX(-50%)',
+                                                backgroundColor: weaponArmed ? '#ed4741' : 'grey',
+                                                borderRadius: '7px',
+                                                border: '2px ridge black',
+                                                zIndex: 0,
+                                                transition: 'all 0.4s ease',
+                                                boxShadow: weaponArmed ? '0px 0px 10px rgba(255,0,0,1)' : 'none'
+                                            }}>
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    left: 0,
+                                                    top: 0,
+                                                    opacity: weaponArmed ? 0.2 : 0.2,
+                                                    backgroundImage: 'radial-gradient(rgba(255,255,255,0.5) 2px, transparent 0)',
+                                                    backgroundSize: '5px 5px',
+                                                    backgroundPosition: '-18px -15px',
+                                                    zIndex: 1,
+                                                    borderRadius: '7px',
+                                                    outline: '2px solid #a1a1a1',
+                                                    border: '1px solid rgba(0,0,0,0.5)',
+                                                    transition: 'all 1s ease'
+                                                }} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Weapon Inventory */}
+                            <div style={{ marginTop: '50px', marginBottom: '15px' }}>
+                                <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '10px', fontWeight: 'bold' }}>
+                                    WEAPON INVENTORY
+                                </div>
+                                {Object.entries(weaponInventory).map(([weaponType, count]) => (
+                                    <div key={weaponType} style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        padding: '8px',
+                                        marginBottom: '5px',
+                                        background: '#2a2a2a',
+                                        borderRadius: '3px'
+                                    }}>
+                                        <span style={{ fontSize: '10px', color: '#00FF00' }}>{weaponType}</span>
+                                        <span style={{
+                                            fontSize: '12px',
+                                            fontWeight: 'bold',
+                                            color: count > 0 ? '#00FF00' : '#FF0000'
+                                        }}>
+                                            {count}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Fire Buttons */}
+                            <div style={{ marginTop: '20px' }}>
+                                <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '10px', fontWeight: 'bold' }}>
+                                    FIRE CONTROLS
+                                </div>
+                                {Object.entries(weaponInventory).map(([weaponType, count]) => {
+                                    const canFire = weaponEnabled && weaponArmed && count > 0 && selectedTargetAssetId !== null;
+                                    return (
+                                        <button
+                                            key={weaponType}
+                                            className="control-btn primary"
+                                            disabled={!canFire}
+                                            onClick={() => {
+                                                if (canFire) {
+                                                    const ownship = assets.find(a => a.type === 'ownship');
+                                                    if (ownship) {
+                                                        fireWeapon(ownship.id, selectedTargetAssetId, weaponType);
+                                                    }
+                                                }
+                                            }}
+                                            style={{
+                                                width: '100%',
+                                                marginBottom: '8px',
+                                                opacity: canFire ? 1 : 0.4,
+                                                cursor: canFire ? 'pointer' : 'not-allowed'
+                                            }}
+                                        >
+                                            FIRE {weaponType}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Active Weapons List */}
+                            {weapons.length > 0 && (
+                                <div style={{ marginTop: '20px' }}>
+                                    <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '5px', fontWeight: 'bold' }}>
+                                        ACTIVE WEAPONS ({weapons.length})
+                                    </div>
+                                    <div style={{ maxHeight: '150px', overflowY: 'auto', background: '#2a2a2a', borderRadius: '3px', padding: '5px' }}>
+                                        {weapons.map(wpn => {
+                                            const target = assets.find(a => a.id === wpn.targetId);
+                                            const timeInFlight = Math.floor(missionTime - wpn.launchTime);
+
+                                            return (
+                                                <div key={wpn.id} style={{
+                                                    padding: '5px',
+                                                    marginBottom: '3px',
+                                                    background: '#1a1a1a',
+                                                    borderRadius: '2px',
+                                                    fontSize: '9px',
+                                                    color: wpn.affiliation === 'friendly' ? '#00BFFF' : '#FF0000'
+                                                }}>
+                                                    <div style={{ fontWeight: 'bold' }}>{wpn.weaponType} #{wpn.id}</div>
+                                                    <div style={{ opacity: 0.7 }}>Target: {target ? target.name : 'LOST'}</div>
+                                                    <div style={{ opacity: 0.7 }}>TOF: {timeInFlight}s</div>
                                                 </div>
                                             );
                                         })}
@@ -7530,10 +8185,11 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon }) {
     const [showDomainSubmenu, setShowDomainSubmenu] = useState(false);
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
     const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
+    const [showEngageSubmenu, setShowEngageSubmenu] = useState(false);
 
     if (!contextMenu) return null;
 
@@ -7689,6 +8345,49 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             {contextMenu.type === 'manualBearingLine' && (
                 <div className="context-menu-item" onClick={() => handleClick('deleteManualBearingLine')}>
                     Delete M{contextMenu.serialNumber.toString().padStart(2, '0')}
+                </div>
+            )}
+
+            {contextMenu.type === 'engage' && (
+                <div
+                    className="context-menu-item context-menu-parent"
+                    onMouseEnter={() => setShowEngageSubmenu(true)}
+                    onMouseLeave={() => setShowEngageSubmenu(false)}
+                >
+                    Engage with ›
+                    {showEngageSubmenu && (
+                        <div className="context-menu-submenu">
+                            {(() => {
+                                const firingAsset = assets.find(a => a.id === contextMenu.firingAssetId);
+                                const targetAsset = assets.find(a => a.id === contextMenu.targetAssetId);
+                                if (!firingAsset || !targetAsset) return null;
+
+                                const availableWeapons = getAvailableWeapons(firingAsset, targetAsset, weaponInventory, weaponConfigs);
+
+                                if (availableWeapons.length === 0) {
+                                    return (
+                                        <div className="context-menu-item" style={{ opacity: 0.5, cursor: 'not-allowed' }}>
+                                            No Compatible Weapons
+                                        </div>
+                                    );
+                                }
+
+                                return availableWeapons.map(weaponType => (
+                                    <div
+                                        key={weaponType}
+                                        className="context-menu-item"
+                                        onClick={() => {
+                                            fireWeapon(contextMenu.firingAssetId, contextMenu.targetAssetId, weaponType);
+                                            setContextMenu(null);
+                                            setShowEngageSubmenu(false);
+                                        }}
+                                    >
+                                        {weaponType}
+                                    </div>
+                                ));
+                            })()}
+                        </div>
+                    )}
                 </div>
             )}
         </div>
