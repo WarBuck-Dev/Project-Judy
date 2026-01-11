@@ -406,6 +406,7 @@ function AICSimulator() {
     });
     const [weaponConfigs, setWeaponConfigs] = useState({});
     const [selectedTargetAssetId, setSelectedTargetAssetId] = useState(null);
+    const [selectedWeaponType, setSelectedWeaponType] = useState(null);
     const [showRangeWarning, setShowRangeWarning] = useState(false);
 
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
@@ -1762,12 +1763,13 @@ function AICSimulator() {
             weaponInventory,
             nextWeaponId,
             weaponEnabled,
-            weaponArmed
+            weaponArmed,
+            selectedWeaponType
         };
 
         localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
         alert(`Scenario saved to application: ${name}`);
-    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed]);
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType]);
 
     const saveToFile = useCallback((name) => {
         const saveData = {
@@ -1792,7 +1794,8 @@ function AICSimulator() {
             weaponInventory,
             nextWeaponId,
             weaponEnabled,
-            weaponArmed
+            weaponArmed,
+            selectedWeaponType
         };
 
         const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' });
@@ -1802,7 +1805,7 @@ function AICSimulator() {
         a.download = `${name}-${new Date().toISOString().split('T')[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
-    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed]);
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType]);
 
     const loadFromLocalStorage = useCallback((name) => {
         const data = localStorage.getItem(`aic-scenario-${name}`);
@@ -1892,6 +1895,8 @@ function AICSimulator() {
             setWeaponEnabled(saveData.weaponEnabled || false);
             setWeaponArmed(saveData.weaponArmed || false);
             setWeaponGuardOpen(false);
+            setSelectedTargetAssetId(null);
+            setSelectedWeaponType(saveData.selectedWeaponType || null);
 
             // Find max asset ID
             const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
@@ -2007,6 +2012,8 @@ function AICSimulator() {
                     setWeaponEnabled(saveData.weaponEnabled || false);
                     setWeaponArmed(saveData.weaponArmed || false);
                     setWeaponGuardOpen(false);
+                    setSelectedTargetAssetId(null);
+                    setSelectedWeaponType(saveData.selectedWeaponType || null);
 
                     const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
                     setNextAssetId(maxId + 1);
@@ -2272,18 +2279,33 @@ function AICSimulator() {
             }
         }
 
-        // Check if clicking on an asset for weapon engagement
+        // Check if clicking on an asset for weapon engagement or targeting
         let clickedTargetAsset = null;
         for (const asset of assets) {
             const pos = latLonToScreen(asset.lat, asset.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
             const dist = Math.sqrt((x - pos.x) ** 2 + (y - pos.y) ** 2);
-            if (dist < 15 && asset.id !== selectedAssetId && asset.type !== 'ownship') {
+            if (dist < 15 && asset.type !== 'ownship') {
                 clickedTargetAsset = asset;
                 break;
             }
         }
 
-        if (clickedTargetAsset && selectedAsset) {
+        // If WEAPON tab is open and ownship exists, show "Target With" menu
+        if (clickedTargetAsset && selectedSystemTab === 'weapon') {
+            const ownship = assets.find(a => a.type === 'ownship');
+            if (ownship) {
+                setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    type: 'targetWith',
+                    targetAssetId: clickedTargetAsset.id
+                });
+                return;
+            }
+        }
+
+        // Otherwise, show "Engage with" menu for any selected asset
+        if (clickedTargetAsset && selectedAsset && selectedAsset.type !== 'ownship') {
             setContextMenu({
                 x: e.clientX,
                 y: e.clientY,
@@ -6256,8 +6278,30 @@ function ControlPanel({
                                 </div>
                             </div>
 
-                            {/* Weapon Inventory */}
+                            {/* Target Status */}
                             <div style={{ marginTop: '50px', marginBottom: '15px' }}>
+                                <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '10px', fontWeight: 'bold' }}>
+                                    TARGET STATUS
+                                </div>
+                                <div style={{
+                                    padding: '8px',
+                                    marginBottom: '5px',
+                                    background: '#2a2a2a',
+                                    borderRadius: '3px'
+                                }}>
+                                    <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '3px' }}>
+                                        Target: {selectedTargetAssetId !== null
+                                            ? assets.find(a => a.id === selectedTargetAssetId)?.name || 'Unknown'
+                                            : 'None Selected'}
+                                    </div>
+                                    <div style={{ fontSize: '10px', color: '#00FF00' }}>
+                                        Weapon: {selectedWeaponType || 'None Selected'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Weapon Inventory */}
+                            <div style={{ marginBottom: '15px' }}>
                                 <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '10px', fontWeight: 'bold' }}>
                                     WEAPON INVENTORY
                                 </div>
@@ -6288,25 +6332,35 @@ function ControlPanel({
                                     FIRE CONTROLS
                                 </div>
                                 {Object.entries(weaponInventory).map(([weaponType, count]) => {
-                                    const canFire = weaponEnabled && weaponArmed && count > 0 && selectedTargetAssetId !== null;
+                                    const isTargeted = selectedTargetAssetId !== null && selectedWeaponType === weaponType;
+                                    const canFire = weaponEnabled && weaponArmed && count > 0 && isTargeted;
+                                    const buttonColor = isTargeted ? '#00FF00' : '#FFFF00';
+
                                     return (
                                         <button
                                             key={weaponType}
-                                            className="control-btn primary"
+                                            className="control-btn"
                                             disabled={!canFire}
                                             onClick={() => {
                                                 if (canFire) {
                                                     const ownship = assets.find(a => a.type === 'ownship');
                                                     if (ownship) {
                                                         fireWeapon(ownship.id, selectedTargetAssetId, weaponType);
+                                                        // Clear target and weapon selection after firing
+                                                        setSelectedTargetAssetId(null);
+                                                        setSelectedWeaponType(null);
                                                     }
                                                 }
                                             }}
                                             style={{
                                                 width: '100%',
                                                 marginBottom: '8px',
+                                                backgroundColor: canFire ? buttonColor : '#444',
+                                                color: canFire ? '#000' : '#666',
+                                                border: `2px solid ${buttonColor}`,
                                                 opacity: canFire ? 1 : 0.4,
-                                                cursor: canFire ? 'pointer' : 'not-allowed'
+                                                cursor: canFire ? 'pointer' : 'not-allowed',
+                                                fontWeight: 'bold'
                                             }}
                                         >
                                             FIRE {weaponType}
@@ -8345,6 +8399,50 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             {contextMenu.type === 'manualBearingLine' && (
                 <div className="context-menu-item" onClick={() => handleClick('deleteManualBearingLine')}>
                     Delete M{contextMenu.serialNumber.toString().padStart(2, '0')}
+                </div>
+            )}
+
+            {contextMenu.type === 'targetWith' && (
+                <div
+                    className="context-menu-item context-menu-parent"
+                    onMouseEnter={() => setShowEngageSubmenu(true)}
+                    onMouseLeave={() => setShowEngageSubmenu(false)}
+                >
+                    Target With ›
+                    {showEngageSubmenu && (
+                        <div className="context-menu-submenu">
+                            {(() => {
+                                const ownship = assets.find(a => a.type === 'ownship');
+                                const targetAsset = assets.find(a => a.id === contextMenu.targetAssetId);
+                                if (!ownship || !targetAsset) return null;
+
+                                const availableWeapons = getAvailableWeapons(ownship, targetAsset, weaponInventory, weaponConfigs);
+
+                                if (availableWeapons.length === 0) {
+                                    return (
+                                        <div className="context-menu-item" style={{ opacity: 0.5, cursor: 'not-allowed' }}>
+                                            No Compatible Weapons
+                                        </div>
+                                    );
+                                }
+
+                                return availableWeapons.map(weaponType => (
+                                    <div
+                                        key={weaponType}
+                                        className="context-menu-item"
+                                        onClick={() => {
+                                            setSelectedTargetAssetId(contextMenu.targetAssetId);
+                                            setSelectedWeaponType(weaponType);
+                                            setContextMenu(null);
+                                            setShowEngageSubmenu(false);
+                                        }}
+                                    >
+                                        {weaponType}
+                                    </div>
+                                ));
+                            })()}
+                        </div>
+                    )}
                 </div>
             )}
 
