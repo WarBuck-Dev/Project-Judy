@@ -165,13 +165,20 @@ function getWeaponTabColor(enabled, armed) {
     return '#00FF00';                // GREEN when ON and ARMED
 }
 
-// Helper function to classify weapon name to type
-function classifyWeaponType(weaponName) {
-    if (weaponName.includes('AIM-') || weaponName.includes('R-')) return 'AAM';
-    if (weaponName.includes('AGM-') || weaponName.includes('Kh-') || weaponName.includes('Maverick') || weaponName.includes('FAB-')) return 'AGM';
+// Helper function to classify weapon name to type by looking up in weaponConfigs
+function classifyWeaponType(weaponName, weaponConfigs) {
+    // If weaponConfigs provided, look up the weapon's type directly
+    if (weaponConfigs && weaponConfigs[weaponName]) {
+        return weaponConfigs[weaponName].type;
+    }
+
+    // Fallback to pattern matching if weapon not found in configs (for backwards compatibility)
     if (weaponName.includes('Harpoon') || weaponName.includes('C-802') || weaponName.includes('SS-N-') ||
         weaponName.includes('HY-') || weaponName.includes('C-701') || weaponName.includes('3M-54') ||
         weaponName.includes('Klub')) return 'ASM';
+
+    if (weaponName.includes('AIM-') || weaponName.includes('R-')) return 'AAM';
+    if (weaponName.includes('AGM-') || weaponName.includes('Kh-') || weaponName.includes('Maverick') || weaponName.includes('FAB-')) return 'AGM';
     if (weaponName.includes('SM-') || weaponName.includes('SA-N-') || weaponName.includes('RIM-')) return 'SAM';
     if (weaponName.includes('Torpedo') || weaponName.includes('53-') || weaponName.includes('Mk 46') ||
         weaponName.includes('Mk 50')) return 'Torpedo';
@@ -201,9 +208,9 @@ function getAvailableWeapons(firingAsset, targetAsset, weaponInventory, weaponCo
     if (firingAsset.type === 'ownship') {
         weaponList = Object.keys(weaponInventory).filter(key => weaponInventory[key] > 0);
     } else if (firingAsset.platform?.weapons) {
-        // Use helper function instead of inline pattern matching
+        // Use helper function to classify weapons by looking up in weaponConfigs
         weaponList = firingAsset.platform.weapons
-            .map(weaponName => classifyWeaponType(weaponName))
+            .map(weaponName => classifyWeaponType(weaponName, weaponConfigs))
             .filter(w => w !== null);
     }
 
@@ -483,6 +490,45 @@ function AICSimulator() {
                 setWeaponConfigs({});
             });
     }, []);
+
+    // Assign "Ownship" platform to ownship asset when platforms are loaded
+    useEffect(() => {
+        if (platforms.air && platforms.air.length > 0) {
+            const ownshipPlatform = platforms.air.find(p => p.name === 'Ownship');
+            if (ownshipPlatform) {
+                setAssets(prev => prev.map(asset => {
+                    if (asset.type === 'ownship' && !asset.platform) {
+                        return { ...asset, platform: ownshipPlatform };
+                    }
+                    return asset;
+                }));
+            }
+        }
+    }, [platforms]);
+
+    // Initialize ownship weapon inventory when ownship platform is assigned
+    useEffect(() => {
+        const ownship = assets.find(a => a.type === 'ownship');
+        if (ownship && ownship.platform) {
+            const platform = ownship.platform;
+
+            // Check if platform has numberOfX attributes
+            if (platform.numberOfAAM !== undefined || platform.numberOfAGM !== undefined ||
+                platform.numberOfASM !== undefined || platform.numberOfSAM !== undefined ||
+                platform.numberOfTorpedo !== undefined) {
+
+                const initialInventory = {
+                    AAM: platform.numberOfAAM || 0,
+                    AGM: platform.numberOfAGM || 0,
+                    ASM: platform.numberOfASM || 0,
+                    SAM: platform.numberOfSAM || 0,
+                    Torpedo: platform.numberOfTorpedo || 0
+                };
+
+                setWeaponInventory(initialInventory);
+            }
+        }
+    }, [assets]);
 
     // ========================================================================
     // EO/IR WINDOW DRAGGING
@@ -1230,7 +1276,7 @@ function AICSimulator() {
             } else {
                 // BACKWARD COMPATIBILITY: Use old pattern matching
                 platform.weapons.forEach(weaponName => {
-                    const weaponType = classifyWeaponType(weaponName);
+                    const weaponType = classifyWeaponType(weaponName, weaponConfigs);
                     if (weaponType === 'AAM') initialInventory.AAM += 4;
                     if (weaponType === 'ASM') initialInventory.ASM += 2;
                     if (weaponType === 'AGM') initialInventory.AGM += 2;
@@ -1301,24 +1347,40 @@ function AICSimulator() {
     }, [assets]);
 
     const fireWeapon = useCallback((firingAssetId, targetAssetId, weaponType) => {
+        console.log('fireWeapon called:', { firingAssetId, targetAssetId, weaponType });
+
         const firingAsset = assets.find(a => a.id === firingAssetId);
         const targetAsset = assets.find(a => a.id === targetAssetId);
 
-        if (!firingAsset || !targetAsset) return;
+        console.log('Assets found:', { firingAsset: firingAsset?.name, targetAsset: targetAsset?.name });
+
+        if (!firingAsset || !targetAsset) {
+            console.warn('Missing firing asset or target asset');
+            return;
+        }
 
         // === NEW: SELECT WEAPON VARIANT ===
         let selectedWeaponName = null;
+
+        console.log('Firing asset platform:', firingAsset.platform?.name);
+        console.log('Platform weapons:', firingAsset.platform?.weapons);
+        console.log('Available weaponConfigs:', Object.keys(weaponConfigs));
 
         // For both ownship and non-ownship: Select FIRST weapon variant from platform that matches type
         if (firingAsset.platform?.weapons) {
             selectedWeaponName = firingAsset.platform.weapons.find(weaponName => {
                 const config = weaponConfigs[weaponName];
+                console.log(`Checking weapon ${weaponName}: config exists=${!!config}, type=${config?.type}, matches=${config?.type === weaponType}`);
                 return config && config.type === weaponType;
             });
         }
 
+        console.log('Selected weapon name:', selectedWeaponName);
+
         if (!selectedWeaponName) {
             console.warn(`No weapon variant found for type ${weaponType}`);
+            console.warn('Platform weapons:', firingAsset.platform?.weapons);
+            console.warn('Weapon configs available:', Object.keys(weaponConfigs));
             return;
         }
 
@@ -1327,6 +1389,8 @@ function AICSimulator() {
             console.warn(`Weapon config not found for ${selectedWeaponName}`);
             return;
         }
+
+        console.log('Using weapon config:', config);
         // === END NEW CODE ===
 
         const range = calculateDistance(firingAsset.lat, firingAsset.lon, targetAsset.lat, targetAsset.lon);
@@ -2329,7 +2393,19 @@ function AICSimulator() {
             }
         }
 
-        // If WEAPON tab is open and ownship exists, show "Target With" menu
+        // Priority 1: If a non-ownship asset is selected, always show "Engage with"
+        if (clickedTargetAsset && selectedAsset && selectedAsset.type !== 'ownship') {
+            setContextMenu({
+                x: e.clientX,
+                y: e.clientY,
+                type: 'engage',
+                targetAssetId: clickedTargetAsset.id,
+                firingAssetId: selectedAsset.id
+            });
+            return;
+        }
+
+        // Priority 2: If WEAPON tab is open (and no non-ownship selected), show "Target With" for ownship
         if (clickedTargetAsset && selectedSystemTab === 'weapon') {
             const ownship = assets.find(a => a.type === 'ownship');
             if (ownship) {
@@ -2341,18 +2417,6 @@ function AICSimulator() {
                 });
                 return;
             }
-        }
-
-        // Otherwise, show "Engage with" menu for any selected asset
-        if (clickedTargetAsset && selectedAsset && selectedAsset.type !== 'ownship') {
-            setContextMenu({
-                x: e.clientX,
-                y: e.clientY,
-                type: 'engage',
-                targetAssetId: clickedTargetAsset.id,
-                firingAssetId: selectedAsset.id
-            });
-            return;
         }
 
         // Context menu for asset or empty space
@@ -3844,36 +3908,79 @@ function AICSimulator() {
                 {weapons.map(wpn => {
                     const pos = latLonToScreen(wpn.lat, wpn.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
                     const color = wpn.affiliation === 'friendly' ? '#00BFFF' : '#FF0000';
-
-                    const size = 8;
                     const headingRad = (wpn.heading - 90) * Math.PI / 180;
 
-                    const point1X = pos.x + size * Math.cos(headingRad);
-                    const point1Y = pos.y + size * Math.sin(headingRad);
-                    const point2X = pos.x + size * 0.5 * Math.cos(headingRad + 2.5);
-                    const point2Y = pos.y + size * 0.5 * Math.sin(headingRad + 2.5);
-                    const point3X = pos.x + size * 0.5 * Math.cos(headingRad - 2.5);
-                    const point3Y = pos.y + size * 0.5 * Math.sin(headingRad - 2.5);
+                    // Direction of travel indicator line (solid)
+                    const lineLength = 30; // Same as air track heading line
+                    const lineEndX = pos.x + lineLength * Math.cos(headingRad);
+                    const lineEndY = pos.y + lineLength * Math.sin(headingRad);
 
-                    return (
-                        <g key={`weapon-${wpn.id}`}>
-                            <polygon
-                                points={`${point1X},${point1Y} ${point2X},${point2Y} ${point3X},${point3Y}`}
-                                fill={color}
-                                stroke={color}
-                                strokeWidth={1.5}
-                            />
-                            <line
-                                x1={pos.x}
-                                y1={pos.y}
-                                x2={pos.x - 15 * Math.cos(headingRad)}
-                                y2={pos.y - 15 * Math.sin(headingRad)}
-                                stroke={color}
-                                strokeWidth={1}
-                                opacity={0.5}
-                            />
-                        </g>
-                    );
+                    // Determine weapon symbol type
+                    const configKey = wpn.weaponName || wpn.weaponType;
+                    const config = weaponConfigs[configKey];
+                    const isTorpedo = config && config.type === 'Torpedo';
+
+                    if (wpn.affiliation === 'friendly') {
+                        // Scale factor to match air track size (12)
+                        const symbolScale = 0.114; // Adjusted to make symbol size = 12
+
+                        let svgPath;
+                        if (isTorpedo) {
+                            // Friendly torpedo SVG path
+                            svgPath = "m 11.301968,183.90024 c -5.3e-4,-23.91753 0.061,-28.57252 0.41352,-31.35312 1.99502,-15.73583 9.30443,-31.67588 20.36361,-44.40813 2.66402,-3.06703 8.5419,-8.822942 11.23697,-11.003786 12.91775,-10.453023 26.9367,-17.032038 42.73021,-20.053061 17.499182,-3.347289 35.133772,-1.86418 51.990622,4.37253 4.76869,1.764324 12.75667,5.737913 17.38851,8.649856 21.31161,13.398151 36.32717,34.799871 40.68364,57.986551 1.09662,5.83662 1.18385,8.53985 1.18927,36.85971 l 0.005,27.20243 -3.63803,-0.0826 -3.63802,-0.0826 -0.14366,-29.10417 c -0.13975,-28.37376 -0.15769,-29.1806 -0.71403,-32.14694 C 186.23395,135.08427 178.82853,120.87506 167.54074,109.2363 155.26815,96.582143 139.19217,87.692953 122.28845,84.214116 115.0797,82.730534 113.65203,82.605807 104.038,82.6197 c -8.519012,0.0123 -9.215772,0.05062 -13.144992,0.722828 -10.456,1.78879 -17.75215,4.15435 -26.49246,8.589388 -12.06125,6.120164 -22.9434,15.311874 -30.77767,25.996664 -6.21467,8.47587 -10.92082,18.52008 -13.19303,28.15752 -1.62733,6.90221 -1.54462,5.11703 -1.70496,36.79768 l -0.14731,29.10417 h -3.63754 -3.63754 z m 37.49111,-6.38444 c -2.00812,-3.01396 -5.12383,-7.6381 -6.9238,-10.27586 l -3.27268,-4.79592 2.97474,-4.46449 c 1.63611,-2.45548 4.7322,-7.17317 6.8802,-10.48377 l 3.90546,-6.01927 h 46.79701 46.797012 l 1.53304,2.38858 c 0.84318,1.31372 3.182,4.90617 5.19738,7.98321 l 3.66434,5.59463 1.60578,-2.4931 c 2.66867,-4.14332 6.83175,-10.84543 6.98531,-11.24558 0.11229,-0.29267 0.78081,-0.37565 3.02625,-0.37565 h 2.88211 v 19.04999 19.05 h -2.78596 -2.78595 l -1.74527,-2.71198 c -4.7394,-7.36453 -7.31421,-11.31093 -7.37977,-11.31093 -0.0398,0 -0.76488,1.10133 -1.61123,2.44739 -0.84636,1.34607 -2.8972,4.53099 -4.55742,7.07761 -1.66023,2.54661 -3.21082,4.95687 -3.44577,5.35614 l -0.42717,0.72593 -46.831252,-0.008 -46.83125,-0.008 -3.65111,-5.47993 z m 98.028462,-6.869 c 2.38508,-3.60164 4.59387,-6.97101 4.90843,-7.4875 l 0.57192,-0.93906 -4.92133,-7.46146 -4.92132,-7.46145 H 99.136088 55.812938 l -1.58237,2.44739 c -0.8703,1.34607 -3.09032,4.74713 -4.93339,7.55791 l -3.35102,5.1105 2.05839,3.02223 c 1.13212,1.66222 3.36808,4.97895 4.96881,7.3705 l 2.91042,4.34828 43.30062,0.0206 43.300632,0.0205 z m 17.87991,-11.49375 -0.0739,-3.52135 -0.8976,1.32292 c -0.49369,0.7276 -1.47799,2.24761 -2.18736,3.37779 -1.50598,2.39939 -1.60891,1.8983 1.30175,6.33778 l 1.78321,2.71984 0.0739,-3.35782 c 0.0407,-1.8468 0.0407,-4.94242 0,-6.87916 z";
+                        } else {
+                            // Friendly missile SVG path
+                            svgPath = "m 80.319942,250.63642 c 0,-0.29758 -1.736934,-16.13445 -2.500884,-22.80233 -0.516284,-4.50623 -0.9387,-8.52238 -0.9387,-8.92479 0,-0.54017 1.015588,-2.0313 3.880493,-5.69749 2.134272,-2.73121 4.383892,-5.56114 4.999162,-6.28875 l 1.11867,-1.32291 0.29265,-10.58333 c 0.16096,-5.82084 0.40894,-16.71506 0.55107,-24.20938 0.14212,-7.49432 0.31953,-16.30495 0.39422,-19.57916 0.0747,-3.27422 0.19834,-9.04875 0.27475,-12.8323 0.0764,-3.78354 0.26784,-12.11044 0.4254,-18.50422 l 0.28648,-11.62505 4.688784,-8.0864 c 2.57882,-4.447533 5.73412,-9.902413 7.011763,-12.12196 1.27763,-2.219556 2.4182,-4.094404 2.53458,-4.166333 0.11638,-0.07193 0.96037,1.029697 1.87554,2.448054 0.91516,1.418359 4.31482,6.654706 7.55481,11.636336 l 5.89088,9.057503 0.26915,28.77791 c 0.14803,15.82785 0.34962,38.38049 0.44798,50.11697 l 0.17882,21.33905 5.2794,4.96857 5.27939,4.96856 -0.16893,3.06113 c -0.1747,3.16565 -0.45554,9.68834 -0.95769,22.24342 -0.16005,4.00182 -0.37086,7.48192 -0.46846,7.73354 -0.1764,0.45478 -2.29873,-1.51028 -16.18474,-14.98539 -1.96453,-1.90641 -4.54898,-4.404 -5.74322,-5.55023 l -2.17135,-2.08403 -7.353183,7.11233 c -4.04425,3.91178 -9.388264,9.10662 -11.875564,11.54409 -3.941846,3.86288 -4.871271,4.6941 -4.871271,4.35659 z m 15.201175,-25.72169 c 4.749683,-4.51114 8.750943,-8.2423 8.891703,-8.29146 0.14075,-0.0492 3.14014,2.68927 6.6653,6.08541 8.89398,8.56847 10.13947,9.74668 10.30332,9.74668 0.0788,0 0.22353,-2.35149 0.3216,-5.22553 0.0981,-2.87403 0.23025,-5.52317 0.29373,-5.88697 0.10004,-0.57325 -0.5853,-1.31336 -5.13888,-5.54963 l -5.25432,-4.88816 -0.17735,-19.98267 c -0.0976,-10.99047 -0.28895,-31.71032 -0.42535,-46.04412 -0.1364,-14.33381 -0.24931,-28.21543 -0.25092,-30.84807 l -0.003,-4.78661 -3.46379,-5.46599 c -1.90509,-3.0063 -3.5422,-5.461923 -3.63803,-5.456933 -0.0958,0.005 -1.67455,2.535073 -3.50827,5.622403 l -3.334063,5.61332 -0.17631,9.78959 c -0.44316,24.60572 -1.27844,65.72421 -1.66479,81.95283 l -0.17476,7.34035 -3.15146,3.90444 c -1.7333,2.14745 -3.898704,4.85695 -4.811994,6.02112 l -1.66052,2.11667 0.60937,5.95312 c 0.33515,3.27422 0.61468,6.11188 0.62116,6.3059 0.006,0.19403 0.11978,0.3131 0.25178,0.26459 0.13199,-0.0485 4.126094,-3.77913 8.875764,-8.29028 z m 84.546743,-63.44711 c 0,-15.85722 -0.11042,-27.96995 -0.27435,-30.09635 C 178.86818,119.36869 174.54175,106.8975 167.77393,96.724107 162.39297,88.63546 154.45671,80.717737 146.65058,75.650106 136.51824,69.07234 126.54549,65.307407 114.35494,63.457792 109.76283,62.761054 98.091167,62.840485 93.152237,63.602085 79.181955,65.756349 66.68491,71.229623 55.945709,79.897258 52.260695,82.871439 46.378638,88.96165 43.474468,92.809817 36.886277,101.53951 32.304006,111.46376 30.011429,121.96796 c -1.40471,6.43616 -1.374275,5.6964 -1.478735,35.94104 l -0.09755,28.24427 h -3.690929 -3.690932 l -0.0074,-2.57968 c -0.0041,-1.41883 -0.04714,-11.80703 -0.09568,-23.0849 -0.127434,-29.61125 0.127167,-34.09657 2.450671,-43.17362 2.378866,-9.29332 6.82162,-18.806923 12.445809,-26.651133 5.373487,-7.494601 12.7502,-14.689751 20.660757,-20.152272 17.567375,-12.130891 40.376717,-17.173122 61.5417,-13.604398 16.65612,2.808465 31.79934,10.355855 43.96158,21.910489 14.96652,14.218811 23.59917,31.995844 25.19211,51.877594 0.16397,2.04655 0.27336,14.19589 0.27336,30.36093 v 26.94908 h -3.70416 -3.70417 z";
+                        }
+
+                        return (
+                            <g key={`weapon-${wpn.id}`}>
+                                {/* Direction of travel line (solid) */}
+                                <line
+                                    x1={pos.x}
+                                    y1={pos.y}
+                                    x2={lineEndX}
+                                    y2={lineEndY}
+                                    stroke={color}
+                                    strokeWidth={2}
+                                />
+
+                                {/* Weapon symbol from SVG */}
+                                <path
+                                    d={svgPath}
+                                    fill={color}
+                                    fillOpacity={1}
+                                    transform={`translate(${pos.x}, ${pos.y}) scale(${symbolScale}) translate(-105, -150)`}
+                                />
+                            </g>
+                        );
+                    } else {
+                        // Hostile weapon: use hostile missile SVG
+                        const symbolScale = 0.114; // Same scale as friendly to match size = 12
+                        const hostileSvgPath = "m 93.421108,236.66603 c -1.6247,-11.61773 -3.41622,-24.52041 -3.70161,-26.65915 l -0.36522,-2.73702 0.68945,-0.81475 c 0.3792,-0.44811 2.56128,-3.14551 4.84906,-5.99423 l 4.1596,-5.17949 0.008,-3.96875 c 0.005,-2.18281 0.1817,-11.52921 0.39344,-20.76979 0.21175,-9.24057 0.50916,-23.05182 0.660912,-30.69166 0.15176,-7.63985 0.33243,-15.60154 0.40149,-17.69265 l 0.12555,-3.80202 1.8253,-3.07715 c 2.50611,-4.22488 10.50522,-18.272 10.90655,-19.152807 0.32179,-0.70625 0.35356,-0.66925 2.16392,2.520067 2.41668,4.25748 8.07682,13.95299 10.01015,17.14686 l 1.53324,2.53292 0.53984,19.82437 c 0.54995,20.19548 0.86619,31.43407 1.36133,48.37886 0.15276,5.22748 0.38924,9.71285 0.52553,9.96751 0.13628,0.25465 0.51643,0.68665 0.84477,0.96 0.32835,0.27336 2.53911,2.46742 4.9128,4.8757 l 4.31582,4.37869 -1.22493,11.48284 c -0.67372,6.31556 -1.42521,13.18836 -1.66999,15.27288 l -0.44505,3.79004 -10.84791,-10.59351 -10.84792,-10.59351 -2.78783,2.83472 c -2.57188,2.61515 -12.811472,13.26599 -16.566502,17.23187 l -1.60691,1.69714 -0.16334,-1.16798 z m 13.451662,-23.92129 7.40833,-7.75458 7.85947,7.83208 c 5.06036,5.04273 7.90194,7.69556 7.97871,7.44874 0.0656,-0.21083 0.31221,-2.28834 0.54804,-4.61667 0.23584,-2.32833 0.49458,-4.71185 0.57498,-5.2967 0.14456,-1.05158 0.11925,-1.0897 -2.2835,-3.43958 -1.33632,-1.30692 -3.46474,-3.50813 -4.72982,-4.89158 l -2.30014,-2.51536 -0.46446,-20.90027 c -0.25545,-11.49514 -0.57243,-24.82932 -0.7044,-29.63151 -0.13197,-4.80219 -0.32183,-13.36557 -0.42189,-19.02974 l -0.18195,-10.2985 -1.00877,-1.74004 c -0.55482,-0.95703 -1.93624,-3.37456 -3.06981,-5.37229 -1.13357,-1.99773 -2.14139,-3.63484 -2.2396,-3.63802 -0.0982,-0.003 -0.79981,1.09555 -1.55914,2.44161 -0.75932,1.34607 -2.12415,3.75709 -3.03294,5.35782 l -1.65236,2.91041 -0.17308,10.31875 c -0.2832,16.88441 -0.64138,36.57292 -0.96747,53.18125 l -0.3065,15.61042 -0.82234,1.05833 c -0.45229,0.58208 -2.39847,2.98231 -4.32484,5.33383 l -3.502502,4.27549 0.65832,4.98492 c 0.74331,5.62853 0.84438,6.18561 1.11593,6.15066 0.10637,-0.0137 3.527152,-3.51445 7.601732,-7.77947 z M 40.859228,157.4562 c 0,-30.15835 0.0334,-32.64889 0.44209,-32.9846 0.51301,-0.42137 8.99644,-9.52769 27.07458,-29.062477 7.05776,-7.626446 16.16604,-17.45176 20.24062,-21.834035 4.07459,-4.382275 10.26583,-11.049304 13.758332,-14.815616 10.16582,-10.962822 11.56005,-12.438485 11.7521,-12.438485 0.34853,0 36.05794,38.06357 59.58149,63.509423 2.4167,2.61419 6.55412,7.06761 9.19427,9.89648 l 4.80026,5.14341 v 32.60547 32.60547 l -1.78593,-0.50167 c -0.98227,-0.27592 -2.8575,-0.78446 -4.16719,-1.13009 l -2.38125,-0.62842 -0.0673,-29.84569 -0.0673,-29.8457 -1.12334,-1.21964 c -1.57488,-1.7099 -13.53295,-14.58011 -20.17334,-21.71213 -3.05594,-3.28219 -10.25922,-11.021997 -16.00729,-17.199574 -13.67552,-14.697381 -27.5661,-29.487906 -27.77854,-29.578272 -0.0928,-0.03947 -1.70894,1.625685 -3.59144,3.700346 -1.8825,2.074659 -4.43476,4.847791 -5.67169,6.162513 -1.23692,1.314723 -4.987392,5.362686 -8.334372,8.995471 -7.46324,8.100543 -14.41222,15.614019 -22.75416,24.602566 -6.59291,7.10394 -11.46667,12.3914 -16.22051,17.59732 -1.52816,1.67349 -4.01034,4.3664 -5.51596,5.98424 l -2.73749,2.94152 v 29.67667 c 0,24.17431 -0.0641,29.70126 -0.34551,29.80926 -0.19003,0.0729 -2.09503,0.59499 -4.23333,1.16015 l -3.88783,1.02756 z";
+
+                        return (
+                            <g key={`weapon-${wpn.id}`}>
+                                {/* Direction of travel line (solid) */}
+                                <line
+                                    x1={pos.x}
+                                    y1={pos.y}
+                                    x2={lineEndX}
+                                    y2={lineEndY}
+                                    stroke={color}
+                                    strokeWidth={2}
+                                />
+
+                                {/* Hostile weapon symbol from SVG */}
+                                <path
+                                    d={hostileSvgPath}
+                                    fill={color}
+                                    fillOpacity={1}
+                                    transform={`translate(${pos.x}, ${pos.y}) scale(${symbolScale}) translate(-105, -150)`}
+                                />
+                            </g>
+                        );
+                    }
                 })}
             </g>
         );
@@ -4480,6 +4587,8 @@ function AICSimulator() {
                 fireWeapon={fireWeapon}
                 selectedTargetAssetId={selectedTargetAssetId}
                 setSelectedTargetAssetId={setSelectedTargetAssetId}
+                selectedWeaponType={selectedWeaponType}
+                setSelectedWeaponType={setSelectedWeaponType}
                 weaponConfigs={weaponConfigs}
             />
 
@@ -4503,6 +4612,8 @@ function AICSimulator() {
                     weaponInventory={weaponInventory}
                     weaponConfigs={weaponConfigs}
                     fireWeapon={fireWeapon}
+                    setSelectedTargetAssetId={setSelectedTargetAssetId}
+                    setSelectedWeaponType={setSelectedWeaponType}
                 />
             )}
 
@@ -4923,6 +5034,7 @@ function ControlPanel({
     weapons,
     fireWeapon,
     selectedTargetAssetId, setSelectedTargetAssetId,
+    selectedWeaponType, setSelectedWeaponType,
     weaponConfigs
 }) {
     const [editValues, setEditValues] = useState({});
@@ -6344,25 +6456,56 @@ function ControlPanel({
                                 <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '10px', fontWeight: 'bold' }}>
                                     WEAPON INVENTORY
                                 </div>
-                                {Object.entries(weaponInventory).map(([weaponType, count]) => (
-                                    <div key={weaponType} style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        padding: '8px',
-                                        marginBottom: '5px',
-                                        background: '#2a2a2a',
-                                        borderRadius: '3px'
-                                    }}>
-                                        <span style={{ fontSize: '10px', color: '#00FF00' }}>{weaponType}</span>
-                                        <span style={{
-                                            fontSize: '12px',
-                                            fontWeight: 'bold',
-                                            color: count > 0 ? '#00FF00' : '#FF0000'
-                                        }}>
-                                            {count}
-                                        </span>
-                                    </div>
-                                ))}
+                                {(() => {
+                                    const ownship = assets.find(a => a.type === 'ownship');
+                                    if (!ownship || !ownship.platform || !ownship.platform.weapons) {
+                                        return Object.entries(weaponInventory).map(([weaponType, count]) => (
+                                            <div key={weaponType} style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                padding: '8px',
+                                                marginBottom: '5px',
+                                                background: '#2a2a2a',
+                                                borderRadius: '3px'
+                                            }}>
+                                                <span style={{ fontSize: '10px', color: '#00FF00' }}>{weaponType}</span>
+                                                <span style={{
+                                                    fontSize: '12px',
+                                                    fontWeight: 'bold',
+                                                    color: count > 0 ? '#00FF00' : '#FF0000'
+                                                }}>
+                                                    {count}
+                                                </span>
+                                            </div>
+                                        ));
+                                    }
+
+                                    const ownshipWeaponTypes = new Set(
+                                        ownship.platform.weapons.map(weaponName => classifyWeaponType(weaponName, weaponConfigs)).filter(t => t !== null)
+                                    );
+
+                                    return Object.entries(weaponInventory)
+                                        .filter(([weaponType]) => ownshipWeaponTypes.has(weaponType))
+                                        .map(([weaponType, count]) => (
+                                            <div key={weaponType} style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                padding: '8px',
+                                                marginBottom: '5px',
+                                                background: '#2a2a2a',
+                                                borderRadius: '3px'
+                                            }}>
+                                                <span style={{ fontSize: '10px', color: '#00FF00' }}>{weaponType}</span>
+                                                <span style={{
+                                                    fontSize: '12px',
+                                                    fontWeight: 'bold',
+                                                    color: count > 0 ? '#00FF00' : '#FF0000'
+                                                }}>
+                                                    {count}
+                                                </span>
+                                            </div>
+                                        ));
+                                })()}
                             </div>
 
                             {/* Fire Buttons */}
@@ -6370,73 +6513,137 @@ function ControlPanel({
                                 <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '10px', fontWeight: 'bold' }}>
                                     FIRE CONTROLS
                                 </div>
-                                {Object.entries(weaponInventory).map(([weaponType, count]) => {
-                                    const isTargeted = selectedTargetAssetId !== null && selectedWeaponType === weaponType;
-                                    const canFire = weaponEnabled && weaponArmed && count > 0 && isTargeted;
-                                    const buttonColor = isTargeted ? '#00FF00' : '#FFFF00';
+                                {(() => {
+                                    const ownship = assets.find(a => a.type === 'ownship');
+                                    if (!ownship || !ownship.platform || !ownship.platform.weapons) {
+                                        return Object.entries(weaponInventory).map(([weaponType, count]) => {
+                                            const isTargeted = selectedTargetAssetId !== null && selectedWeaponType === weaponType;
+                                            const isReady = weaponEnabled && weaponArmed && count > 0;
+                                            const canFire = isReady && isTargeted;
+                                            const buttonColor = isTargeted ? '#00FF00' : (isReady ? '#FFFF00' : '#666');
 
-                                    return (
-                                        <button
-                                            key={weaponType}
-                                            className="control-btn"
-                                            disabled={!canFire}
-                                            onClick={() => {
-                                                if (canFire) {
-                                                    const ownship = assets.find(a => a.type === 'ownship');
-                                                    if (ownship) {
-                                                        fireWeapon(ownship.id, selectedTargetAssetId, weaponType);
-                                                        // Clear target and weapon selection after firing
-                                                        setSelectedTargetAssetId(null);
-                                                        setSelectedWeaponType(null);
-                                                    }
-                                                }
-                                            }}
-                                            style={{
-                                                width: '100%',
-                                                marginBottom: '8px',
-                                                backgroundColor: canFire ? buttonColor : '#444',
-                                                color: canFire ? '#000' : '#666',
-                                                border: `2px solid ${buttonColor}`,
-                                                opacity: canFire ? 1 : 0.4,
-                                                cursor: canFire ? 'pointer' : 'not-allowed',
-                                                fontWeight: 'bold'
-                                            }}
-                                        >
-                                            FIRE {weaponType}
-                                        </button>
+                                            return (
+                                                <button
+                                                    key={weaponType}
+                                                    className="control-btn"
+                                                    disabled={!canFire}
+                                                    onClick={() => {
+                                                        if (canFire) {
+                                                            const ownship = assets.find(a => a.type === 'ownship');
+                                                            if (ownship) {
+                                                                fireWeapon(ownship.id, selectedTargetAssetId, weaponType);
+                                                                setSelectedTargetAssetId(null);
+                                                                setSelectedWeaponType(null);
+                                                            }
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        width: '100%',
+                                                        marginBottom: '8px',
+                                                        backgroundColor: canFire ? buttonColor : '#444',
+                                                        color: canFire ? '#000' : (isReady ? '#FFFF00' : '#666'),
+                                                        border: `2px solid ${buttonColor}`,
+                                                        opacity: canFire ? 1 : (isReady ? 0.7 : 0.4),
+                                                        cursor: canFire ? 'pointer' : 'not-allowed',
+                                                        fontWeight: 'bold'
+                                                    }}
+                                                >
+                                                    FIRE {weaponType}
+                                                </button>
+                                            );
+                                        });
+                                    }
+
+                                    const ownshipWeaponTypes = new Set(
+                                        ownship.platform.weapons.map(weaponName => classifyWeaponType(weaponName, weaponConfigs)).filter(t => t !== null)
                                     );
-                                })}
+
+                                    return Object.entries(weaponInventory)
+                                        .filter(([weaponType]) => ownshipWeaponTypes.has(weaponType))
+                                        .map(([weaponType, count]) => {
+                                            const isTargeted = selectedTargetAssetId !== null && selectedWeaponType === weaponType;
+                                            const isReady = weaponEnabled && weaponArmed && count > 0;
+                                            const canFire = isReady && isTargeted;
+                                            const buttonColor = isTargeted ? '#00FF00' : (isReady ? '#FFFF00' : '#666');
+
+                                            return (
+                                                <button
+                                                    key={weaponType}
+                                                    className="control-btn"
+                                                    disabled={!canFire}
+                                                    onClick={() => {
+                                                        if (canFire) {
+                                                            fireWeapon(ownship.id, selectedTargetAssetId, weaponType);
+                                                            setSelectedTargetAssetId(null);
+                                                            setSelectedWeaponType(null);
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        width: '100%',
+                                                        marginBottom: '8px',
+                                                        backgroundColor: canFire ? buttonColor : '#444',
+                                                        color: canFire ? '#000' : (isReady ? '#FFFF00' : '#666'),
+                                                        border: `2px solid ${buttonColor}`,
+                                                        opacity: canFire ? 1 : (isReady ? 0.7 : 0.4),
+                                                        cursor: canFire ? 'pointer' : 'not-allowed',
+                                                        fontWeight: 'bold'
+                                                    }}
+                                                >
+                                                    FIRE {weaponType}
+                                                </button>
+                                            );
+                                        });
+                                })()}
                             </div>
 
                             {/* Active Weapons List */}
-                            {weapons.length > 0 && (
-                                <div style={{ marginTop: '20px' }}>
-                                    <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '5px', fontWeight: 'bold' }}>
-                                        ACTIVE WEAPONS ({weapons.length})
-                                    </div>
-                                    <div style={{ maxHeight: '150px', overflowY: 'auto', background: '#2a2a2a', borderRadius: '3px', padding: '5px' }}>
-                                        {weapons.map(wpn => {
-                                            const target = assets.find(a => a.id === wpn.targetId);
-                                            const timeInFlight = Math.floor(missionTime - wpn.launchTime);
+                            {(() => {
+                                const ownship = assets.find(a => a.type === 'ownship');
+                                if (!ownship) return null;
 
-                                            return (
-                                                <div key={wpn.id} style={{
-                                                    padding: '5px',
-                                                    marginBottom: '3px',
-                                                    background: '#1a1a1a',
-                                                    borderRadius: '2px',
-                                                    fontSize: '9px',
-                                                    color: wpn.affiliation === 'friendly' ? '#00BFFF' : '#FF0000'
-                                                }}>
-                                                    <div style={{ fontWeight: 'bold' }}>{wpn.weaponType} #{wpn.id}</div>
-                                                    <div style={{ opacity: 0.7 }}>Target: {target ? target.name : 'LOST'}</div>
-                                                    <div style={{ opacity: 0.7 }}>TOF: {timeInFlight}s</div>
-                                                </div>
-                                            );
-                                        })}
+                                const ownshipWeapons = weapons.filter(wpn => wpn.firingAssetId === ownship.id);
+
+                                if (ownshipWeapons.length === 0) return null;
+
+                                return (
+                                    <div style={{ marginTop: '20px' }}>
+                                        <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '5px', fontWeight: 'bold' }}>
+                                            ACTIVE WEAPONS ({ownshipWeapons.length})
+                                        </div>
+                                        <div style={{ maxHeight: '150px', overflowY: 'auto', background: '#2a2a2a', borderRadius: '3px', padding: '5px' }}>
+                                            {ownshipWeapons.map(wpn => {
+                                                const target = assets.find(a => a.id === wpn.targetId);
+
+                                                // Calculate time remaining (countdown)
+                                                const configKey = wpn.weaponName || wpn.weaponType;
+                                                const config = weaponConfigs[configKey];
+
+                                                let timeRemaining = 0;
+                                                if (config && target) {
+                                                    const currentRange = calculateDistance(wpn.lat, wpn.lon, target.lat, target.lon);
+                                                    const speedInNmPerSec = wpn.speed / 3600;
+                                                    timeRemaining = Math.max(0, Math.floor(currentRange / speedInNmPerSec));
+                                                }
+
+                                                return (
+                                                    <div key={wpn.id} style={{
+                                                        padding: '5px',
+                                                        marginBottom: '3px',
+                                                        background: '#1a1a1a',
+                                                        borderRadius: '2px',
+                                                        fontSize: '9px',
+                                                        color: wpn.affiliation === 'friendly' ? '#00BFFF' : '#FF0000'
+                                                    }}>
+                                                        <div style={{ fontWeight: 'bold' }}>{wpn.weaponType} #{wpn.id}</div>
+                                                        <div style={{ opacity: 0.7 }}>Target: {target ? target.name : 'LOST'}</div>
+                                                        <div style={{ opacity: 0.7 }}>TTI: {timeRemaining}s</div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                </div>
-                            )}
+                                );
+                            })()}
                         </div>
                     )}
                 </div>
@@ -8278,7 +8485,7 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType }) {
     const [showDomainSubmenu, setShowDomainSubmenu] = useState(false);
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
     const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
