@@ -3,9 +3,9 @@
     {
       "name": "Ownship",
       "domain": "air",
-      "weapons": ["AGM-84 Harpoon", "Mk 46 Torpedo", "AIM-120 AMRAAM"],
+      "weapons": ["AGM-84 Harpoon", "Mk 46 Torpedo"],
       "emitters": ["APY-10", "APS-145"],
-      "numberOfAAM": 6,
+      "numberOfAAM": 0,
       "numberOfAGM": 0,
       "numberOfASM": 4,
       "numberOfSAM": 0,
