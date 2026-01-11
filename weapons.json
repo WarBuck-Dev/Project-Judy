@@ -1,14 +1,5 @@
 {
-  "ASM": {
-    "name": "AGM-84 Harpoon",
-    "type": "ASM",
-    "maxSpeed": 537,
-    "maxRange": 67,
-    "targetType": "surface",
-    "maxAcceleration": 50,
-    "symbol": "missile"
-  },
-  "AAM": {
+  "AIM-120 AMRAAM": {
     "name": "AIM-120 AMRAAM",
     "type": "AAM",
     "maxSpeed": 2500,
@@ -17,7 +8,70 @@
     "maxAcceleration": 300,
     "symbol": "missile"
   },
-  "AGM": {
+  "AIM-9 Sidewinder": {
+    "name": "AIM-9 Sidewinder",
+    "type": "AAM",
+    "maxSpeed": 1700,
+    "maxRange": 18,
+    "targetType": "air",
+    "maxAcceleration": 250,
+    "symbol": "missile"
+  },
+  "AIM-7 Sparrow": {
+    "name": "AIM-7 Sparrow",
+    "type": "AAM",
+    "maxSpeed": 2660,
+    "maxRange": 50,
+    "targetType": "air",
+    "maxAcceleration": 290,
+    "symbol": "missile"
+  },
+  "AIM-54 Phoenix": {
+    "name": "AIM-54 Phoenix",
+    "type": "AAM",
+    "maxSpeed": 3000,
+    "maxRange": 100,
+    "targetType": "air",
+    "maxAcceleration": 320,
+    "symbol": "missile"
+  },
+  "R-27 (AA-10)": {
+    "name": "R-27 (AA-10)",
+    "type": "AAM",
+    "maxSpeed": 2300,
+    "maxRange": 43,
+    "targetType": "air",
+    "maxAcceleration": 280,
+    "symbol": "missile"
+  },
+  "R-73 (AA-11)": {
+    "name": "R-73 (AA-11)",
+    "type": "AAM",
+    "maxSpeed": 1700,
+    "maxRange": 16,
+    "targetType": "air",
+    "maxAcceleration": 260,
+    "symbol": "missile"
+  },
+  "R-60 (AA-8)": {
+    "name": "R-60 (AA-8)",
+    "type": "AAM",
+    "maxSpeed": 1650,
+    "maxRange": 5,
+    "targetType": "air",
+    "maxAcceleration": 240,
+    "symbol": "missile"
+  },
+  "R-3S (AA-2)": {
+    "name": "R-3S (AA-2)",
+    "type": "AAM",
+    "maxSpeed": 1500,
+    "maxRange": 4,
+    "targetType": "air",
+    "maxAcceleration": 220,
+    "symbol": "missile"
+  },
+  "AGM-65 Maverick": {
     "name": "AGM-65 Maverick",
     "type": "AGM",
     "maxSpeed": 684,
@@ -26,7 +80,142 @@
     "maxAcceleration": 60,
     "symbol": "missile"
   },
-  "SAM": {
+  "Kh-25": {
+    "name": "Kh-25",
+    "type": "AGM",
+    "maxSpeed": 715,
+    "maxRange": 6,
+    "targetType": "surface",
+    "maxAcceleration": 55,
+    "symbol": "missile"
+  },
+  "Kh-55": {
+    "name": "Kh-55",
+    "type": "AGM",
+    "maxSpeed": 537,
+    "maxRange": 1500,
+    "targetType": "surface",
+    "maxAcceleration": 40,
+    "symbol": "missile"
+  },
+  "Kh-101": {
+    "name": "Kh-101",
+    "type": "AGM",
+    "maxSpeed": 600,
+    "maxRange": 2800,
+    "targetType": "surface",
+    "maxAcceleration": 45,
+    "symbol": "missile"
+  },
+  "FAB-500": {
+    "name": "FAB-500",
+    "type": "AGM",
+    "maxSpeed": 200,
+    "maxRange": 1,
+    "targetType": "surface",
+    "maxAcceleration": 20,
+    "symbol": "missile"
+  },
+  "AGM-84 Harpoon": {
+    "name": "AGM-84 Harpoon",
+    "type": "ASM",
+    "maxSpeed": 537,
+    "maxRange": 67,
+    "targetType": "surface",
+    "maxAcceleration": 50,
+    "symbol": "missile"
+  },
+  "Harpoon": {
+    "name": "Harpoon",
+    "type": "ASM",
+    "maxSpeed": 537,
+    "maxRange": 67,
+    "targetType": "surface",
+    "maxAcceleration": 50,
+    "symbol": "missile"
+  },
+  "C-802": {
+    "name": "C-802",
+    "type": "ASM",
+    "maxSpeed": 590,
+    "maxRange": 75,
+    "targetType": "surface",
+    "maxAcceleration": 55,
+    "symbol": "missile"
+  },
+  "C-701": {
+    "name": "C-701",
+    "type": "ASM",
+    "maxSpeed": 590,
+    "maxRange": 15,
+    "targetType": "surface",
+    "maxAcceleration": 50,
+    "symbol": "missile"
+  },
+  "HY-2": {
+    "name": "HY-2",
+    "type": "ASM",
+    "maxSpeed": 590,
+    "maxRange": 54,
+    "targetType": "surface",
+    "maxAcceleration": 52,
+    "symbol": "missile"
+  },
+  "SS-N-2 Styx": {
+    "name": "SS-N-2 Styx",
+    "type": "ASM",
+    "maxSpeed": 590,
+    "maxRange": 46,
+    "targetType": "surface",
+    "maxAcceleration": 50,
+    "symbol": "missile"
+  },
+  "SS-N-9": {
+    "name": "SS-N-9",
+    "type": "ASM",
+    "maxSpeed": 590,
+    "maxRange": 65,
+    "targetType": "surface",
+    "maxAcceleration": 55,
+    "symbol": "missile"
+  },
+  "SS-N-14": {
+    "name": "SS-N-14",
+    "type": "ASM",
+    "maxSpeed": 590,
+    "maxRange": 30,
+    "targetType": "surface",
+    "maxAcceleration": 50,
+    "symbol": "missile"
+  },
+  "SS-N-22": {
+    "name": "SS-N-22",
+    "type": "ASM",
+    "maxSpeed": 1470,
+    "maxRange": 75,
+    "targetType": "surface",
+    "maxAcceleration": 120,
+    "symbol": "missile"
+  },
+  "3M-54 Klub": {
+    "name": "3M-54 Klub",
+    "type": "ASM",
+    "maxSpeed": 1470,
+    "maxRange": 135,
+    "targetType": "surface",
+    "maxAcceleration": 110,
+    "symbol": "missile"
+  },
+  "SM-1": {
+    "name": "SM-1",
+    "type": "SAM",
+    "maxSpeed": 2660,
+    "maxRange": 25,
+    "targetType": "air",
+    "maxAcceleration": 350,
+    "symbol": "missile"
+  },
+  "RIM-7 Sea Sparrow": {
     "name": "RIM-7 Sea Sparrow",
     "type": "SAM",
     "maxSpeed": 2660,
@@ -35,13 +224,58 @@
     "maxAcceleration": 350,
     "symbol": "missile"
   },
-  "Torpedo": {
+  "SA-N-4": {
+    "name": "SA-N-4",
+    "type": "SAM",
+    "maxSpeed": 1900,
+    "maxRange": 9,
+    "targetType": "air",
+    "maxAcceleration": 300,
+    "symbol": "missile"
+  },
+  "SA-N-7": {
+    "name": "SA-N-7",
+    "type": "SAM",
+    "maxSpeed": 2660,
+    "maxRange": 15,
+    "targetType": "air",
+    "maxAcceleration": 340,
+    "symbol": "missile"
+  },
+  "SA-N-9": {
+    "name": "SA-N-9",
+    "type": "SAM",
+    "maxSpeed": 2100,
+    "maxRange": 7,
+    "targetType": "air",
+    "maxAcceleration": 310,
+    "symbol": "missile"
+  },
+  "Mk 46 Torpedo": {
     "name": "Mk 46 Torpedo",
     "type": "Torpedo",
     "maxSpeed": 45,
     "maxRange": 6,
     "targetType": "subSurface",
     "maxAcceleration": 5,
+    "symbol": "torpedo"
+  },
+  "53-65 Torpedo": {
+    "name": "53-65 Torpedo",
+    "type": "Torpedo",
+    "maxSpeed": 40,
+    "maxRange": 11,
+    "targetType": "subSurface",
+    "maxAcceleration": 4,
+    "symbol": "torpedo"
+  },
+  "53-56 Torpedo": {
+    "name": "53-56 Torpedo",
+    "type": "Torpedo",
+    "maxSpeed": 35,
+    "maxRange": 7,
+    "targetType": "subSurface",
+    "maxAcceleration": 4,
     "symbol": "torpedo"
   }
 }

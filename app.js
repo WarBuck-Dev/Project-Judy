@@ -165,18 +165,32 @@ function getWeaponTabColor(enabled, armed) {
     return '#00FF00';                // GREEN when ON and ARMED
 }
 
+// Helper function to classify weapon name to type
+function classifyWeaponType(weaponName) {
+    if (weaponName.includes('AIM-') || weaponName.includes('R-')) return 'AAM';
+    if (weaponName.includes('AGM-') || weaponName.includes('Kh-') || weaponName.includes('Maverick') || weaponName.includes('FAB-')) return 'AGM';
+    if (weaponName.includes('Harpoon') || weaponName.includes('C-802') || weaponName.includes('SS-N-') ||
+        weaponName.includes('HY-') || weaponName.includes('C-701') || weaponName.includes('3M-54') ||
+        weaponName.includes('Klub')) return 'ASM';
+    if (weaponName.includes('SM-') || weaponName.includes('SA-N-') || weaponName.includes('RIM-')) return 'SAM';
+    if (weaponName.includes('Torpedo') || weaponName.includes('53-') || weaponName.includes('Mk 46') ||
+        weaponName.includes('Mk 50')) return 'Torpedo';
+    return null;
+}
+
 // Check if weapon can engage target domain
 function canEngageTarget(weaponType, targetDomain, weaponConfigs) {
-    const config = weaponConfigs[weaponType];
-    if (!config) return false;
+    // Find first weapon of this type to check targetType
+    const sampleWeapon = Object.values(weaponConfigs).find(w => w.type === weaponType);
+    if (!sampleWeapon) return false;
 
-    const domainToTargetType = {
-        'air': 'air',
-        'surface': 'surface',
-        'subSurface': 'subSurface'
-    };
+    const targetType = sampleWeapon.targetType;
 
-    return config.targetType === domainToTargetType[targetDomain];
+    if (targetType === 'air' && targetDomain === 'air') return true;
+    if (targetType === 'surface' && (targetDomain === 'surface' || targetDomain === 'subSurface')) return true;
+    if (targetType === 'subSurface' && targetDomain === 'subSurface') return true;
+
+    return false;
 }
 
 // Get available weapons for engagement
@@ -187,14 +201,10 @@ function getAvailableWeapons(firingAsset, targetAsset, weaponInventory, weaponCo
     if (firingAsset.type === 'ownship') {
         weaponList = Object.keys(weaponInventory).filter(key => weaponInventory[key] > 0);
     } else if (firingAsset.platform?.weapons) {
-        weaponList = firingAsset.platform.weapons.map(weaponName => {
-            if (weaponName.includes('AIM-') || weaponName.includes('R-')) return 'AAM';
-            if (weaponName.includes('AGM-') || weaponName.includes('Kh-') || weaponName.includes('Maverick')) return 'AGM';
-            if (weaponName.includes('Harpoon') || weaponName.includes('C-802') || weaponName.includes('SS-N-') || weaponName.includes('HY-')) return 'ASM';
-            if (weaponName.includes('SM-') || weaponName.includes('SA-N-')) return 'SAM';
-            if (weaponName.includes('Torpedo') || weaponName.includes('53-')) return 'Torpedo';
-            return null;
-        }).filter(w => w !== null);
+        // Use helper function instead of inline pattern matching
+        weaponList = firingAsset.platform.weapons
+            .map(weaponName => classifyWeaponType(weaponName))
+            .filter(w => w !== null);
     }
 
     for (const weaponType of weaponList) {
@@ -660,7 +670,9 @@ function AICSimulator() {
                 const distance = calculateDistance(weapon.lat, weapon.lon, target.lat, target.lon);
 
                 // Accelerate to max speed
-                const config = weaponConfigs[weapon.weaponType];
+                // Use weaponName if available (new system), fallback to weaponType (old saves)
+                const configKey = weapon.weaponName || weapon.weaponType;
+                const config = weaponConfigs[configKey];
                 if (config && weapon.speed < config.maxSpeed) {
                     const accel = Math.min(config.maxAcceleration * deltaTime, config.maxSpeed - weapon.speed);
                     updated.speed = weapon.speed + accel;
@@ -1203,23 +1215,29 @@ function AICSimulator() {
                 ASM: 0, AAM: 0, AGM: 0, SAM: 0, Torpedo: 0
             };
 
-            platform.weapons.forEach(weaponName => {
-                if (weaponName.includes('AIM-') || weaponName.includes('Sidewinder') || weaponName.includes('AMRAAM') || weaponName.includes('Phoenix') || weaponName.includes('Sparrow') || weaponName.includes('R-')) {
-                    initialInventory.AAM += 4;
-                }
-                if (weaponName.includes('Harpoon') || weaponName.includes('AGM-84')) {
-                    initialInventory.ASM += 2;
-                }
-                if (weaponName.includes('AGM-65') || weaponName.includes('Maverick')) {
-                    initialInventory.AGM += 2;
-                }
-                if (weaponName.includes('Torpedo') || weaponName.includes('Mk 46') || weaponName.includes('Mk 50')) {
-                    initialInventory.Torpedo += 4;
-                }
-                if (weaponName.includes('SM-') || weaponName.includes('RIM-') || weaponName.includes('Sea Sparrow')) {
-                    initialInventory.SAM += 4;
-                }
-            });
+            // NEW SYSTEM: Check if platform has numberOfX attributes
+            if (platform.numberOfAAM !== undefined || platform.numberOfAGM !== undefined ||
+                platform.numberOfASM !== undefined || platform.numberOfSAM !== undefined ||
+                platform.numberOfTorpedo !== undefined) {
+
+                // Use platform-specified counts
+                initialInventory.AAM = platform.numberOfAAM || 0;
+                initialInventory.AGM = platform.numberOfAGM || 0;
+                initialInventory.ASM = platform.numberOfASM || 0;
+                initialInventory.SAM = platform.numberOfSAM || 0;
+                initialInventory.Torpedo = platform.numberOfTorpedo || 0;
+
+            } else {
+                // BACKWARD COMPATIBILITY: Use old pattern matching
+                platform.weapons.forEach(weaponName => {
+                    const weaponType = classifyWeaponType(weaponName);
+                    if (weaponType === 'AAM') initialInventory.AAM += 4;
+                    if (weaponType === 'ASM') initialInventory.ASM += 2;
+                    if (weaponType === 'AGM') initialInventory.AGM += 2;
+                    if (weaponType === 'Torpedo') initialInventory.Torpedo += 4;
+                    if (weaponType === 'SAM') initialInventory.SAM += 4;
+                });
+            }
 
             setWeaponInventory(initialInventory);
         }
@@ -1288,10 +1306,30 @@ function AICSimulator() {
 
         if (!firingAsset || !targetAsset) return;
 
-        const range = calculateDistance(firingAsset.lat, firingAsset.lon, targetAsset.lat, targetAsset.lon);
-        const config = weaponConfigs[weaponType];
+        // === NEW: SELECT WEAPON VARIANT ===
+        let selectedWeaponName = null;
 
-        if (!config) return;
+        // For both ownship and non-ownship: Select FIRST weapon variant from platform that matches type
+        if (firingAsset.platform?.weapons) {
+            selectedWeaponName = firingAsset.platform.weapons.find(weaponName => {
+                const config = weaponConfigs[weaponName];
+                return config && config.type === weaponType;
+            });
+        }
+
+        if (!selectedWeaponName) {
+            console.warn(`No weapon variant found for type ${weaponType}`);
+            return;
+        }
+
+        const config = weaponConfigs[selectedWeaponName];
+        if (!config) {
+            console.warn(`Weapon config not found for ${selectedWeaponName}`);
+            return;
+        }
+        // === END NEW CODE ===
+
+        const range = calculateDistance(firingAsset.lat, firingAsset.lon, targetAsset.lat, targetAsset.lon);
 
         if (range > config.maxRange) {
             setShowRangeWarning(true);
@@ -1303,7 +1341,8 @@ function AICSimulator() {
 
         const newWeapon = {
             id: nextWeaponId,
-            weaponType: weaponType,
+            weaponType: weaponType,              // Keep for UI/inventory tracking
+            weaponName: selectedWeaponName,      // NEW: Store actual weapon variant
             lat: firingAsset.lat,
             lon: firingAsset.lon,
             heading: calculateBearing(firingAsset.lat, firingAsset.lon, targetAsset.lat, targetAsset.lon),
