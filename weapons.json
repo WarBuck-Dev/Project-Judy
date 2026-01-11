@@ -6,7 +6,11 @@
     "maxRange": 75,
     "targetType": "air",
     "maxAcceleration": 300,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 130,
+    "boosterTime": 15,
+    "boosterAcceleration": 600,
+    "selfDestructTime": 260
   },
   "AIM-9 Sidewinder": {
     "name": "AIM-9 Sidewinder",
@@ -15,7 +19,11 @@
     "maxRange": 18,
     "targetType": "air",
     "maxAcceleration": 250,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 46,
+    "boosterTime": 8,
+    "boosterAcceleration": 500,
+    "selfDestructTime": 92
   },
   "AIM-7 Sparrow": {
     "name": "AIM-7 Sparrow",
@@ -24,7 +32,11 @@
     "maxRange": 50,
     "targetType": "air",
     "maxAcceleration": 290,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 81,
+    "boosterTime": 12,
+    "boosterAcceleration": 580,
+    "selfDestructTime": 162
   },
   "AIM-54 Phoenix": {
     "name": "AIM-54 Phoenix",
@@ -33,7 +45,11 @@
     "maxRange": 100,
     "targetType": "air",
     "maxAcceleration": 320,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 144,
+    "boosterTime": 18,
+    "boosterAcceleration": 640,
+    "selfDestructTime": 288
   },
   "R-27 (AA-10)": {
     "name": "R-27 (AA-10)",
@@ -42,7 +58,11 @@
     "maxRange": 43,
     "targetType": "air",
     "maxAcceleration": 280,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 81,
+    "boosterTime": 12,
+    "boosterAcceleration": 560,
+    "selfDestructTime": 162
   },
   "R-73 (AA-11)": {
     "name": "R-73 (AA-11)",
@@ -51,7 +71,11 @@
     "maxRange": 16,
     "targetType": "air",
     "maxAcceleration": 260,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 41,
+    "boosterTime": 7,
+    "boosterAcceleration": 520,
+    "selfDestructTime": 82
   },
   "R-60 (AA-8)": {
     "name": "R-60 (AA-8)",
@@ -60,7 +84,11 @@
     "maxRange": 5,
     "targetType": "air",
     "maxAcceleration": 240,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 13,
+    "boosterTime": 3,
+    "boosterAcceleration": 480,
+    "selfDestructTime": 26
   },
   "R-3S (AA-2)": {
     "name": "R-3S (AA-2)",
@@ -69,7 +97,11 @@
     "maxRange": 4,
     "targetType": "air",
     "maxAcceleration": 220,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 12,
+    "boosterTime": 3,
+    "boosterAcceleration": 440,
+    "selfDestructTime": 24
   },
   "AGM-65 Maverick": {
     "name": "AGM-65 Maverick",
@@ -78,7 +110,11 @@
     "maxRange": 14,
     "targetType": "surface",
     "maxAcceleration": 60,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 88,
+    "boosterTime": 12,
+    "boosterAcceleration": 120,
+    "selfDestructTime": 176
   },
   "Kh-25": {
     "name": "Kh-25",
@@ -87,7 +123,11 @@
     "maxRange": 6,
     "targetType": "surface",
     "maxAcceleration": 55,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 36,
+    "boosterTime": 6,
+    "boosterAcceleration": 110,
+    "selfDestructTime": 72
   },
   "Kh-55": {
     "name": "Kh-55",
@@ -96,7 +136,11 @@
     "maxRange": 1500,
     "targetType": "surface",
     "maxAcceleration": 40,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 12060,
+    "boosterTime": 120,
+    "boosterAcceleration": 80,
+    "selfDestructTime": 24120
   },
   "Kh-101": {
     "name": "Kh-101",
@@ -105,7 +149,11 @@
     "maxRange": 2800,
     "targetType": "surface",
     "maxAcceleration": 45,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 20160,
+    "boosterTime": 180,
+    "boosterAcceleration": 90,
+    "selfDestructTime": 40320
   },
   "FAB-500": {
     "name": "FAB-500",
@@ -114,7 +162,11 @@
     "maxRange": 1,
     "targetType": "surface",
     "maxAcceleration": 20,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 22,
+    "boosterTime": 4,
+    "boosterAcceleration": 40,
+    "selfDestructTime": 44
   },
   "AGM-84 Harpoon": {
     "name": "AGM-84 Harpoon",
@@ -123,7 +175,11 @@
     "maxRange": 67,
     "targetType": "surface",
     "maxAcceleration": 50,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 538,
+    "boosterTime": 60,
+    "boosterAcceleration": 100,
+    "selfDestructTime": 1076
   },
   "Harpoon": {
     "name": "Harpoon",
@@ -132,7 +188,11 @@
     "maxRange": 67,
     "targetType": "surface",
     "maxAcceleration": 50,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 538,
+    "boosterTime": 60,
+    "boosterAcceleration": 100,
+    "selfDestructTime": 1076
   },
   "C-802": {
     "name": "C-802",
@@ -141,7 +201,11 @@
     "maxRange": 75,
     "targetType": "surface",
     "maxAcceleration": 55,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 548,
+    "boosterTime": 60,
+    "boosterAcceleration": 110,
+    "selfDestructTime": 1096
   },
   "C-701": {
     "name": "C-701",
@@ -150,7 +214,11 @@
     "maxRange": 15,
     "targetType": "surface",
     "maxAcceleration": 50,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 110,
+    "boosterTime": 15,
+    "boosterAcceleration": 100,
+    "selfDestructTime": 220
   },
   "HY-2": {
     "name": "HY-2",
@@ -159,7 +227,11 @@
     "maxRange": 54,
     "targetType": "surface",
     "maxAcceleration": 52,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 395,
+    "boosterTime": 45,
+    "boosterAcceleration": 104,
+    "selfDestructTime": 790
   },
   "SS-N-2 Styx": {
     "name": "SS-N-2 Styx",
@@ -168,7 +240,11 @@
     "maxRange": 46,
     "targetType": "surface",
     "maxAcceleration": 50,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 336,
+    "boosterTime": 40,
+    "boosterAcceleration": 100,
+    "selfDestructTime": 672
   },
   "SS-N-9": {
     "name": "SS-N-9",
@@ -177,7 +253,11 @@
     "maxRange": 65,
     "targetType": "surface",
     "maxAcceleration": 55,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 475,
+    "boosterTime": 55,
+    "boosterAcceleration": 110,
+    "selfDestructTime": 950
   },
   "SS-N-14": {
     "name": "SS-N-14",
@@ -186,7 +266,11 @@
     "maxRange": 30,
     "targetType": "surface",
     "maxAcceleration": 50,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 219,
+    "boosterTime": 30,
+    "boosterAcceleration": 100,
+    "selfDestructTime": 438
   },
   "SS-N-22": {
     "name": "SS-N-22",
@@ -195,7 +279,11 @@
     "maxRange": 75,
     "targetType": "surface",
     "maxAcceleration": 120,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 220,
+    "boosterTime": 25,
+    "boosterAcceleration": 240,
+    "selfDestructTime": 440
   },
   "3M-54 Klub": {
     "name": "3M-54 Klub",
@@ -204,7 +292,11 @@
     "maxRange": 135,
     "targetType": "surface",
     "maxAcceleration": 110,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 396,
+    "boosterTime": 45,
+    "boosterAcceleration": 220,
+    "selfDestructTime": 792
   },
   "SM-1": {
     "name": "SM-1",
@@ -213,7 +305,11 @@
     "maxRange": 25,
     "targetType": "air",
     "maxAcceleration": 350,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 41,
+    "boosterTime": 6,
+    "boosterAcceleration": 700,
+    "selfDestructTime": 82
   },
   "RIM-7 Sea Sparrow": {
     "name": "RIM-7 Sea Sparrow",
@@ -222,7 +318,11 @@
     "maxRange": 10,
     "targetType": "air",
     "maxAcceleration": 350,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 16,
+    "boosterTime": 3,
+    "boosterAcceleration": 700,
+    "selfDestructTime": 32
   },
   "SA-N-4": {
     "name": "SA-N-4",
@@ -231,7 +331,11 @@
     "maxRange": 9,
     "targetType": "air",
     "maxAcceleration": 300,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 20,
+    "boosterTime": 4,
+    "boosterAcceleration": 600,
+    "selfDestructTime": 40
   },
   "SA-N-7": {
     "name": "SA-N-7",
@@ -240,7 +344,11 @@
     "maxRange": 15,
     "targetType": "air",
     "maxAcceleration": 340,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 24,
+    "boosterTime": 4,
+    "boosterAcceleration": 680,
+    "selfDestructTime": 48
   },
   "SA-N-9": {
     "name": "SA-N-9",
@@ -249,7 +357,11 @@
     "maxRange": 7,
     "targetType": "air",
     "maxAcceleration": 310,
-    "symbol": "missile"
+    "symbol": "missile",
+    "fuelTime": 14,
+    "boosterTime": 3,
+    "boosterAcceleration": 620,
+    "selfDestructTime": 28
   },
   "Mk 46 Torpedo": {
     "name": "Mk 46 Torpedo",
@@ -258,7 +370,11 @@
     "maxRange": 6,
     "targetType": "subSurface",
     "maxAcceleration": 5,
-    "symbol": "torpedo"
+    "symbol": "torpedo",
+    "fuelTime": 576,
+    "boosterTime": 60,
+    "boosterAcceleration": 10,
+    "selfDestructTime": 1152
   },
   "53-65 Torpedo": {
     "name": "53-65 Torpedo",
@@ -267,7 +383,11 @@
     "maxRange": 11,
     "targetType": "subSurface",
     "maxAcceleration": 4,
-    "symbol": "torpedo"
+    "symbol": "torpedo",
+    "fuelTime": 1188,
+    "boosterTime": 90,
+    "boosterAcceleration": 8,
+    "selfDestructTime": 2376
   },
   "53-56 Torpedo": {
     "name": "53-56 Torpedo",
@@ -276,6 +396,10 @@
     "maxRange": 7,
     "targetType": "subSurface",
     "maxAcceleration": 4,
-    "symbol": "torpedo"
+    "symbol": "torpedo",
+    "fuelTime": 864,
+    "boosterTime": 70,
+    "boosterAcceleration": 8,
+    "selfDestructTime": 1728
   }
 }

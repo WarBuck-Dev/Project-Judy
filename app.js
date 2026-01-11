@@ -697,8 +697,34 @@ function AICSimulator() {
                 const target = currentAssets.find(a => a.id === weapon.targetId);
 
                 if (!target) {
-                    // Target lost, continue on last heading
-                    const speedNMPerSec = weapon.speed / 3600;
+                    // Target lost, continue on last heading with fuel system active
+
+                    // Check for self-destruct
+                    if (weapon.selfDestructTime !== undefined && missionTime >= weapon.selfDestructTime) {
+                        updated.impact = true;
+                        updated.impactTargetId = null;
+                        console.log(`Weapon ${weapon.id} self-destructed (no target) at mission time ${missionTime.toFixed(1)}`);
+                        return updated;
+                    }
+
+                    // Check fuel depletion
+                    const fuelDepleted = weapon.fuelDepletionTime !== undefined && missionTime >= weapon.fuelDepletionTime;
+
+                    if (fuelDepleted) {
+                        // ENERGY BLEED-OFF
+                        const dragDeceleration = 50;
+                        const speedLoss = dragDeceleration * deltaTime;
+                        updated.speed = Math.max(0, weapon.speed - speedLoss);
+
+                        if (updated.speed < 10) {
+                            updated.impact = true;
+                            updated.impactTargetId = null;
+                            console.log(`Weapon ${weapon.id} lost energy (no target) at mission time ${missionTime.toFixed(1)}`);
+                            return updated;
+                        }
+                    }
+
+                    const speedNMPerSec = updated.speed / 3600;
                     const distance = speedNMPerSec * deltaTime;
                     const headingRad = weapon.heading * Math.PI / 180;
                     const latRad = weapon.lat * Math.PI / 180;
@@ -715,13 +741,53 @@ function AICSimulator() {
                 const bearing = calculateBearing(weapon.lat, weapon.lon, target.lat, target.lon);
                 const distance = calculateDistance(weapon.lat, weapon.lon, target.lat, target.lon);
 
-                // Accelerate to max speed
+                // Weapon fuel and acceleration system
                 // Use weaponName if available (new system), fallback to weaponType (old saves)
                 const configKey = weapon.weaponName || weapon.weaponType;
                 const config = weaponConfigs[configKey];
-                if (config && weapon.speed < config.maxSpeed) {
-                    const accel = Math.min(config.maxAcceleration * deltaTime, config.maxSpeed - weapon.speed);
-                    updated.speed = weapon.speed + accel;
+
+                if (config) {
+                    // Check for self-destruct
+                    if (weapon.selfDestructTime !== undefined && missionTime >= weapon.selfDestructTime) {
+                        updated.impact = true;
+                        updated.impactTargetId = null; // Exploded in flight, no target hit
+                        console.log(`Weapon ${weapon.id} self-destructed at mission time ${missionTime.toFixed(1)}`);
+                        return updated;
+                    }
+
+                    // Check booster phase
+                    if (weapon.boosterActive && weapon.boosterEndTime !== undefined && missionTime >= weapon.boosterEndTime) {
+                        updated.boosterActive = false;
+                        console.log(`Weapon ${weapon.id} booster burned out at mission time ${missionTime.toFixed(1)}`);
+                    }
+
+                    // Check fuel depletion
+                    const fuelDepleted = weapon.fuelDepletionTime !== undefined && missionTime >= weapon.fuelDepletionTime;
+
+                    if (fuelDepleted) {
+                        // ENERGY BLEED-OFF: Lose speed when out of fuel
+                        const dragDeceleration = 50; // knots/sec
+                        const speedLoss = dragDeceleration * deltaTime;
+                        updated.speed = Math.max(0, weapon.speed - speedLoss);
+
+                        // If speed drops too low, weapon falls/self-destructs
+                        if (updated.speed < 10) {
+                            updated.impact = true;
+                            updated.impactTargetId = null;
+                            console.log(`Weapon ${weapon.id} lost energy and fell at mission time ${missionTime.toFixed(1)}`);
+                            return updated;
+                        }
+                    } else {
+                        // NORMAL ACCELERATION: Use booster or cruise acceleration
+                        const currentAcceleration = (weapon.boosterActive && config.boosterAcceleration)
+                            ? config.boosterAcceleration
+                            : config.maxAcceleration;
+
+                        if (weapon.speed < config.maxSpeed) {
+                            const accel = Math.min(currentAcceleration * deltaTime, config.maxSpeed - weapon.speed);
+                            updated.speed = weapon.speed + accel;
+                        }
+                    }
                 }
 
                 // Update heading (max turn rate 30°/sec)
@@ -1415,7 +1481,13 @@ function AICSimulator() {
             targetId: targetAssetId,
             firingAssetId: firingAssetId,
             affiliation: affiliation,
-            launchTime: missionTime
+            launchTime: missionTime,
+            // Fuel system properties
+            fuelRemaining: config.fuelTime || 60,
+            boosterActive: true,
+            boosterEndTime: missionTime + (config.boosterTime || 10),
+            fuelDepletionTime: missionTime + (config.fuelTime || 60),
+            selfDestructTime: missionTime + (config.selfDestructTime || 120)
         };
 
         setWeapons(prev => [...prev, newWeapon]);
