@@ -10,7 +10,7 @@ const MIN_SCALE = 5;
 const MAX_SCALE = 360;
 const PHYSICS_UPDATE_RATE = 1000 / 60; // 60 Hz
 const WAYPOINT_ARRIVAL_THRESHOLD = 0.5; // nautical miles
-const SONOBUOY_DETECTION_RANGE = 4; // nautical miles
+const SONOBUOY_DETECTION_RANGE = 3; // nautical miles
 const YARDS_PER_NAUTICAL_MILE = 2025.37;
 
 // Asset type configurations
@@ -6046,7 +6046,7 @@ function ControlPanel({
                             {/* SAFE/ARM Switch */}
                             <div style={{ marginBottom: '15px' }}>
                                 <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '20px', fontWeight: 'bold', textAlign: 'center' }}>
-                                    MASTER ARM
+                                    SONO ARM
                                 </div>
                                 <div style={{
                                     display: 'flex',
