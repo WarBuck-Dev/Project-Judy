@@ -297,6 +297,565 @@ function screenToLatLon(x, y, centerLat, centerLon, scale, width, height) {
     };
 }
 
+// Helper function to format mission time
+function formatMissionTime(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Helper function to parse HH:MM:SS to seconds
+function parseTimeToSeconds(timeString) {
+    const parts = timeString.split(':');
+    if (parts.length !== 3) return 0;
+    const hours = parseInt(parts[0]) || 0;
+    const minutes = parseInt(parts[1]) || 0;
+    const seconds = parseInt(parts[2]) || 0;
+    return hours * 3600 + minutes * 60 + seconds;
+}
+
+// ============================================================================
+// BEHAVIORS TAB COMPONENT
+// ============================================================================
+
+const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDeleteBehavior }) => {
+    const [currentBehaviorIndex, setCurrentBehaviorIndex] = React.useState(0);
+    const [editMode, setEditMode] = React.useState(false); // false = view, true = create/edit
+    const [formData, setFormData] = React.useState({
+        triggerType: 'missionTime',
+        triggerConfig: { missionTimeDisplay: '00:00:00' },
+        actions: []
+    });
+
+    const behaviors = asset.behaviors || [];
+    const currentBehavior = editMode ? null : behaviors[currentBehaviorIndex];
+
+    // Reset form for new behavior
+    const handleNewBehavior = () => {
+        setFormData({
+            triggerType: 'missionTime',
+            triggerConfig: { missionTimeDisplay: '00:00:00' },
+            actions: []
+        });
+        setEditMode(true);
+    };
+
+    // Load existing behavior for editing
+    const handleEditBehavior = () => {
+        if (currentBehavior) {
+            const config = { ...currentBehavior.triggerConfig };
+            // Convert mission time from seconds to HH:MM:SS for editing
+            if (currentBehavior.triggerType === 'missionTime' && config.missionTime !== undefined) {
+                config.missionTimeDisplay = formatMissionTime(config.missionTime);
+            }
+            setFormData({
+                triggerType: currentBehavior.triggerType,
+                triggerConfig: config,
+                actions: [...currentBehavior.actions]
+            });
+            setEditMode(true);
+        }
+    };
+
+    // Save behavior (create or update)
+    const handleSaveBehavior = () => {
+        const dataToSave = { ...formData };
+        // Convert mission time display string back to seconds
+        if (formData.triggerType === 'missionTime' && formData.triggerConfig.missionTimeDisplay) {
+            dataToSave.triggerConfig = {
+                missionTime: parseTimeToSeconds(formData.triggerConfig.missionTimeDisplay)
+            };
+        }
+
+        if (currentBehavior) {
+            // Update existing
+            onUpdateBehavior(currentBehavior.id, dataToSave);
+        } else {
+            // Create new
+            onAddBehavior(dataToSave);
+        }
+        setEditMode(false);
+    };
+
+    // Delete current behavior
+    const handleDeleteBehavior = () => {
+        if (currentBehavior && window.confirm('Delete this behavior?')) {
+            onDeleteBehavior(currentBehavior.id);
+            setCurrentBehaviorIndex(Math.max(0, currentBehaviorIndex - 1));
+        }
+    };
+
+    // Navigation
+    const handleNext = () => {
+        if (currentBehaviorIndex < behaviors.length - 1) {
+            setCurrentBehaviorIndex(currentBehaviorIndex + 1);
+        }
+    };
+
+    const handleBack = () => {
+        if (currentBehaviorIndex > 0) {
+            setCurrentBehaviorIndex(currentBehaviorIndex - 1);
+        }
+    };
+
+    // Add action to form
+    const handleAddAction = () => {
+        setFormData(prev => ({
+            ...prev,
+            actions: [...prev.actions, { type: 'changeHeading', value: 0 }]
+        }));
+    };
+
+    // Update action in form
+    const handleUpdateAction = (index, field, value) => {
+        setFormData(prev => ({
+            ...prev,
+            actions: prev.actions.map((action, i) =>
+                i === index ? { ...action, [field]: value } : action
+            )
+        }));
+    };
+
+    // Remove action from form
+    const handleRemoveAction = (index) => {
+        setFormData(prev => ({
+            ...prev,
+            actions: prev.actions.filter((_, i) => i !== index)
+        }));
+    };
+
+    return React.createElement('div', { style: { color: '#00FF00' } },
+        // Header with behavior count
+        React.createElement('div', { style: { marginBottom: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+            React.createElement('div', { style: { fontSize: '14px', fontWeight: 'bold' } },
+                editMode ? 'CREATE/EDIT BEHAVIOR' : `BEHAVIOR ${currentBehaviorIndex + 1} OF ${behaviors.length}`
+            ),
+            !editMode && React.createElement('button', {
+                onClick: handleNewBehavior,
+                style: {
+                    padding: '5px 15px',
+                    backgroundColor: '#00FF00',
+                    color: '#000',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                }
+            }, 'NEW')
+        ),
+
+        // View Mode
+        !editMode && behaviors.length > 0 && currentBehavior && React.createElement('div', {},
+            // Trigger Display
+            React.createElement('div', { style: { marginBottom: '15px', padding: '10px', border: '1px solid #00FF00' } },
+                React.createElement('div', { style: { fontWeight: 'bold', marginBottom: '5px' } }, 'TRIGGER:'),
+                React.createElement('div', {}, 'Type: ' + currentBehavior.triggerType),
+                currentBehavior.triggerType === 'missionTime' && React.createElement('div', {}, 'Time: ' + formatMissionTime(currentBehavior.triggerConfig.missionTime)),
+                currentBehavior.triggerType === 'distanceFromAsset' && React.createElement('div', {},
+                    'Target: ' + (assets.find(a => a.id === currentBehavior.triggerConfig.targetAssetId)?.name || 'Unknown'),
+                    React.createElement('br'),
+                    'Distance: ' + currentBehavior.triggerConfig.distance + ' NM'
+                ),
+                currentBehavior.triggerType === 'atWaypoint' && React.createElement('div', {}, 'Waypoint: #' + (currentBehavior.triggerConfig.waypointIndex + 1)),
+                React.createElement('div', { style: { marginTop: '5px', color: currentBehavior.fired ? '#FFFF00' : '#00FF00' } },
+                    'Status: ' + (currentBehavior.fired ? 'FIRED' : 'ACTIVE')
+                )
+            ),
+
+            // Actions Display
+            React.createElement('div', { style: { marginBottom: '15px', padding: '10px', border: '1px solid #00FF00' } },
+                React.createElement('div', { style: { fontWeight: 'bold', marginBottom: '5px' } }, 'ACTIONS:'),
+                ...currentBehavior.actions.map((action, idx) =>
+                    React.createElement('div', { key: idx, style: { marginBottom: '5px' } },
+                        `${idx + 1}. ${action.type}: ${action.value}`
+                    )
+                )
+            ),
+
+            // Action Buttons
+            React.createElement('div', { style: { display: 'flex', gap: '10px', justifyContent: 'space-between' } },
+                React.createElement('div', { style: { display: 'flex', gap: '10px' } },
+                    React.createElement('button', {
+                        onClick: handleBack,
+                        disabled: currentBehaviorIndex === 0,
+                        style: {
+                            padding: '5px 15px',
+                            backgroundColor: currentBehaviorIndex === 0 ? '#333' : '#00FF00',
+                            color: currentBehaviorIndex === 0 ? '#666' : '#000',
+                            border: 'none',
+                            cursor: currentBehaviorIndex === 0 ? 'not-allowed' : 'pointer',
+                            fontWeight: 'bold'
+                        }
+                    }, 'BACK'),
+                    React.createElement('button', {
+                        onClick: handleNext,
+                        disabled: currentBehaviorIndex >= behaviors.length - 1,
+                        style: {
+                            padding: '5px 15px',
+                            backgroundColor: currentBehaviorIndex >= behaviors.length - 1 ? '#333' : '#00FF00',
+                            color: currentBehaviorIndex >= behaviors.length - 1 ? '#666' : '#000',
+                            border: 'none',
+                            cursor: currentBehaviorIndex >= behaviors.length - 1 ? 'not-allowed' : 'pointer',
+                            fontWeight: 'bold'
+                        }
+                    }, 'NEXT')
+                ),
+                React.createElement('div', { style: { display: 'flex', gap: '10px' } },
+                    React.createElement('button', {
+                        onClick: handleEditBehavior,
+                        style: {
+                            padding: '5px 15px',
+                            backgroundColor: '#FFAA00',
+                            color: '#000',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontWeight: 'bold'
+                        }
+                    }, 'EDIT'),
+                    React.createElement('button', {
+                        onClick: handleDeleteBehavior,
+                        style: {
+                            padding: '5px 15px',
+                            backgroundColor: '#FF0000',
+                            color: '#FFF',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontWeight: 'bold'
+                        }
+                    }, 'DELETE')
+                )
+            )
+        ),
+
+        // Empty State
+        !editMode && behaviors.length === 0 && React.createElement('div', {
+            style: { textAlign: 'center', padding: '40px', color: '#666' }
+        }, 'No behaviors defined. Click NEW to create one.'),
+
+        // Edit Mode - Will continue this in next part due to length
+        editMode && React.createElement('div', {},
+            // Trigger Type Dropdown
+            React.createElement('div', { style: { marginBottom: '15px' } },
+                React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '12px' } }, 'TRIGGER TYPE:'),
+                React.createElement('select', {
+                    value: formData.triggerType,
+                    onChange: (e) => {
+                        const newType = e.target.value;
+                        const newConfig = newType === 'missionTime' ? { missionTimeDisplay: '00:00:00' } : {};
+                        setFormData(prev => ({ ...prev, triggerType: newType, triggerConfig: newConfig }));
+                    },
+                    style: {
+                        width: '100%',
+                        padding: '8px',
+                        backgroundColor: '#000',
+                        color: '#00FF00',
+                        border: '1px solid #00FF00',
+                        fontSize: '12px'
+                    }
+                },
+                    React.createElement('option', { value: 'missionTime' }, 'Mission Time'),
+                    React.createElement('option', { value: 'distanceFromAsset' }, 'Distance from Asset'),
+                    React.createElement('option', { value: 'atWaypoint' }, 'At Waypoint')
+                )
+            ),
+
+            // Trigger Configuration
+            React.createElement('div', { style: { marginBottom: '15px', padding: '10px', border: '1px solid #00FF00' } },
+                formData.triggerType === 'missionTime' && React.createElement('div', {},
+                    React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '12px' } }, 'MISSION TIME (HH:MM:SS):'),
+                    React.createElement('input', {
+                        type: 'text',
+                        placeholder: '00:00:00',
+                        value: formData.triggerConfig.missionTimeDisplay || '',
+                        onChange: (e) => {
+                            const value = e.target.value;
+                            // Allow only digits and colons
+                            if (/^[0-9:]*$/.test(value)) {
+                                setFormData(prev => ({
+                                    ...prev,
+                                    triggerConfig: { ...prev.triggerConfig, missionTimeDisplay: value }
+                                }));
+                            }
+                        },
+                        onBlur: (e) => {
+                            // Auto-format on blur
+                            const parts = e.target.value.split(':');
+                            if (parts.length > 0) {
+                                const hours = (parseInt(parts[0]) || 0).toString().padStart(2, '0');
+                                const minutes = (parseInt(parts[1]) || 0).toString().padStart(2, '0');
+                                const seconds = (parseInt(parts[2]) || 0).toString().padStart(2, '0');
+                                const formatted = `${hours}:${minutes}:${seconds}`;
+                                setFormData(prev => ({
+                                    ...prev,
+                                    triggerConfig: { ...prev.triggerConfig, missionTimeDisplay: formatted }
+                                }));
+                            }
+                        },
+                        style: {
+                            width: '100%',
+                            padding: '8px',
+                            backgroundColor: '#000',
+                            color: '#00FF00',
+                            border: '1px solid #00FF00',
+                            fontSize: '12px',
+                            fontFamily: 'monospace'
+                        }
+                    })
+                ),
+
+                formData.triggerType === 'distanceFromAsset' && React.createElement('div', {},
+                    React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '12px' } }, 'TARGET ASSET:'),
+                    React.createElement('select', {
+                        value: formData.triggerConfig.targetAssetId || '',
+                        onChange: (e) => setFormData(prev => ({
+                            ...prev,
+                            triggerConfig: { ...prev.triggerConfig, targetAssetId: parseInt(e.target.value) }
+                        })),
+                        style: {
+                            width: '100%',
+                            padding: '8px',
+                            backgroundColor: '#000',
+                            color: '#00FF00',
+                            border: '1px solid #00FF00',
+                            fontSize: '12px',
+                            marginBottom: '10px'
+                        }
+                    },
+                        React.createElement('option', { value: '' }, 'Select Asset...'),
+                        ...assets.filter(a => a.id !== asset.id).map(a =>
+                            React.createElement('option', { key: a.id, value: a.id }, a.name || `Asset ${a.id}`)
+                        )
+                    ),
+                    React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '12px' } }, 'DISTANCE (NM):'),
+                    React.createElement('input', {
+                        type: 'number',
+                        step: '0.1',
+                        value: formData.triggerConfig.distance || '',
+                        onChange: (e) => setFormData(prev => ({
+                            ...prev,
+                            triggerConfig: { ...prev.triggerConfig, distance: parseFloat(e.target.value) || 0 }
+                        })),
+                        style: {
+                            width: '100%',
+                            padding: '8px',
+                            backgroundColor: '#000',
+                            color: '#00FF00',
+                            border: '1px solid #00FF00',
+                            fontSize: '12px'
+                        }
+                    })
+                ),
+
+                formData.triggerType === 'atWaypoint' && React.createElement('div', {},
+                    React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '12px' } }, 'WAYPOINT:'),
+                    React.createElement('select', {
+                        value: formData.triggerConfig.waypointIndex ?? '',
+                        onChange: (e) => setFormData(prev => ({
+                            ...prev,
+                            triggerConfig: { waypointIndex: parseInt(e.target.value) }
+                        })),
+                        style: {
+                            width: '100%',
+                            padding: '8px',
+                            backgroundColor: '#000',
+                            color: '#00FF00',
+                            border: '1px solid #00FF00',
+                            fontSize: '12px'
+                        },
+                        disabled: !asset.waypoints || asset.waypoints.length === 0
+                    },
+                        React.createElement('option', { value: '' }, 'Select Waypoint...'),
+                        ...(asset.waypoints || []).map((wp, idx) =>
+                            React.createElement('option', { key: idx, value: idx }, `Waypoint #${idx + 1}`)
+                        )
+                    ),
+                    (!asset.waypoints || asset.waypoints.length === 0) && React.createElement('div', {
+                        style: { color: '#FFAA00', fontSize: '10px', marginTop: '5px' }
+                    }, 'No waypoints assigned to this asset')
+                )
+            ),
+
+            // Actions Section - Will add in continuation
+            React.createElement('div', { style: { marginBottom: '15px' } },
+                React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' } },
+                    React.createElement('div', { style: { fontSize: '12px', fontWeight: 'bold' } }, 'ACTIONS:'),
+                    React.createElement('button', {
+                        onClick: handleAddAction,
+                        style: {
+                            padding: '5px 15px',
+                            backgroundColor: '#00FF00',
+                            color: '#000',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontWeight: 'bold',
+                            fontSize: '10px'
+                        }
+                    }, 'ADD ACTION')
+                ),
+
+                ...formData.actions.map((action, idx) =>
+                    React.createElement('div', {
+                        key: idx,
+                        style: { marginBottom: '10px', padding: '10px', border: '1px solid #00FF00', position: 'relative' }
+                    },
+                        React.createElement('button', {
+                            onClick: () => handleRemoveAction(idx),
+                            style: {
+                                position: 'absolute',
+                                top: '5px',
+                                right: '5px',
+                                padding: '2px 6px',
+                                backgroundColor: '#FF0000',
+                                color: '#FFF',
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontSize: '10px'
+                            }
+                        }, '×'),
+
+                        React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '11px' } }, 'ACTION TYPE:'),
+                        React.createElement('select', {
+                            value: action.type,
+                            onChange: (e) => handleUpdateAction(idx, 'type', e.target.value),
+                            style: {
+                                width: '100%',
+                                padding: '6px',
+                                backgroundColor: '#000',
+                                color: '#00FF00',
+                                border: '1px solid #00FF00',
+                                fontSize: '11px',
+                                marginBottom: '8px'
+                            }
+                        },
+                            React.createElement('option', { value: 'changeHeading' }, 'Change Heading'),
+                            React.createElement('option', { value: 'changeSpeed' }, 'Change Speed'),
+                            React.createElement('option', { value: 'changeAltitude' }, 'Change Altitude'),
+                            React.createElement('option', { value: 'turnEmitterOn' }, 'Turn Emitter On'),
+                            React.createElement('option', { value: 'turnEmitterOff' }, 'Turn Emitter Off')
+                        ),
+
+                        // Action-specific inputs
+                        action.type === 'changeHeading' && React.createElement('div', {},
+                            React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '11px' } }, 'HEADING (0-359):'),
+                            React.createElement('input', {
+                                type: 'number',
+                                min: '0',
+                                max: '359',
+                                value: action.value || '',
+                                onChange: (e) => handleUpdateAction(idx, 'value', parseInt(e.target.value) || 0),
+                                style: {
+                                    width: '100%',
+                                    padding: '6px',
+                                    backgroundColor: '#000',
+                                    color: '#00FF00',
+                                    border: '1px solid #00FF00',
+                                    fontSize: '11px'
+                                }
+                            })
+                        ),
+
+                        action.type === 'changeSpeed' && React.createElement('div', {},
+                            React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '11px' } }, 'SPEED (knots):'),
+                            React.createElement('input', {
+                                type: 'number',
+                                min: '0',
+                                value: action.value || '',
+                                onChange: (e) => handleUpdateAction(idx, 'value', parseInt(e.target.value) || 0),
+                                style: {
+                                    width: '100%',
+                                    padding: '6px',
+                                    backgroundColor: '#000',
+                                    color: '#00FF00',
+                                    border: '1px solid #00FF00',
+                                    fontSize: '11px'
+                                }
+                            })
+                        ),
+
+                        action.type === 'changeAltitude' && React.createElement('div', {},
+                            React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '11px' } }, 'ALTITUDE (feet):'),
+                            React.createElement('input', {
+                                type: 'number',
+                                min: '0',
+                                value: action.value || '',
+                                onChange: (e) => handleUpdateAction(idx, 'value', parseInt(e.target.value) || 0),
+                                style: {
+                                    width: '100%',
+                                    padding: '6px',
+                                    backgroundColor: '#000',
+                                    color: '#00FF00',
+                                    border: '1px solid #00FF00',
+                                    fontSize: '11px'
+                                },
+                                disabled: asset.domain !== 'air'
+                            }),
+                            asset.domain !== 'air' && React.createElement('div', {
+                                style: { color: '#FFAA00', fontSize: '10px', marginTop: '5px' }
+                            }, 'Only available for air domain assets')
+                        ),
+
+                        (action.type === 'turnEmitterOn' || action.type === 'turnEmitterOff') && React.createElement('div', {},
+                            React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '11px' } }, 'EMITTER:'),
+                            React.createElement('select', {
+                                value: action.value || '',
+                                onChange: (e) => handleUpdateAction(idx, 'value', e.target.value),
+                                style: {
+                                    width: '100%',
+                                    padding: '6px',
+                                    backgroundColor: '#000',
+                                    color: '#00FF00',
+                                    border: '1px solid #00FF00',
+                                    fontSize: '11px'
+                                },
+                                disabled: !asset.platform || !asset.platform.emitters || asset.platform.emitters.length === 0
+                            },
+                                React.createElement('option', { value: '' }, 'Select Emitter...'),
+                                ...(asset.platform?.emitters || []).map(emitter =>
+                                    React.createElement('option', { key: emitter, value: emitter }, emitter)
+                                )
+                            ),
+                            (!asset.platform || !asset.platform.emitters || asset.platform.emitters.length === 0) && React.createElement('div', {
+                                style: { color: '#FFAA00', fontSize: '10px', marginTop: '5px' }
+                            }, 'No emitters available for this platform')
+                        )
+                    )
+                ),
+
+                formData.actions.length === 0 && React.createElement('div', {
+                    style: { textAlign: 'center', padding: '20px', color: '#666', border: '1px dashed #333' }
+                }, 'No actions defined. Click ADD ACTION to add one.')
+            ),
+
+            // Save/Cancel Buttons
+            React.createElement('div', { style: { display: 'flex', gap: '10px', justifyContent: 'flex-end' } },
+                React.createElement('button', {
+                    onClick: () => setEditMode(false),
+                    style: {
+                        padding: '8px 20px',
+                        backgroundColor: 'transparent',
+                        color: '#00FF00',
+                        border: '1px solid #00FF00',
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                    }
+                }, 'CANCEL'),
+                React.createElement('button', {
+                    onClick: handleSaveBehavior,
+                    disabled: formData.actions.length === 0,
+                    style: {
+                        padding: '8px 20px',
+                        backgroundColor: formData.actions.length === 0 ? '#333' : '#00FF00',
+                        color: formData.actions.length === 0 ? '#666' : '#000',
+                        border: 'none',
+                        cursor: formData.actions.length === 0 ? 'not-allowed' : 'pointer',
+                        fontWeight: 'bold'
+                    }
+                }, 'SAVE')
+            )
+        )
+    );
+};
+
 // ============================================================================
 // MAIN APPLICATION COMPONENT
 // ============================================================================
@@ -321,7 +880,8 @@ function AICSimulator() {
             targetAltitude: null,
             targetDepth: null,
             waypoints: [],
-            trackNumber: null
+            trackNumber: null,
+            behaviors: []
         }
     ]);
     const [selectedAssetId, setSelectedAssetId] = useState(null);
@@ -870,6 +1430,116 @@ function AICSimulator() {
         };
     }, [isRunning]);
 
+    // ============================================================================
+    // Behavior Execution Engine
+    // ============================================================================
+
+    useEffect(() => {
+        if (!isRunning) return;
+
+        const checkBehaviors = () => {
+            setAssets(prevAssets => prevAssets.map(asset => {
+                if (!asset.behaviors || asset.behaviors.length === 0) return asset;
+
+                let updatedAsset = { ...asset };
+                let behaviorsChanged = false;
+
+                // Check each behavior
+                const updatedBehaviors = asset.behaviors.map(behavior => {
+                    if (!behavior.enabled || behavior.fired) return behavior;
+
+                    let shouldFire = false;
+
+                    // Check trigger condition
+                    switch (behavior.triggerType) {
+                        case 'missionTime':
+                            if (missionTime >= behavior.triggerConfig.missionTime) {
+                                shouldFire = true;
+                            }
+                            break;
+
+                        case 'distanceFromAsset':
+                            const targetAsset = prevAssets.find(a => a.id === behavior.triggerConfig.targetAssetId);
+                            if (targetAsset) {
+                                const distance = calculateDistance(
+                                    asset.lat, asset.lon,
+                                    targetAsset.lat, targetAsset.lon
+                                );
+                                if (distance <= behavior.triggerConfig.distance) {
+                                    shouldFire = true;
+                                }
+                            }
+                            break;
+
+                        case 'atWaypoint':
+                            // Check if asset has waypoints and is at the specified waypoint
+                            if (asset.waypoints && asset.waypoints.length > behavior.triggerConfig.waypointIndex) {
+                                const waypoint = asset.waypoints[behavior.triggerConfig.waypointIndex];
+                                const distanceToWaypoint = calculateDistance(
+                                    asset.lat, asset.lon,
+                                    waypoint.lat, waypoint.lon
+                                );
+                                if (distanceToWaypoint <= WAYPOINT_ARRIVAL_THRESHOLD) {
+                                    shouldFire = true;
+                                }
+                            }
+                            break;
+                    }
+
+                    // Execute actions if trigger fired
+                    if (shouldFire) {
+                        console.log(`Behavior ${behavior.id} fired for asset ${asset.name || asset.id}`);
+
+                        behavior.actions.forEach(action => {
+                            switch (action.type) {
+                                case 'changeHeading':
+                                    console.log(`  Setting targetHeading to ${action.value}`);
+                                    updatedAsset.targetHeading = action.value;
+                                    break;
+                                case 'changeSpeed':
+                                    console.log(`  Setting targetSpeed to ${action.value} (current speed: ${asset.speed})`);
+                                    updatedAsset.targetSpeed = action.value;
+                                    break;
+                                case 'changeAltitude':
+                                    if (asset.domain === 'air') {
+                                        updatedAsset.targetAltitude = action.value;
+                                    }
+                                    break;
+                                case 'turnEmitterOn':
+                                    updatedAsset.emitterStates = {
+                                        ...(updatedAsset.emitterStates || {}),
+                                        [action.value]: true
+                                    };
+                                    break;
+                                case 'turnEmitterOff':
+                                    updatedAsset.emitterStates = {
+                                        ...(updatedAsset.emitterStates || {}),
+                                        [action.value]: false
+                                    };
+                                    break;
+                            }
+                        });
+
+                        behaviorsChanged = true;
+                        return { ...behavior, fired: true };
+                    }
+
+                    return behavior;
+                });
+
+                if (behaviorsChanged) {
+                    updatedAsset.behaviors = updatedBehaviors;
+                }
+
+                return updatedAsset;
+            }));
+        };
+
+        // Run behavior check every physics update
+        const intervalId = setInterval(checkBehaviors, PHYSICS_UPDATE_RATE);
+        return () => clearInterval(intervalId);
+    }, [isRunning, missionTime, assets]);
+
     // Radar return generation - create returns when sweep passes over assets
     useEffect(() => {
         if (isRunning && radarEnabled) {
@@ -1383,7 +2053,8 @@ function AICSimulator() {
             datalinkTrackBlockStart: assetData.datalinkTrackBlockStart || '',
             datalinkTrackBlockEnd: assetData.datalinkTrackBlockEnd || '',
             datalinkActive: false, // Whether asset is active in datalink
-            datalinkAssignedTrack: null // Track number assigned when reported to datalink
+            datalinkAssignedTrack: null, // Track number assigned when reported to datalink
+            behaviors: []
         };
 
         setAssets(prev => [...prev, newAsset]);
@@ -1533,6 +2204,63 @@ function AICSimulator() {
             }
 
             return updatedAsset;
+        }));
+    }, []);
+
+    // ============================================================================
+    // Behavior CRUD Operations
+    // ============================================================================
+
+    // Generate unique ID for behaviors
+    const generateBehaviorId = () => {
+        return `bhv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    };
+
+    // Add behavior to asset
+    const addBehavior = useCallback((assetId, behavior) => {
+        setAssets(prevAssets => prevAssets.map(asset => {
+            if (asset.id === assetId) {
+                const newBehavior = {
+                    ...behavior,
+                    id: behavior.id || generateBehaviorId(),
+                    assetId: assetId,
+                    fired: false,
+                    enabled: true
+                };
+                return {
+                    ...asset,
+                    behaviors: [...(asset.behaviors || []), newBehavior]
+                };
+            }
+            return asset;
+        }));
+    }, []);
+
+    // Update existing behavior
+    const updateBehavior = useCallback((assetId, behaviorId, updates) => {
+        setAssets(prevAssets => prevAssets.map(asset => {
+            if (asset.id === assetId) {
+                return {
+                    ...asset,
+                    behaviors: (asset.behaviors || []).map(b =>
+                        b.id === behaviorId ? { ...b, ...updates } : b
+                    )
+                };
+            }
+            return asset;
+        }));
+    }, []);
+
+    // Delete behavior
+    const deleteBehavior = useCallback((assetId, behaviorId) => {
+        setAssets(prevAssets => prevAssets.map(asset => {
+            if (asset.id === assetId) {
+                return {
+                    ...asset,
+                    behaviors: (asset.behaviors || []).filter(b => b.id !== behaviorId)
+                };
+            }
+            return asset;
         }));
     }, []);
 
@@ -2008,6 +2736,11 @@ function AICSimulator() {
                     migrated.platform = null;
                 }
 
+                // Add behaviors if missing (backward compatibility)
+                if (migrated.behaviors === undefined) {
+                    migrated.behaviors = [];
+                }
+
                 return migrated;
             });
 
@@ -2123,6 +2856,11 @@ function AICSimulator() {
                         // Add platform if missing
                         if (migrated.platform === undefined) {
                             migrated.platform = null;
+                        }
+
+                        // Add behaviors if missing (backward compatibility)
+                        if (migrated.behaviors === undefined) {
+                            migrated.behaviors = [];
                         }
 
                         return migrated;
@@ -4662,6 +5400,9 @@ function AICSimulator() {
                 selectedWeaponType={selectedWeaponType}
                 setSelectedWeaponType={setSelectedWeaponType}
                 weaponConfigs={weaponConfigs}
+                addBehavior={addBehavior}
+                updateBehavior={updateBehavior}
+                deleteBehavior={deleteBehavior}
             />
 
             {/* Context Menu */}
@@ -5107,11 +5848,13 @@ function ControlPanel({
     fireWeapon,
     selectedTargetAssetId, setSelectedTargetAssetId,
     selectedWeaponType, setSelectedWeaponType,
-    weaponConfigs
+    weaponConfigs,
+    addBehavior, updateBehavior, deleteBehavior
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
     const [shapePointEditValues, setShapePointEditValues] = useState({}); // Track editing values for shape points
+    const [activelyEditingFields, setActivelyEditingFields] = useState({}); // Track which fields user is currently editing
     const selectedAssetIdRef = useRef(null);
     const selectedGeoPointIdRef = useRef(null);
 
@@ -5141,6 +5884,32 @@ function ControlPanel({
             }));
         }
     }, [selectedAsset?.lat, selectedAsset?.lon]);
+
+    // Update asset heading, speed, altitude, depth display when those values change
+    // BUT skip fields that are currently being edited by the user
+    useEffect(() => {
+        if (selectedAsset) {
+            setEditValues(prev => {
+                const updates = { ...prev };
+
+                // Only update fields that aren't currently being edited
+                if (!activelyEditingFields.heading) {
+                    updates.heading = Math.round(selectedAsset.heading);
+                }
+                if (!activelyEditingFields.speed) {
+                    updates.speed = Math.round(selectedAsset.speed);
+                }
+                if (!activelyEditingFields.altitude) {
+                    updates.altitude = Math.round(selectedAsset.altitude);
+                }
+                if (!activelyEditingFields.depth) {
+                    updates.depth = Math.round(selectedAsset.depth || 0);
+                }
+
+                return updates;
+            });
+        }
+    }, [selectedAsset?.heading, selectedAsset?.speed, selectedAsset?.altitude, selectedAsset?.depth, activelyEditingFields]);
 
     // Update geo-point edit values when geo-point is first selected, when switching geo-points, or when position changes
     useEffect(() => {
@@ -7864,59 +8633,78 @@ function ControlPanel({
                         )}
                     </div>
 
-                    {/* Tab Navigation - Row 2: Sensor Systems */}
-                    {selectedAsset.type !== 'ownship' && (selectedAsset.platform?.image || selectedAsset.platform?.isar) && (
-                        <div style={{ display: 'flex', gap: '5px', marginBottom: '15px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
-                            {selectedAsset.platform && selectedAsset.platform.image && (
-                                <button
-                                    onClick={() => {
-                                        if (eoirEnabled) {
-                                            setEoirSelectedAssetId(selectedAsset.id);
-                                        }
-                                    }}
-                                    style={{
-                                        flex: 1,
-                                        padding: '8px',
-                                        background: eoirSelectedAssetId === selectedAsset.id ? '#00FF00' : 'transparent',
-                                        color: eoirSelectedAssetId === selectedAsset.id ? '#000' : (eoirEnabled ? '#00FF00' : '#FF0000'),
-                                        border: 'none',
-                                        borderBottom: eoirSelectedAssetId === selectedAsset.id ? '2px solid #00FF00' : '2px solid transparent',
-                                        cursor: eoirEnabled ? 'pointer' : 'not-allowed',
-                                        fontSize: '10px',
-                                        fontWeight: 'bold',
-                                        transition: 'all 0.2s',
-                                        opacity: eoirEnabled ? 1 : 0.5
-                                    }}
-                                >
-                                    EO/IR
-                                </button>
-                            )}
-                            {selectedAsset.platform && selectedAsset.platform.isar && (
-                                <button
-                                    onClick={() => {
-                                        if (isarEnabled) {
-                                            setIsarSelectedAssetId(selectedAsset.id);
-                                        }
-                                    }}
-                                    style={{
-                                        flex: 1,
-                                        padding: '8px',
-                                        background: isarSelectedAssetId === selectedAsset.id ? '#00FF00' : 'transparent',
-                                        color: isarSelectedAssetId === selectedAsset.id ? '#000' : (isarEnabled ? '#00FF00' : '#FF0000'),
-                                        border: 'none',
-                                        borderBottom: isarSelectedAssetId === selectedAsset.id ? '2px solid #00FF00' : '2px solid transparent',
-                                        cursor: isarEnabled ? 'pointer' : 'not-allowed',
-                                        fontSize: '10px',
-                                        fontWeight: 'bold',
-                                        transition: 'all 0.2s',
-                                        opacity: isarEnabled ? 1 : 0.5
-                                    }}
-                                >
-                                    ISAR
-                                </button>
-                            )}
-                        </div>
-                    )}
+                    {/* Tab Navigation - Row 2: Sensor Systems & Behaviors */}
+                    <div style={{ display: 'flex', gap: '5px', marginBottom: '15px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
+                        <button
+                            onClick={() => setSelectedAssetTab('behaviors')}
+                            style={{
+                                flex: 1,
+                                padding: '8px',
+                                background: selectedAssetTab === 'behaviors' ? '#00FF00' : 'transparent',
+                                color: selectedAssetTab === 'behaviors' ? '#000' : '#00FF00',
+                                border: 'none',
+                                borderBottom: selectedAssetTab === 'behaviors' ? '2px solid #00FF00' : '2px solid transparent',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            BEHAVIORS
+                        </button>
+                        {selectedAsset.type !== 'ownship' && (selectedAsset.platform?.image || selectedAsset.platform?.isar) && (
+                            <>
+                                {selectedAsset.platform && selectedAsset.platform.image && (
+                                    <button
+                                        onClick={() => {
+                                            if (eoirEnabled) {
+                                                setEoirSelectedAssetId(selectedAsset.id);
+                                            }
+                                        }}
+                                        style={{
+                                            flex: 1,
+                                            padding: '8px',
+                                            background: eoirSelectedAssetId === selectedAsset.id ? '#00FF00' : 'transparent',
+                                            color: eoirSelectedAssetId === selectedAsset.id ? '#000' : (eoirEnabled ? '#00FF00' : '#FF0000'),
+                                            border: 'none',
+                                            borderBottom: eoirSelectedAssetId === selectedAsset.id ? '2px solid #00FF00' : '2px solid transparent',
+                                            cursor: eoirEnabled ? 'pointer' : 'not-allowed',
+                                            fontSize: '10px',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.2s',
+                                            opacity: eoirEnabled ? 1 : 0.5
+                                        }}
+                                    >
+                                        EO/IR
+                                    </button>
+                                )}
+                                {selectedAsset.platform && selectedAsset.platform.isar && (
+                                    <button
+                                        onClick={() => {
+                                            if (isarEnabled) {
+                                                setIsarSelectedAssetId(selectedAsset.id);
+                                            }
+                                        }}
+                                        style={{
+                                            flex: 1,
+                                            padding: '8px',
+                                            background: isarSelectedAssetId === selectedAsset.id ? '#00FF00' : 'transparent',
+                                            color: isarSelectedAssetId === selectedAsset.id ? '#000' : (isarEnabled ? '#00FF00' : '#FF0000'),
+                                            border: 'none',
+                                            borderBottom: isarSelectedAssetId === selectedAsset.id ? '2px solid #00FF00' : '2px solid transparent',
+                                            cursor: isarEnabled ? 'pointer' : 'not-allowed',
+                                            fontSize: '10px',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.2s',
+                                            opacity: isarEnabled ? 1 : 0.5
+                                        }}
+                                    >
+                                        ISAR
+                                    </button>
+                                )}
+                            </>
+                        )}
+                    </div>
 
                     {/* GENERAL TAB */}
                     {selectedAssetTab === 'general' && (
@@ -8040,6 +8828,8 @@ function ControlPanel({
                                         min="0"
                                         max="359"
                                         value={editValues.heading || 0}
+                                        onFocus={() => setActivelyEditingFields(prev => ({ ...prev, heading: true }))}
+                                        onBlur={() => setActivelyEditingFields(prev => ({ ...prev, heading: false }))}
                                         onChange={(e) => {
                                             handleUpdate('heading', e.target.value);
                                             e.target.style.color = '#00BFFF';
@@ -8078,6 +8868,8 @@ function ControlPanel({
                                         type="number"
                                         min="0"
                                         value={editValues.speed || 0}
+                                        onFocus={() => setActivelyEditingFields(prev => ({ ...prev, speed: true }))}
+                                        onBlur={() => setActivelyEditingFields(prev => ({ ...prev, speed: false }))}
                                         onChange={(e) => {
                                             handleUpdate('speed', e.target.value);
                                             e.target.style.color = '#00BFFF';
@@ -8117,6 +8909,8 @@ function ControlPanel({
                                             type="number"
                                             min="0"
                                             value={editValues.altitude || 0}
+                                            onFocus={() => setActivelyEditingFields(prev => ({ ...prev, altitude: true }))}
+                                            onBlur={() => setActivelyEditingFields(prev => ({ ...prev, altitude: false }))}
                                             onChange={(e) => {
                                                 handleUpdate('altitude', e.target.value);
                                                 e.target.style.color = '#00BFFF';
@@ -8189,6 +8983,8 @@ function ControlPanel({
                                             type="number"
                                             min="0"
                                             value={editValues.depth || 0}
+                                            onFocus={() => setActivelyEditingFields(prev => ({ ...prev, depth: true }))}
+                                            onBlur={() => setActivelyEditingFields(prev => ({ ...prev, depth: false }))}
                                             onChange={(e) => {
                                                 handleUpdate('depth', e.target.value);
                                                 e.target.style.color = '#00BFFF';
@@ -8533,6 +9329,16 @@ function ControlPanel({
                                 )}
                             </div>
                         </div>
+                    )}
+
+                    {selectedAssetTab === 'behaviors' && (
+                        <BehaviorsTab
+                            asset={selectedAsset}
+                            assets={assets}
+                            onAddBehavior={(behavior) => addBehavior(selectedAsset.id, behavior)}
+                            onUpdateBehavior={(behaviorId, updates) => updateBehavior(selectedAsset.id, behaviorId, updates)}
+                            onDeleteBehavior={(behaviorId) => deleteBehavior(selectedAsset.id, behaviorId)}
+                        />
                     )}
 
                     <div className="playback-controls" style={{ marginTop: '10px' }}>
