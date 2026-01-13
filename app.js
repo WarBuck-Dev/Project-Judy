@@ -1190,7 +1190,7 @@ function AICSimulator() {
             // Update altitude (only for air domain)
             if (domainConfig.hasAltitude && asset.targetAltitude !== null) {
                 const altDiff = asset.targetAltitude - asset.altitude;
-                if (Math.abs(altDiff) > 1) {
+                if (Math.abs(altDiff) > 10) {
                     const altDelta = Math.sign(altDiff) * climbRate * deltaTime;
                     updated.altitude = asset.altitude + altDelta;
                 } else {
