@@ -665,9 +665,12 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                         disabled: !asset.waypoints || asset.waypoints.length === 0
                     },
                         React.createElement('option', { value: '' }, 'Select Waypoint...'),
-                        ...(asset.waypoints || []).map((wp, idx) =>
-                            React.createElement('option', { key: idx, value: idx }, `Waypoint #${idx + 1}`)
-                        )
+                        ...(asset.waypoints || [])
+                            .map((wp, idx) => ({ ...wp, originalIndex: idx })) // Preserve original index
+                            .filter(wp => !wp.reached) // Only show unreached waypoints
+                            .map(wp =>
+                                React.createElement('option', { key: wp.originalIndex, value: wp.originalIndex }, `WP${wp.id}`)
+                            )
                     ),
                     (!asset.waypoints || asset.waypoints.length === 0) && React.createElement('div', {
                         style: { color: '#FFAA00', fontSize: '10px', marginTop: '5px' }
@@ -4638,10 +4641,10 @@ function AICSimulator() {
                                     <line x1={-6} y1={0} x2={6} y2={0} stroke={config.color} strokeWidth="2" />
                                     <line x1={0} y1={-6} x2={0} y2={6} stroke={config.color} strokeWidth="2" />
                                 </g>
-                                {/* Waypoint label using sequential numbering (i+1) */}
+                                {/* Waypoint label using ID to preserve numbering */}
                                 <text x={wpPos.x} y={wpPos.y-10} fill={config.color} fontSize="8"
                                       textAnchor="middle" fontWeight="700">
-                                    WP{i+1}
+                                    WP{wp.id}
                                 </text>
                             </g>
                         );
