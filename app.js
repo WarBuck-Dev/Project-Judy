@@ -1477,9 +1477,11 @@ function AICSimulator() {
                         case 'atWaypoint':
                             // Check if the asset has reached the specified waypoint number
                             // waypointIndex is 0-based (0 = first waypoint, 1 = second waypoint, etc.)
-                            // waypointsReached is a counter that increments each time a waypoint is reached
+                            // waypointsReached counts how many waypoints have been reached (starts at 0)
+                            // When waypointIndex=0 (first waypoint), fire when waypointsReached >= 1
+                            // When waypointIndex=1 (second waypoint), fire when waypointsReached >= 2
                             const waypointsReached = asset.waypointsReached || 0;
-                            if (waypointsReached > behavior.triggerConfig.waypointIndex) {
+                            if (waypointsReached >= behavior.triggerConfig.waypointIndex + 1) {
                                 shouldFire = true;
                             }
                             break;
