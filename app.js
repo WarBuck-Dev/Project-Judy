@@ -1224,17 +1224,27 @@ function AICSimulator() {
             updated.lat = asset.lat + deltaLat;
             updated.lon = asset.lon + deltaLon;
 
-            // Check waypoint arrival
-            if (asset.waypoints.length > 0) {
+            // Check waypoint arrival FIRST - mark waypoints as reached
+            if (asset.waypoints && asset.waypoints.length > 0) {
+                // Backwards compatibility: ensure all waypoints have reached flag
+                if (asset.waypoints.some(wp => wp.reached === undefined)) {
+                    updated.waypoints = asset.waypoints.map(wp => ({
+                        ...wp,
+                        id: wp.id || 0,
+                        reached: wp.reached || false
+                    }));
+                }
+
                 // Find first unreached waypoint
-                const currentWpIndex = asset.waypoints.findIndex(wp => !wp.reached);
+                const currentWpIndex = (updated.waypoints || asset.waypoints).findIndex(wp => !wp.reached);
                 if (currentWpIndex !== -1) {
-                    const wp = asset.waypoints[currentWpIndex];
+                    const wp = (updated.waypoints || asset.waypoints)[currentWpIndex];
                     const distToWP = calculateDistance(updated.lat, updated.lon, wp.lat, wp.lon);
 
                     if (distToWP < WAYPOINT_ARRIVAL_THRESHOLD) {
                         // Mark waypoint as reached instead of removing it
-                        updated.waypoints = asset.waypoints.map((w, idx) =>
+                        console.log(`Asset ${asset.name || asset.id} reached waypoint ${currentWpIndex} (id: ${wp.id})`);
+                        updated.waypoints = (updated.waypoints || asset.waypoints).map((w, idx) =>
                             idx === currentWpIndex ? { ...w, reached: true } : w
                         );
 
@@ -1247,7 +1257,97 @@ function AICSimulator() {
                             // No more waypoints, clear targets
                             updated.targetHeading = null;
                         }
+                    } else {
+                        // Not at waypoint yet - continuously update heading toward it
+                        // This ensures asset tracks waypoint even if it moves or after behaviors change heading
+                        updated.targetHeading = calculateBearing(updated.lat, updated.lon, wp.lat, wp.lon);
                     }
+                }
+            }
+
+            // Check behaviors AFTER waypoint arrival - integrated into physics update for synchronization
+            // This allows behaviors to see waypoints that were just marked as reached
+            if (updated.behaviors && updated.behaviors.length > 0) {
+                let behaviorsChanged = false;
+                const updatedBehaviors = updated.behaviors.map(behavior => {
+                    if (!behavior.enabled || behavior.fired) return behavior;
+
+                    let shouldFire = false;
+
+                    // Check trigger condition
+                    switch (behavior.triggerType) {
+                        case 'missionTime':
+                            if (missionTime >= behavior.triggerConfig.missionTime) {
+                                shouldFire = true;
+                            }
+                            break;
+
+                        case 'distanceFromAsset':
+                            const targetAsset = prevAssets.find(a => a.id === behavior.triggerConfig.targetAssetId);
+                            if (targetAsset) {
+                                const distance = calculateDistance(
+                                    updated.lat, updated.lon,
+                                    targetAsset.lat, targetAsset.lon
+                                );
+                                if (distance <= behavior.triggerConfig.distance) {
+                                    shouldFire = true;
+                                }
+                            }
+                            break;
+
+                        case 'atWaypoint':
+                            // Check using UPDATED waypoints (not asset.waypoints) to see changes immediately
+                            if (updated.waypoints && updated.waypoints.length > behavior.triggerConfig.waypointIndex) {
+                                const targetWaypoint = updated.waypoints[behavior.triggerConfig.waypointIndex];
+                                console.log(`Checking behavior ${behavior.id} for waypoint ${behavior.triggerConfig.waypointIndex}: waypoint exists=${!!targetWaypoint}, reached=${targetWaypoint?.reached}`);
+                                if (targetWaypoint && targetWaypoint.reached) {
+                                    shouldFire = true;
+                                }
+                            }
+                            break;
+                    }
+
+                    // Execute actions if trigger fired
+                    if (shouldFire) {
+                        console.log(`Behavior ${behavior.id} fired for asset ${updated.name || updated.id}`);
+
+                        behavior.actions.forEach(action => {
+                            switch (action.type) {
+                                case 'changeHeading':
+                                    updated.targetHeading = action.value;
+                                    break;
+                                case 'changeSpeed':
+                                    updated.targetSpeed = action.value;
+                                    break;
+                                case 'changeAltitude':
+                                    if (updated.domain === 'air') {
+                                        updated.targetAltitude = action.value;
+                                    }
+                                    break;
+                                case 'turnEmitterOn':
+                                    updated.emitterStates = {
+                                        ...(updated.emitterStates || {}),
+                                        [action.value]: true
+                                    };
+                                    break;
+                                case 'turnEmitterOff':
+                                    updated.emitterStates = {
+                                        ...(updated.emitterStates || {}),
+                                        [action.value]: false
+                                    };
+                                    break;
+                            }
+                        });
+
+                        behaviorsChanged = true;
+                        return { ...behavior, fired: true };
+                    }
+
+                    return behavior;
+                });
+
+                if (behaviorsChanged) {
+                    updated.behaviors = updatedBehaviors;
                 }
             }
 
@@ -1393,7 +1493,7 @@ function AICSimulator() {
 
             return updatedWeapons.filter(w => !w.impact);
         });
-    }, [weaponConfigs, assets]);
+    }, [weaponConfigs, assets, missionTime]);
 
     // Start/stop physics engine
     useEffect(() => {
@@ -1440,110 +1540,8 @@ function AICSimulator() {
     // ============================================================================
     // Behavior Execution Engine
     // ============================================================================
-
-    useEffect(() => {
-        if (!isRunning) return;
-
-        const checkBehaviors = () => {
-            setAssets(prevAssets => prevAssets.map(asset => {
-                if (!asset.behaviors || asset.behaviors.length === 0) return asset;
-
-                let updatedAsset = { ...asset };
-                let behaviorsChanged = false;
-
-                // Check each behavior
-                const updatedBehaviors = asset.behaviors.map(behavior => {
-                    if (!behavior.enabled || behavior.fired) return behavior;
-
-                    let shouldFire = false;
-
-                    // Check trigger condition
-                    switch (behavior.triggerType) {
-                        case 'missionTime':
-                            if (missionTime >= behavior.triggerConfig.missionTime) {
-                                shouldFire = true;
-                            }
-                            break;
-
-                        case 'distanceFromAsset':
-                            const targetAsset = prevAssets.find(a => a.id === behavior.triggerConfig.targetAssetId);
-                            if (targetAsset) {
-                                const distance = calculateDistance(
-                                    asset.lat, asset.lon,
-                                    targetAsset.lat, targetAsset.lon
-                                );
-                                if (distance <= behavior.triggerConfig.distance) {
-                                    shouldFire = true;
-                                }
-                            }
-                            break;
-
-                        case 'atWaypoint':
-                            // Check if the specified waypoint has been reached
-                            // The waypointIndex refers to the original index when behavior was created
-                            // Waypoints now have unique IDs and stay in the array even when reached
-                            if (asset.waypoints && asset.waypoints.length > behavior.triggerConfig.waypointIndex) {
-                                const targetWaypoint = asset.waypoints[behavior.triggerConfig.waypointIndex];
-                                if (targetWaypoint && targetWaypoint.reached) {
-                                    shouldFire = true;
-                                }
-                            }
-                            break;
-                    }
-
-                    // Execute actions if trigger fired
-                    if (shouldFire) {
-                        console.log(`Behavior ${behavior.id} fired for asset ${asset.name || asset.id}`);
-
-                        behavior.actions.forEach(action => {
-                            switch (action.type) {
-                                case 'changeHeading':
-                                    console.log(`  Setting targetHeading to ${action.value}`);
-                                    updatedAsset.targetHeading = action.value;
-                                    break;
-                                case 'changeSpeed':
-                                    console.log(`  Setting targetSpeed to ${action.value} (current speed: ${asset.speed})`);
-                                    updatedAsset.targetSpeed = action.value;
-                                    break;
-                                case 'changeAltitude':
-                                    if (asset.domain === 'air') {
-                                        updatedAsset.targetAltitude = action.value;
-                                    }
-                                    break;
-                                case 'turnEmitterOn':
-                                    updatedAsset.emitterStates = {
-                                        ...(updatedAsset.emitterStates || {}),
-                                        [action.value]: true
-                                    };
-                                    break;
-                                case 'turnEmitterOff':
-                                    updatedAsset.emitterStates = {
-                                        ...(updatedAsset.emitterStates || {}),
-                                        [action.value]: false
-                                    };
-                                    break;
-                            }
-                        });
-
-                        behaviorsChanged = true;
-                        return { ...behavior, fired: true };
-                    }
-
-                    return behavior;
-                });
-
-                if (behaviorsChanged) {
-                    updatedAsset.behaviors = updatedBehaviors;
-                }
-
-                return updatedAsset;
-            }));
-        };
-
-        // Run behavior check every physics update
-        const intervalId = setInterval(checkBehaviors, PHYSICS_UPDATE_RATE);
-        return () => clearInterval(intervalId);
-    }, [isRunning, missionTime, assets]);
+    // NOTE: Behavior checking is now integrated directly into the updatePhysics function
+    // to ensure synchronization with waypoint arrival detection and other physics updates
 
     // Radar return generation - create returns when sweep passes over assets
     useEffect(() => {
@@ -2369,7 +2367,12 @@ function AICSimulator() {
             if (asset.id !== assetId) return asset;
 
             const newWaypoints = [...asset.waypoints];
-            newWaypoints[wpIndex] = { lat, lon };
+            // Preserve existing waypoint metadata (id, reached) when moving
+            newWaypoints[wpIndex] = {
+                ...newWaypoints[wpIndex],
+                lat,
+                lon
+            };
 
             // If moved first waypoint, update heading
             let updates = { waypoints: newWaypoints };
@@ -2378,6 +2381,22 @@ function AICSimulator() {
             }
 
             return { ...asset, ...updates };
+        }));
+    }, []);
+
+    const clearWaypoints = useCallback((assetId) => {
+        setAssets(prevAssets => prevAssets.map(asset => {
+            if (asset.id === assetId) {
+                // Reset nextWaypointId to allow "waypoint 1" numbering for new path
+                setNextWaypointId(1);
+
+                return {
+                    ...asset,
+                    waypoints: [],
+                    targetHeading: null // Reset heading to manual control
+                };
+            }
+            return asset;
         }));
     }, []);
 
@@ -4599,32 +4618,37 @@ function AICSimulator() {
                     return <g>{labels}</g>;
                 })()}
 
-                {/* Waypoints */}
-                {asset.waypoints.map((wp, i) => {
-                    const wpPos = latLonToScreen(wp.lat, wp.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+                {/* Waypoints - filter out reached waypoints */}
+                {asset.waypoints
+                    .filter(wp => !wp.reached) // Only render unreached waypoints
+                    .map((wp, i) => {
+                        const wpPos = latLonToScreen(wp.lat, wp.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
 
-                    // Line from asset or previous waypoint
-                    const prevPos = i === 0 ? pos : latLonToScreen(
-                        asset.waypoints[i-1].lat,
-                        asset.waypoints[i-1].lon,
-                        mapCenter.lat, mapCenter.lon, scale, width, height
-                    );
+                        // Calculate previous position for line drawing
+                        const unreachedWaypoints = asset.waypoints.filter(w => !w.reached);
+                        const prevPos = i === 0 ? pos : latLonToScreen(
+                            unreachedWaypoints[i-1].lat,
+                            unreachedWaypoints[i-1].lon,
+                            mapCenter.lat, mapCenter.lon, scale, width, height
+                        );
 
-                    return (
-                        <g key={i}>
-                            <line x1={prevPos.x} y1={prevPos.y} x2={wpPos.x} y2={wpPos.y}
-                                  stroke={config.color} strokeWidth="1" strokeDasharray="5,5" />
-                            <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
-                                <line x1={-6} y1={0} x2={6} y2={0} stroke={config.color} strokeWidth="2" />
-                                <line x1={0} y1={-6} x2={0} y2={6} stroke={config.color} strokeWidth="2" />
+                        return (
+                            <g key={wp.id}> {/* Use waypoint ID as key */}
+                                <line x1={prevPos.x} y1={prevPos.y} x2={wpPos.x} y2={wpPos.y}
+                                      stroke={config.color} strokeWidth="1" strokeDasharray="5,5" />
+                                <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
+                                    <line x1={-6} y1={0} x2={6} y2={0} stroke={config.color} strokeWidth="2" />
+                                    <line x1={0} y1={-6} x2={0} y2={6} stroke={config.color} strokeWidth="2" />
+                                </g>
+                                {/* Waypoint label using ID instead of array index */}
+                                <text x={wpPos.x} y={wpPos.y-10} fill={config.color} fontSize="8"
+                                      textAnchor="middle" fontWeight="700">
+                                    WP{wp.id}
+                                </text>
                             </g>
-                            <text x={wpPos.x} y={wpPos.y-10} fill={config.color} fontSize="8"
-                                  textAnchor="middle" fontWeight="700">
-                                WP{i+1}
-                            </text>
-                        </g>
-                    );
-                })}
+                        );
+                    })
+                }
             </g>
         );
     };
@@ -5423,6 +5447,7 @@ function AICSimulator() {
                     selectedAsset={selectedAsset}
                     addAsset={addAsset}
                     addWaypoint={addWaypoint}
+                    clearWaypoints={clearWaypoints}
                     deleteWaypoint={deleteWaypoint}
                     addGeoPoint={addGeoPoint}
                     deleteGeoPoint={deleteGeoPoint}
@@ -9373,7 +9398,7 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, clearWaypoints, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType }) {
     const [showDomainSubmenu, setShowDomainSubmenu] = useState(false);
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
     const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
@@ -9403,6 +9428,11 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                 break;
             case 'addWaypoint':
                 addWaypoint(selectedAsset.id, contextMenu.lat, contextMenu.lon, false);
+                break;
+            case 'clearWaypoints':
+                if (window.confirm('Clear all waypoints for this asset?')) {
+                    clearWaypoints(selectedAsset.id);
+                }
                 break;
             case 'deleteWaypoint':
                 deleteWaypoint(contextMenu.assetId, contextMenu.waypointIndex);
@@ -9507,9 +9537,23 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             )}
 
             {contextMenu.type === 'asset' && selectedAsset?.waypoints.length > 0 && (
-                <div className="context-menu-item" onClick={() => handleClick('addWaypoint')}>
-                    Add Waypoint
-                </div>
+                <>
+                    <div className="context-menu-item" onClick={() => handleClick('addWaypoint')}>
+                        Add Waypoint
+                    </div>
+                    <div
+                        className="context-menu-item"
+                        style={{
+                            color: '#FF0000',
+                            borderTop: '1px solid #333',
+                            marginTop: '5px',
+                            paddingTop: '8px'
+                        }}
+                        onClick={() => handleClick('clearWaypoints')}
+                    >
+                        Clear All Waypoints
+                    </div>
+                </>
             )}
 
             {contextMenu.type === 'waypoint' && (
