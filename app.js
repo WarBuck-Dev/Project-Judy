@@ -1226,23 +1226,27 @@ function AICSimulator() {
 
             // Check waypoint arrival
             if (asset.waypoints.length > 0) {
-                const wp = asset.waypoints[0];
-                const distToWP = calculateDistance(updated.lat, updated.lon, wp.lat, wp.lon);
+                // Find first unreached waypoint
+                const currentWpIndex = asset.waypoints.findIndex(wp => !wp.reached);
+                if (currentWpIndex !== -1) {
+                    const wp = asset.waypoints[currentWpIndex];
+                    const distToWP = calculateDistance(updated.lat, updated.lon, wp.lat, wp.lon);
 
-                if (distToWP < WAYPOINT_ARRIVAL_THRESHOLD) {
-                    // Increment waypoints reached counter
-                    updated.waypointsReached = (asset.waypointsReached || 0) + 1;
+                    if (distToWP < WAYPOINT_ARRIVAL_THRESHOLD) {
+                        // Mark waypoint as reached instead of removing it
+                        updated.waypoints = asset.waypoints.map((w, idx) =>
+                            idx === currentWpIndex ? { ...w, reached: true } : w
+                        );
 
-                    // Remove current waypoint
-                    updated.waypoints = asset.waypoints.slice(1);
-
-                    // Set heading to next waypoint if exists
-                    if (updated.waypoints.length > 0) {
-                        const nextWP = updated.waypoints[0];
-                        updated.targetHeading = calculateBearing(updated.lat, updated.lon, nextWP.lat, nextWP.lon);
-                    } else {
-                        // No more waypoints, clear targets
-                        updated.targetHeading = null;
+                        // Find next unreached waypoint
+                        const nextWpIndex = updated.waypoints.findIndex((w, idx) => idx > currentWpIndex && !w.reached);
+                        if (nextWpIndex !== -1) {
+                            const nextWP = updated.waypoints[nextWpIndex];
+                            updated.targetHeading = calculateBearing(updated.lat, updated.lon, nextWP.lat, nextWP.lon);
+                        } else {
+                            // No more waypoints, clear targets
+                            updated.targetHeading = null;
+                        }
                     }
                 }
             }
@@ -1475,14 +1479,14 @@ function AICSimulator() {
                             break;
 
                         case 'atWaypoint':
-                            // Check if the asset has reached the specified waypoint number
-                            // waypointIndex is 0-based (0 = first waypoint, 1 = second waypoint, etc.)
-                            // waypointsReached counts how many waypoints have been reached (starts at 0)
-                            // When waypointIndex=0 (first waypoint), fire when waypointsReached >= 1
-                            // When waypointIndex=1 (second waypoint), fire when waypointsReached >= 2
-                            const waypointsReached = asset.waypointsReached || 0;
-                            if (waypointsReached >= behavior.triggerConfig.waypointIndex + 1) {
-                                shouldFire = true;
+                            // Check if the specified waypoint has been reached
+                            // The waypointIndex refers to the original index when behavior was created
+                            // Waypoints now have unique IDs and stay in the array even when reached
+                            if (asset.waypoints && asset.waypoints.length > behavior.triggerConfig.waypointIndex) {
+                                const targetWaypoint = asset.waypoints[behavior.triggerConfig.waypointIndex];
+                                if (targetWaypoint && targetWaypoint.reached) {
+                                    shouldFire = true;
+                                }
                             }
                             break;
                     }
@@ -2326,12 +2330,14 @@ function AICSimulator() {
         setAssets(prev => prev.map(asset => {
             if (asset.id !== assetId) return asset;
 
-            const newWaypoint = { lat, lon };
+            // Generate unique ID for waypoint (incremental number)
+            const nextWaypointId = (asset.nextWaypointId || 0) + 1;
+            const newWaypoint = { id: nextWaypointId, lat, lon, reached: false };
             const newWaypoints = isFirst ? [newWaypoint] : [...asset.waypoints, newWaypoint];
 
             // If first waypoint, set heading toward it
-            let updates = { waypoints: newWaypoints };
-            if (newWaypoints.length === 1) {
+            let updates = { waypoints: newWaypoints, nextWaypointId };
+            if (newWaypoints.length === 1 || isFirst) {
                 updates.targetHeading = calculateBearing(asset.lat, asset.lon, lat, lon);
             }
 
@@ -3310,11 +3316,14 @@ function AICSimulator() {
             // Update position
             const updates = { lat: latLon.lat, lon: latLon.lon };
 
-            // If asset has waypoints, recalculate heading to first waypoint
+            // If asset has waypoints, recalculate heading to first unreached waypoint
             if (draggedAsset && draggedAsset.waypoints.length > 0) {
-                const nextWP = draggedAsset.waypoints[0];
-                const newHeading = calculateBearing(latLon.lat, latLon.lon, nextWP.lat, nextWP.lon);
-                updates.targetHeading = newHeading;
+                const nextWpIndex = draggedAsset.waypoints.findIndex(wp => !wp.reached);
+                if (nextWpIndex !== -1) {
+                    const nextWP = draggedAsset.waypoints[nextWpIndex];
+                    const newHeading = calculateBearing(latLon.lat, latLon.lon, nextWP.lat, nextWP.lon);
+                    updates.targetHeading = newHeading;
+                }
             }
 
             updateAsset(draggedAssetId, updates);
