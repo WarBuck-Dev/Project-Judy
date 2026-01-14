@@ -2387,12 +2387,10 @@ function AICSimulator() {
     const clearWaypoints = useCallback((assetId) => {
         setAssets(prevAssets => prevAssets.map(asset => {
             if (asset.id === assetId) {
-                // Reset nextWaypointId to allow "waypoint 1" numbering for new path
-                setNextWaypointId(1);
-
                 return {
                     ...asset,
                     waypoints: [],
+                    nextWaypointId: 0, // Reset waypoint ID counter for fresh start
                     targetHeading: null // Reset heading to manual control
                 };
             }
@@ -4640,10 +4638,10 @@ function AICSimulator() {
                                     <line x1={-6} y1={0} x2={6} y2={0} stroke={config.color} strokeWidth="2" />
                                     <line x1={0} y1={-6} x2={0} y2={6} stroke={config.color} strokeWidth="2" />
                                 </g>
-                                {/* Waypoint label using ID instead of array index */}
+                                {/* Waypoint label using sequential numbering (i+1) */}
                                 <text x={wpPos.x} y={wpPos.y-10} fill={config.color} fontSize="8"
                                       textAnchor="middle" fontWeight="700">
-                                    WP{wp.id}
+                                    WP{i+1}
                                 </text>
                             </g>
                         );
