@@ -1230,6 +1230,9 @@ function AICSimulator() {
                 const distToWP = calculateDistance(updated.lat, updated.lon, wp.lat, wp.lon);
 
                 if (distToWP < WAYPOINT_ARRIVAL_THRESHOLD) {
+                    // Increment waypoints reached counter
+                    updated.waypointsReached = (asset.waypointsReached || 0) + 1;
+
                     // Remove current waypoint
                     updated.waypoints = asset.waypoints.slice(1);
 
@@ -1472,16 +1475,12 @@ function AICSimulator() {
                             break;
 
                         case 'atWaypoint':
-                            // Check if asset has waypoints and is at the specified waypoint
-                            if (asset.waypoints && asset.waypoints.length > behavior.triggerConfig.waypointIndex) {
-                                const waypoint = asset.waypoints[behavior.triggerConfig.waypointIndex];
-                                const distanceToWaypoint = calculateDistance(
-                                    asset.lat, asset.lon,
-                                    waypoint.lat, waypoint.lon
-                                );
-                                if (distanceToWaypoint <= WAYPOINT_ARRIVAL_THRESHOLD) {
-                                    shouldFire = true;
-                                }
+                            // Check if the asset has reached the specified waypoint number
+                            // waypointIndex is 0-based (0 = first waypoint, 1 = second waypoint, etc.)
+                            // waypointsReached is a counter that increments each time a waypoint is reached
+                            const waypointsReached = asset.waypointsReached || 0;
+                            if (waypointsReached > behavior.triggerConfig.waypointIndex) {
+                                shouldFire = true;
                             }
                             break;
                     }
