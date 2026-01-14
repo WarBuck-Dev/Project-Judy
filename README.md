@@ -479,11 +479,81 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 2.5
-**Last Updated**: January 10, 2026
+**Version**: 2.6
+**Last Updated**: January 13, 2026
 **Status**: Production Ready
 
 ## Recent Updates
+
+### Version 2.6 (January 2026)
+
+#### Asset Behaviors System
+- **Automated Trigger-Action System**: Define complex automated behaviors for assets
+  - BEHAVIORS tab in asset control panel for behavior management
+  - Create, edit, and delete behaviors with visual interface
+  - Multiple behaviors per asset with navigation controls
+  - Behaviors persist in save files and load with scenarios
+
+- **Three Trigger Types**:
+  - **Mission Time**: Execute actions when specified mission time is reached
+    - Time input in HH:MM:SS format for easy configuration
+    - Triggers once at exact mission time
+  - **Distance from Asset**: Execute when selected asset is within specified distance
+    - Target asset selection dropdown
+    - Distance threshold in nautical miles
+    - Triggers once when distance threshold is met
+  - **At Waypoint**: Execute when asset reaches a specified waypoint
+    - Waypoint selection dropdown (shows only unreached waypoints)
+    - Triggers when asset arrives within 0.5 NM of waypoint
+    - Waypoint numbering preserved after completion
+
+- **Five Action Types**:
+  - **Change Heading**: Set asset heading to specified value (0-359°)
+  - **Change Speed**: Set asset speed to specified value (knots)
+  - **Change Altitude**: Set asset altitude to specified value (feet, air domain only)
+  - **Turn Emitter On**: Activate specified radar emitter
+  - **Turn Emitter Off**: Deactivate specified radar emitter
+
+- **Multiple Actions Per Trigger**:
+  - Execute unlimited actions simultaneously when trigger fires
+  - Add/remove actions with visual form controls
+  - Each action independently configured
+  - Real-time validation for action parameters
+
+- **Behavior Management**:
+  - Next/Back buttons to browse through behaviors
+  - NEW button to create fresh behavior
+  - EDIT button to modify existing behaviors
+  - DELETE button with confirmation dialog
+  - SAVE/CANCEL buttons for form control
+  - View mode shows trigger type, configuration, and action list
+  - Status indicator shows FIRED/ACTIVE state
+
+- **Smart Behavior Execution**:
+  - Behaviors fire once and are marked as FIRED
+  - Continuous checking during simulation
+  - Console logging for debugging
+  - Behaviors preserved across save/load cycles
+  - No performance impact on simulation
+
+#### Waypoint Visibility Enhancement
+- **Reached Waypoint Auto-Hide**: Completed waypoints automatically removed from map
+  - Waypoints marked as reached disappear immediately
+  - Reduces visual clutter during long missions
+  - Waypoint numbering preserved (WP2 stays WP2 even after WP1 is reached)
+  - Dashed lines connect only unreached waypoints
+
+- **Clear All Waypoints**: Context menu option to reset flight path
+  - Available when asset has waypoints assigned
+  - Confirmation dialog prevents accidental deletion
+  - Resets waypoint numbering for fresh flight path
+  - Clears all waypoints and resets heading control
+
+- **Behaviors Integration**:
+  - Waypoint dropdown in behaviors shows only unreached waypoints
+  - Consistent waypoint numbering across map and UI
+  - Behaviors correctly reference waypoints by array index
+  - Waypoint triggers fire when reached flag is set
 
 ### Version 2.5 (January 2026)
 
