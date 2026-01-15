@@ -466,5 +466,70 @@
     "boosterTime": 70,
     "boosterAcceleration": 8,
     "selfDestructTime": 1728
+  },
+  "S-75 Dvina": {
+    "name": "S-75 Dvina",
+    "type": "SAM",
+    "maxSpeed": 2660,
+    "maxRange": 25,
+    "targetType": "air",
+    "maxAcceleration": 300,
+    "symbol": "missile",
+    "fuelTime": 41,
+    "boosterTime": 6,
+    "boosterAcceleration": 600,
+    "selfDestructTime": 82
+  },
+  "S-125 Neva": {
+    "name": "S-125 Neva",
+    "type": "SAM",
+    "maxSpeed": 2400,
+    "maxRange": 15,
+    "targetType": "air",
+    "maxAcceleration": 280,
+    "symbol": "missile",
+    "fuelTime": 27,
+    "boosterTime": 4,
+    "boosterAcceleration": 560,
+    "selfDestructTime": 54
+  },
+  "S-200 Angara": {
+    "name": "S-200 Angara",
+    "type": "SAM",
+    "maxSpeed": 4920,
+    "maxRange": 150,
+    "targetType": "air",
+    "maxAcceleration": 400,
+    "symbol": "missile",
+    "fuelTime": 132,
+    "boosterTime": 20,
+    "boosterAcceleration": 800,
+    "selfDestructTime": 264
+  },
+  "2K12 Kub": {
+    "name": "2K12 Kub",
+    "type": "SAM",
+    "maxSpeed": 1900,
+    "maxRange": 12,
+    "targetType": "air",
+    "maxAcceleration": 260,
+    "symbol": "missile",
+    "fuelTime": 27,
+    "boosterTime": 4,
+    "boosterAcceleration": 520,
+    "selfDestructTime": 54
+  },
+  "9K33 Osa": {
+    "name": "9K33 Osa",
+    "type": "SAM",
+    "maxSpeed": 1700,
+    "maxRange": 9,
+    "targetType": "air",
+    "maxAcceleration": 240,
+    "symbol": "missile",
+    "fuelTime": 23,
+    "boosterTime": 3,
+    "boosterAcceleration": 480,
+    "selfDestructTime": 46
   }
 }

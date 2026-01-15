@@ -62,6 +62,14 @@ const DOMAIN_TYPES = {
         speedRate: 2, // knots per second
         hasAltitude: false,
         hasDepth: true
+    },
+    land: {
+        label: 'Land',
+        maxSpeed: 0, // Stationary - no movement
+        turnRate: 0, // No turning
+        speedRate: 0, // No speed changes
+        hasAltitude: false,
+        hasDepth: false
     }
 };
 
@@ -1359,20 +1367,24 @@ function AICSimulator() {
             }
 
             // Update position based on speed and heading
-            const speedNMPerSec = asset.speed / 3600;
-            const distance = speedNMPerSec * deltaTime;
+            // LAND DOMAIN: Skip position updates (stationary)
+            if (asset.domain !== 'land') {
+                const speedNMPerSec = asset.speed / 3600;
+                const distance = speedNMPerSec * deltaTime;
 
-            const headingRad = asset.heading * Math.PI / 180;
-            const latRad = asset.lat * Math.PI / 180;
+                const headingRad = asset.heading * Math.PI / 180;
+                const latRad = asset.lat * Math.PI / 180;
 
-            const deltaLat = (distance * Math.cos(headingRad)) / 60;
-            const deltaLon = (distance * Math.sin(headingRad)) / (60 * Math.cos(latRad));
+                const deltaLat = (distance * Math.cos(headingRad)) / 60;
+                const deltaLon = (distance * Math.sin(headingRad)) / (60 * Math.cos(latRad));
 
-            updated.lat = asset.lat + deltaLat;
-            updated.lon = asset.lon + deltaLon;
+                updated.lat = asset.lat + deltaLat;
+                updated.lon = asset.lon + deltaLon;
+            }
 
             // Check waypoint arrival FIRST - mark waypoints as reached
-            if (asset.waypoints && asset.waypoints.length > 0) {
+            // LAND DOMAIN: Skip waypoint processing (stationary assets don't navigate)
+            if (asset.domain !== 'land' && asset.waypoints && asset.waypoints.length > 0) {
                 // Backwards compatibility: ensure all waypoints have reached flag
                 if (asset.waypoints.some(wp => wp.reached === undefined)) {
                     updated.waypoints = asset.waypoints.map(wp => ({
@@ -1704,6 +1716,9 @@ function AICSimulator() {
                 // Skip subsurface assets deeper than 15 feet (fully submerged)
                 if (asset.domain === 'subSurface' && asset.depth > 15) return;
 
+                // Skip land assets - no radar returns from ground installations
+                if (asset.domain === 'land') return;
+
                 // Calculate bearing from ownship to asset
                 const bearing = calculateBearing(ownship.lat, ownship.lon, asset.lat, asset.lon);
                 const distance = calculateDistance(ownship.lat, ownship.lon, asset.lat, asset.lon);
@@ -1768,6 +1783,9 @@ function AICSimulator() {
 
                 // Skip subsurface assets deeper than 15 feet (fully submerged)
                 if (asset.domain === 'subSurface' && asset.depth > 15) return;
+
+                // Skip land assets - no IFF from ground installations
+                if (asset.domain === 'land') return;
 
                 // Skip assets not squawking IFF
                 if (!asset.iffSquawking) return;
@@ -2131,6 +2149,14 @@ function AICSimulator() {
         } else {
             // Apply domain-specific speed limits if no platform
             speed = Math.min(domainConfig.maxSpeed, speed);
+        }
+
+        // LAND DOMAIN: Force stationary (speed=0, heading=0)
+        if (domain === 'land') {
+            speed = 0;
+            if (assetData.heading === undefined) {
+                assetData.heading = 0;
+            }
         }
 
         // Initialize emitter states (all emitters off by default)
@@ -4676,7 +4702,7 @@ function AICSimulator() {
                             strokeWidth={strokeWidth}
                         />
                     )
-                ) : (
+                ) : asset.domain === 'subSurface' ? (
                     // SUB-SURFACE DOMAIN - Bottom half only
                     config.shape === 'circle' ? (
                         // Friendly: Bottom half of circle (arc)
@@ -4703,7 +4729,16 @@ function AICSimulator() {
                             strokeWidth={strokeWidth}
                         />
                     )
-                )}
+                ) : asset.domain === 'land' ? (
+                    // LAND DOMAIN - Square with clipped corners (MIL-STD-2525)
+                    // Bottom-left and top-right corners clipped at 45 degrees
+                    <path
+                        d={`M ${pos.x - size} ${pos.y - size * 0.3} L ${pos.x - size * 0.3} ${pos.y - size} L ${pos.x + size * 0.3} ${pos.y - size} L ${pos.x + size} ${pos.y - size * 0.3} L ${pos.x + size} ${pos.y + size} L ${pos.x - size} ${pos.y + size} Z`}
+                        fill="none"
+                        stroke={config.color}
+                        strokeWidth={strokeWidth}
+                    />
+                ) : null}
 
                 {/* Name label above */}
                 <text x={pos.x} y={pos.y-size-5} fill={config.color} fontSize="10"
@@ -8961,6 +8996,7 @@ function ControlPanel({
                                     <option value="air">Air</option>
                                     <option value="surface">Surface</option>
                                     <option value="subSurface">Sub-Surface</option>
+                                    <option value="land">Land</option>
                                 </select>
                             </div>
 
@@ -8982,47 +9018,52 @@ function ControlPanel({
                                 </div>
                             )}
 
-                            <div className="input-group">
-                                <label className="input-label">
-                                    Heading (degrees)
-                                    {selectedAsset && (
-                                        <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
-                                            Current: {Math.round(selectedAsset.heading)}°
-                                            {selectedAsset.targetHeading !== null && ` → ${Math.round(selectedAsset.targetHeading)}°`}
-                                        </span>
-                                    )}
-                                </label>
-                                <div style={{ display: 'flex', gap: '5px' }}>
-                                    <input
-                                        className="input-field"
-                                        type="number"
-                                        min="0"
-                                        max="359"
-                                        value={editValues.heading || 0}
-                                        onFocus={() => setActivelyEditingFields(prev => ({ ...prev, heading: true }))}
-                                        onBlur={() => setActivelyEditingFields(prev => ({ ...prev, heading: false }))}
-                                        onChange={(e) => {
-                                            handleUpdate('heading', e.target.value);
-                                            e.target.style.color = '#00BFFF';
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                applyTarget('heading');
-                                                e.target.style.color = '#00FF00';
-                                            }
-                                        }}
-                                        style={{ flex: 1, color: '#00FF00' }}
-                                    />
-                                    <button
-                                        className="control-btn"
-                                        onClick={() => applyTarget('heading')}
-                                        style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
-                                    >
-                                        SET
-                                    </button>
+                            {/* Heading control - hide for land domain (stationary) */}
+                            {selectedAsset.domain !== 'land' && (
+                                <div className="input-group">
+                                    <label className="input-label">
+                                        Heading (degrees)
+                                        {selectedAsset && (
+                                            <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                                Current: {Math.round(selectedAsset.heading)}°
+                                                {selectedAsset.targetHeading !== null && ` → ${Math.round(selectedAsset.targetHeading)}°`}
+                                            </span>
+                                        )}
+                                    </label>
+                                    <div style={{ display: 'flex', gap: '5px' }}>
+                                        <input
+                                            className="input-field"
+                                            type="number"
+                                            min="0"
+                                            max="359"
+                                            value={editValues.heading || 0}
+                                            onFocus={() => setActivelyEditingFields(prev => ({ ...prev, heading: true }))}
+                                            onBlur={() => setActivelyEditingFields(prev => ({ ...prev, heading: false }))}
+                                            onChange={(e) => {
+                                                handleUpdate('heading', e.target.value);
+                                                e.target.style.color = '#00BFFF';
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    applyTarget('heading');
+                                                    e.target.style.color = '#00FF00';
+                                                }
+                                            }}
+                                            style={{ flex: 1, color: '#00FF00' }}
+                                        />
+                                        <button
+                                            className="control-btn"
+                                            onClick={() => applyTarget('heading')}
+                                            style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                        >
+                                            SET
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
 
+                            {/* Speed control - hide for land domain (stationary) */}
+                            {selectedAsset.domain !== 'land' && (
                             <div className="input-group">
                                 <label className="input-label" style={{ display: 'block' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -9068,6 +9109,7 @@ function ControlPanel({
                                     </button>
                                 </div>
                             </div>
+                            )}
 
                             {(selectedAsset.domain === 'air' || !selectedAsset.domain) && (
                                 <div className="input-group">
@@ -9904,6 +9946,7 @@ function AddAssetDialog({ initialData, platforms, onClose, onAdd }) {
                         <option value="air">Air</option>
                         <option value="surface">Surface</option>
                         <option value="subSurface">Sub-Surface</option>
+                        <option value="land">Land</option>
                     </select>
                 </div>
 
