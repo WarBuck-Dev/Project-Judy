@@ -322,6 +322,7 @@ function parseTimeToSeconds(timeString) {
 const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDeleteBehavior }) => {
     const [currentBehaviorIndex, setCurrentBehaviorIndex] = React.useState(0);
     const [editMode, setEditMode] = React.useState(false); // false = view, true = create/edit
+    const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false); // Styled confirmation dialog
     const [formData, setFormData] = React.useState({
         triggerType: 'missionTime',
         triggerConfig: { missionTimeDisplay: '00:00:00' },
@@ -380,10 +381,23 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
 
     // Delete current behavior
     const handleDeleteBehavior = () => {
-        if (currentBehavior && window.confirm('Delete this behavior?')) {
+        if (currentBehavior) {
+            setShowDeleteConfirm(true);
+        }
+    };
+
+    // Confirm delete action
+    const confirmDelete = () => {
+        if (currentBehavior) {
             onDeleteBehavior(currentBehavior.id);
             setCurrentBehaviorIndex(Math.max(0, currentBehaviorIndex - 1));
         }
+        setShowDeleteConfirm(false);
+    };
+
+    // Cancel delete action
+    const cancelDelete = () => {
+        setShowDeleteConfirm(false);
     };
 
     // Navigation
@@ -854,6 +868,112 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                         fontWeight: 'bold'
                     }
                 }, 'SAVE')
+            )
+        ),
+
+        // Delete Confirmation Dialog
+        showDeleteConfirm && React.createElement('div', {
+            style: {
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 10000
+            }
+        },
+            React.createElement('div', {
+                style: {
+                    backgroundColor: '#000',
+                    border: '2px solid #FF0000',
+                    borderRadius: '8px',
+                    padding: '30px',
+                    maxWidth: '400px',
+                    boxShadow: '0 0 20px rgba(255, 0, 0, 0.5)'
+                }
+            },
+                // Title
+                React.createElement('div', {
+                    style: {
+                        fontSize: '18px',
+                        fontWeight: 'bold',
+                        color: '#FF0000',
+                        marginBottom: '20px',
+                        textAlign: 'center'
+                    }
+                }, 'DELETE BEHAVIOR'),
+
+                // Message
+                React.createElement('div', {
+                    style: {
+                        fontSize: '14px',
+                        color: '#00FF00',
+                        marginBottom: '30px',
+                        textAlign: 'center',
+                        lineHeight: '1.5'
+                    }
+                }, 'Are you sure you want to delete this behavior?', React.createElement('br'), 'This action cannot be undone.'),
+
+                // Buttons
+                React.createElement('div', {
+                    style: {
+                        display: 'flex',
+                        gap: '15px',
+                        justifyContent: 'center'
+                    }
+                },
+                    // Cancel button
+                    React.createElement('button', {
+                        onClick: cancelDelete,
+                        style: {
+                            padding: '10px 30px',
+                            backgroundColor: 'transparent',
+                            color: '#00FF00',
+                            border: '2px solid #00FF00',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: 'bold',
+                            fontSize: '14px',
+                            transition: 'all 0.2s'
+                        },
+                        onMouseEnter: (e) => {
+                            e.target.style.backgroundColor = '#00FF00';
+                            e.target.style.color = '#000';
+                        },
+                        onMouseLeave: (e) => {
+                            e.target.style.backgroundColor = 'transparent';
+                            e.target.style.color = '#00FF00';
+                        }
+                    }, 'CANCEL'),
+
+                    // Delete button
+                    React.createElement('button', {
+                        onClick: confirmDelete,
+                        style: {
+                            padding: '10px 30px',
+                            backgroundColor: '#FF0000',
+                            color: '#FFF',
+                            border: '2px solid #FF0000',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: 'bold',
+                            fontSize: '14px',
+                            transition: 'all 0.2s'
+                        },
+                        onMouseEnter: (e) => {
+                            e.target.style.backgroundColor = '#CC0000';
+                            e.target.style.borderColor = '#CC0000';
+                        },
+                        onMouseLeave: (e) => {
+                            e.target.style.backgroundColor = '#FF0000';
+                            e.target.style.borderColor = '#FF0000';
+                        }
+                    }, 'DELETE')
+                )
             )
         )
     );
