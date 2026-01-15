@@ -5754,40 +5754,98 @@ function AICSimulator() {
                             alignItems: 'center',
                             justifyContent: 'center'
                         }}>
-                            {eoirImageErrors.has(asset.id) ? (
-                                <div style={{ color: '#FF0000', textAlign: 'center', padding: '50px' }}>
-                                    Image not found
-                                </div>
-                            ) : (
-                                <img
-                                    key={asset.id}
-                                    src={`EO-IR/${asset.platform.image}`}
-                                    alt={asset.name}
-                                    style={{
-                                        maxWidth: '100%',
-                                        maxHeight: '100%',
-                                        display: 'block',
-                                        border: '1px solid #00FF00',
-                                        objectFit: 'contain'
-                                    }}
-                                    onError={() => {
-                                        setEoirImageErrors(prev => new Set([...prev, asset.id]));
-                                    }}
-                                />
-                            )}
+                            {(() => {
+                                // Find ownship
+                                const ownship = assets.find(a => a.type === 'ownship');
+
+                                // Calculate range from ownship to selected asset
+                                const range = ownship && asset
+                                    ? calculateDistance(ownship.lat, ownship.lon, asset.lat, asset.lon)
+                                    : 0;
+
+                                // Check if within 35 NM range
+                                const inRange = range <= 35;
+
+                                // Display logic
+                                if (!inRange) {
+                                    // OUT OF RANGE: Display range warning
+                                    return (
+                                        <div style={{
+                                            color: '#FFAA00',
+                                            fontSize: '18px',
+                                            fontWeight: 'bold',
+                                            textAlign: 'center',
+                                            padding: '20px'
+                                        }}>
+                                            Outside of Range
+                                            <div style={{
+                                                fontSize: '12px',
+                                                marginTop: '10px',
+                                                opacity: 0.7
+                                            }}>
+                                                Asset is {range.toFixed(1)} NM from ownship
+                                                <br />
+                                                Maximum EO/IR range: 35 NM
+                                            </div>
+                                        </div>
+                                    );
+                                } else if (!eoirImageErrors.has(asset.id)) {
+                                    // IN RANGE: Display image
+                                    return (
+                                        <img
+                                            key={asset.id}
+                                            src={`EO-IR/${asset.platform.image}`}
+                                            alt={asset.name}
+                                            style={{
+                                                maxWidth: '100%',
+                                                maxHeight: '100%',
+                                                display: 'block',
+                                                border: '1px solid #00FF00',
+                                                objectFit: 'contain'
+                                            }}
+                                            onError={() => {
+                                                setEoirImageErrors(prev => new Set([...prev, asset.id]));
+                                            }}
+                                        />
+                                    );
+                                } else {
+                                    // IMAGE ERROR: Display error message
+                                    return (
+                                        <div style={{ color: '#FF0000', textAlign: 'center', padding: '50px' }}>
+                                            Image not found
+                                        </div>
+                                    );
+                                }
+                            })()}
                         </div>
 
                         {/* Footer Info */}
                         <div style={{
                             padding: '10px',
                             background: '#2a2a2a',
-                            color: '#00FF00',
-                            fontSize: '10px',
                             borderTop: '1px solid rgba(0, 255, 0, 0.3)',
-                            flexShrink: 0
+                            flexShrink: 0,
+                            textAlign: 'center'
                         }}>
-                            <div><strong>Platform:</strong> {asset.platform.name}</div>
-                            <div><strong>Domain:</strong> {asset.domain.toUpperCase()}</div>
+                            <div style={{
+                                fontSize: '12px',
+                                color: (() => {
+                                    const ownship = assets.find(a => a.type === 'ownship');
+                                    const range = ownship && asset
+                                        ? calculateDistance(ownship.lat, ownship.lon, asset.lat, asset.lon)
+                                        : 0;
+                                    return range <= 35 ? '#00FF00' : '#FFAA00';
+                                })(),
+                                fontWeight: 'bold'
+                            }}>
+                                {(() => {
+                                    const ownship = assets.find(a => a.type === 'ownship');
+                                    const range = ownship && asset
+                                        ? calculateDistance(ownship.lat, ownship.lon, asset.lat, asset.lon)
+                                        : 0;
+                                    return `${range.toFixed(1)} NM`;
+                                })()}
+                            </div>
                         </div>
                     </div>
                 );
