@@ -8927,45 +8927,18 @@ function ControlPanel({
                             {selectedAsset.hasOwnProperty('platform') && selectedAsset.type !== 'ownship' && (
                                 <div className="input-group">
                                     <label className="input-label">Platform</label>
-                                    <select
+                                    <div
                                         className="input-field"
-                                        value={selectedAsset.platform && selectedAsset.platform.name ? selectedAsset.platform.name : ''}
-                                        onChange={(e) => {
-                                            const platformName = e.target.value;
-                                            const domain = selectedAsset.domain || 'air';
-                                            const domainPlatforms = (platforms && platforms[domain]) ? platforms[domain] : [];
-                                            const platform = platformName ? domainPlatforms.find(p => p.name === platformName) : null;
-
-                                            const updates = { platform };
-
-                                            const emitterStates = {};
-                                            if (platform && platform.emitters && platform.emitters.length > 0) {
-                                                platform.emitters.forEach(emitter => {
-                                                    emitterStates[emitter] = false;
-                                                });
-                                            }
-                                            updates.emitterStates = emitterStates;
-
-                                            if (platform) {
-                                                const domainConfig = DOMAIN_TYPES[domain];
-                                                if (selectedAsset.speed > platform.maxSpeed) {
-                                                    updates.speed = platform.maxSpeed;
-                                                    updates.targetSpeed = null;
-                                                }
-                                                if (domainConfig.hasAltitude && selectedAsset.altitude > platform.maxAltitude) {
-                                                    updates.altitude = platform.maxAltitude;
-                                                    updates.targetAltitude = null;
-                                                }
-                                            }
-
-                                            updateAsset(selectedAsset.id, updates);
+                                        style={{
+                                            backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                            color: '#00FF00',
+                                            padding: '10px',
+                                            cursor: 'not-allowed',
+                                            opacity: 0.7
                                         }}
                                     >
-                                        <option value="">None (Generic)</option>
-                                        {(platforms && platforms[selectedAsset.domain || 'air'] ? platforms[selectedAsset.domain || 'air'] : []).map((platform, idx) => (
-                                            <option key={idx} value={platform.name}>{platform.name}</option>
-                                        ))}
-                                    </select>
+                                        {selectedAsset.platform && selectedAsset.platform.name ? selectedAsset.platform.name : 'None (Generic)'}
+                                    </div>
                                 </div>
                             )}
 
