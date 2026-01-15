@@ -479,11 +479,75 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 2.6.5
+**Version**: 2.6.6
 **Last Updated**: January 15, 2026
 **Status**: Production Ready
 
 ## Recent Updates
+
+### Version 2.6.6 (January 2026)
+
+#### ISAR Flight Profile Requirements
+- **Realistic ISAR Acquisition Constraints**: MCS E-PCL Page N6 parameter validation
+  - **Altitude Requirement**: 5,000' to 35,000' MSL
+    - ISAR system disabled below 5,000' (insufficient altitude for proper geometry)
+    - ISAR system disabled above 35,000' (beyond operational envelope)
+  - **Groundspeed Requirement**: >180 and <250 knots
+    - Minimum 180 knots for stable platform and adequate relative motion
+    - Maximum 250 knots to prevent excessive target smear
+  - **Wings Level Requirement**: Minimum 15 seconds continuous level flight
+    - Internal timer tracks wings level duration
+    - Timer resets on any heading change or banking maneuver
+    - Timer pauses when simulation pauses (preserves progress)
+    - No timer display in UI (tracked internally only)
+  - **Grazing Angle Requirement**: 0.01° to 4.0°
+    - Calculated from ownship altitude and slant range to target
+    - Optimal imaging at shallow grazing angles (1-2°)
+    - Steep angles (>4°) cause geometry errors
+  - **Slant Range Limits**: Altitude-dependent range envelope
+    - At 5,000': 15-150 NM valid range
+    - At 15,000': 21-210 NM valid range
+    - At 35,000': 37-330 NM valid range
+    - Linear interpolation between altitude values
+
+- **ISAR Tab Flight Profile Status Display**:
+  - Real-time validation status in SYSTEMS → ISAR tab
+  - "READY" (green) when all requirements met
+  - "NOT READY" (orange) when any requirement fails
+  - Individual status indicators for altitude, groundspeed, wings level
+  - Color-coded parameter display (green = OK, red = failed)
+  - Updates continuously as flight parameters change
+
+- **ISAR Window Acquisition Feedback**:
+  - "ISAR ACQUISITION FAILED" message when out of profile
+  - Detailed breakdown of all five requirements
+  - Current values vs. required values for each parameter
+  - Individual color coding (green = pass, red = fail)
+  - Automatically switches to image when all requirements met
+  - Real-time updates without closing/reopening window
+
+- **Tab Color Coding**:
+  - ISAR tab background changes based on flight profile status
+  - Red: System OFF
+  - Orange: System ON but out of profile
+  - Green: System ON and flight profile valid
+  - Text color automatically adjusts for readability
+    - Black text on colored background when tab selected
+    - Colored text on transparent background when unselected
+
+- **ISAR Button Enhancements**:
+  - Button text shows "VIEW ISAR" when profile valid (green)
+  - Button text shows "ISAR (OUT OF PROFILE)" when invalid (orange)
+  - Still clickable when out of profile (shows detailed error message)
+  - Visual feedback before opening ISAR window
+
+- **Technical Implementation**:
+  - `calculateGrazingAngle()`: Arctan-based geometry calculation
+  - `getIsarRangeLimits()`: MCS E-PCL table interpolation
+  - `validateIsarFlightProfile()`: Comprehensive 5-parameter validation
+  - Wings level tracking with mission time-based duration
+  - Optimal dummy target positioning for status validation
+  - React useCallback hook for memoized validation function
 
 ### Version 2.6.5 (January 2026)
 

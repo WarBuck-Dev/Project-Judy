@@ -159,11 +159,65 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
     return R * c;
 }
 
+// ============================================================================
+// ISAR Flight Profile Validation Functions
+// ============================================================================
+
+// Calculate grazing angle for ISAR geometry
+// Grazing angle is the angle between the radar beam and the target surface
+function calculateGrazingAngle(ownshipAlt, slantRange) {
+    // Convert altitude from feet to nautical miles (1 NM = 6076.12 feet)
+    const altitudeNM = ownshipAlt / 6076.12;
+
+    // Grazing angle = arctan(altitude / horizontal range)
+    // For small angles: horizontal range ≈ slant range (simplified assumption)
+    const grazingAngleRad = Math.atan(altitudeNM / slantRange);
+    const grazingAngleDeg = grazingAngleRad * (180 / Math.PI);
+
+    return grazingAngleDeg;
+}
+
+// Get ISAR slant range limits based on altitude (from MCS E-PCL page N6 table)
+function getIsarRangeLimits(altitude) {
+    // ISAR requires specific altitude and range geometry for proper imaging
+    // Table from MCS E-PCL page N6:
+    // 5,000':  15-150 NM
+    // 10,000': 18-180 NM
+    // 15,000': 22-210 NM
+    // 20,000': 26-240 NM
+    // 25,000': 30-270 NM
+    // 30,000': 33-300 NM
+    // 35,000': 37-330 NM
+
+    if (altitude < 5000) return { min: 0, max: 0 }; // Below minimum altitude
+    if (altitude > 35000) return { min: 0, max: 0 }; // Above maximum altitude
+
+    // Linear interpolation between table points
+    const altitudeK = altitude / 1000; // Convert to thousands
+
+    // Minimum range: approximately 3 NM per 1000' altitude
+    // At 5k: 15 NM, at 10k: 18 NM, at 35k: 37 NM
+    const minRange = (altitudeK * 0.6) + 12; // Linear fit to table data
+
+    // Maximum range: approximately 30 NM per 1000' altitude (for grazing angle limits)
+    // At 5k: 150 NM, at 35k: 330 NM
+    const maxRange = altitudeK * 30 + 120; // Linear fit to table data
+
+    return { min: minRange, max: maxRange };
+}
+
 // Get SONO tab color based on power and armed state
 function getSonoTabColor(enabled, armed) {
     if (!enabled) return '#FF0000'; // RED when OFF
     if (!armed) return '#FFFF00';   // YELLOW when ON but SAFE
     return '#00FF00';                // GREEN when ON and ARMED
+}
+
+// Get ISAR tab color based on enabled state and flight profile validation
+function getIsarTabColor(enabled, isInProfile) {
+    if (!enabled) return '#FF0000';     // RED when OFF
+    if (!isInProfile) return '#FFAA00'; // ORANGE when ON but out of profile
+    return '#00FF00';                   // GREEN when ON and in profile
 }
 
 // Get WEAPON tab color based on power and armed state
@@ -1089,6 +1143,9 @@ function AICSimulator() {
     const [isarDragging, setIsarDragging] = useState(false); // ISAR window dragging state
     const [isarDragOffset, setIsarDragOffset] = useState({ x: 0, y: 0 }); // ISAR drag offset
     const [isarImageErrors, setIsarImageErrors] = useState(new Set()); // Track which asset IDs have ISAR image load errors
+    // ISAR Wings Level Tracking (15 second minimum requirement for ISAR acquisition)
+    const [wingsLevelStartTime, setWingsLevelStartTime] = useState(null); // Mission time when wings level started
+    const [wingsLevelDuration, setWingsLevelDuration] = useState(0); // Duration in seconds that wings have been level
 
     // SONOBUOY SYSTEM STATE
     const [sonoEnabled, setSonoEnabled] = useState(false);
@@ -1695,6 +1752,42 @@ function AICSimulator() {
             }
         };
     }, [isRunning]);
+
+    // ============================================================================
+    // ISAR Wings Level Duration Tracking
+    // ============================================================================
+    // Track continuous wings-level time for ISAR acquisition (15 second minimum requirement)
+    useEffect(() => {
+        if (!isRunning) {
+            // When paused: preserve current duration, don't reset
+            // Timer will resume from current value when simulation resumes
+            return;
+        }
+
+        const ownship = assets.find(a => a.type === 'ownship');
+        if (!ownship) return;
+
+        // Check if heading is stable (not changing) - wings level condition
+        // Consider wings level if targetHeading is null (manual control, no turn commanded)
+        // OR if current heading is very close to target heading (< 0.5 degrees difference)
+        const headingStable = ownship.targetHeading === null ||
+                            Math.abs(ownship.heading - ownship.targetHeading) < 0.5;
+
+        if (headingStable) {
+            if (wingsLevelStartTime === null) {
+                // Start tracking wings level time
+                setWingsLevelStartTime(missionTime);
+                setWingsLevelDuration(0);
+            } else {
+                // Update duration
+                setWingsLevelDuration(missionTime - wingsLevelStartTime);
+            }
+        } else {
+            // Reset if heading changes (turning)
+            setWingsLevelStartTime(null);
+            setWingsLevelDuration(0);
+        }
+    }, [isRunning, assets, missionTime, wingsLevelStartTime]);
 
     // ============================================================================
     // Behavior Execution Engine
@@ -2398,6 +2491,74 @@ function AICSimulator() {
             return updatedAsset;
         }));
     }, []);
+
+    // ============================================================================
+    // ISAR Flight Profile Validation
+    // ============================================================================
+
+    // Validate ISAR flight profile requirements (from MCS E-PCL page N6)
+    const validateIsarFlightProfile = useCallback((targetAsset) => {
+        const ownship = assets.find(a => a.type === 'ownship');
+
+        if (!ownship || !targetAsset) {
+            return {
+                valid: false,
+                altitude: false,
+                groundspeed: false,
+                wingsLevel: false,
+                grazingAngle: false,
+                range: false,
+                details: {}
+            };
+        }
+
+        // 1. Altitude check: 5,000' to 35,000'
+        const altitudeValid = ownship.altitude >= 5000 && ownship.altitude <= 35000;
+
+        // 2. Groundspeed check: >180 and <250 knots
+        const groundspeedValid = ownship.speed > 180 && ownship.speed < 250;
+
+        // 3. Wings level check: minimum 15 seconds
+        const wingsLevelValid = wingsLevelDuration >= 15;
+
+        // 4. Calculate slant range
+        const slantRange = calculateDistance(
+            ownship.lat, ownship.lon,
+            targetAsset.lat, targetAsset.lon
+        );
+
+        // 5. Calculate grazing angle
+        const grazingAngle = calculateGrazingAngle(ownship.altitude, slantRange);
+
+        // 6. Grazing angle check: 0.01° to 4°
+        const grazingAngleValid = grazingAngle >= 0.01 && grazingAngle <= 4.0;
+
+        // 7. Range limits based on altitude
+        const rangeLimits = getIsarRangeLimits(ownship.altitude);
+        const rangeValid = slantRange >= rangeLimits.min && slantRange <= rangeLimits.max;
+
+        // Overall validation
+        const valid = altitudeValid && groundspeedValid && wingsLevelValid &&
+                    grazingAngleValid && rangeValid;
+
+        return {
+            valid,
+            altitude: altitudeValid,
+            groundspeed: groundspeedValid,
+            wingsLevel: wingsLevelValid,
+            grazingAngle: grazingAngleValid,
+            range: rangeValid,
+            details: {
+                currentAltitude: ownship.altitude,
+                currentSpeed: ownship.speed,
+                wingsLevelSeconds: wingsLevelDuration,
+                grazingAngle: grazingAngle,
+                slantRange: slantRange,
+                minRange: rangeLimits.min,
+                maxRange: rangeLimits.max
+            }
+        };
+    }, [assets, wingsLevelDuration]);
 
     // ============================================================================
     // Behavior CRUD Operations
@@ -5635,6 +5796,8 @@ function AICSimulator() {
                 addBehavior={addBehavior}
                 updateBehavior={updateBehavior}
                 deleteBehavior={deleteBehavior}
+                validateIsarFlightProfile={validateIsarFlightProfile}
+                wingsLevelDuration={wingsLevelDuration}
             />
 
             {/* Context Menu */}
@@ -5932,7 +6095,7 @@ function AICSimulator() {
                             </button>
                         </div>
 
-                        {/* Image */}
+                        {/* Image Container with Flight Profile Validation */}
                         <div style={{
                             padding: '10px',
                             background: '#0a0a0a',
@@ -5942,27 +6105,123 @@ function AICSimulator() {
                             alignItems: 'center',
                             justifyContent: 'center'
                         }}>
-                            {isarImageErrors.has(asset.id) ? (
-                                <div style={{ color: '#FF0000', textAlign: 'center', padding: '50px' }}>
-                                    ISAR image not found
-                                </div>
-                            ) : (
-                                <img
-                                    key={asset.id}
-                                    src={`ISAR/${asset.platform.isar}`}
-                                    alt={asset.name}
-                                    style={{
-                                        maxWidth: '100%',
-                                        maxHeight: '100%',
-                                        display: 'block',
-                                        border: '1px solid #00FF00',
-                                        objectFit: 'contain'
-                                    }}
-                                    onError={() => {
-                                        setIsarImageErrors(prev => new Set([...prev, asset.id]));
-                                    }}
-                                />
-                            )}
+                            {(() => {
+                                // Validate flight profile
+                                const validation = validateIsarFlightProfile(asset);
+
+                                if (!validation.valid) {
+                                    // OUT OF PROFILE: Display detailed error message
+                                    return (
+                                        <div style={{
+                                            color: '#FFAA00',
+                                            fontSize: '14px',
+                                            padding: '20px',
+                                            textAlign: 'left',
+                                            maxWidth: '500px'
+                                        }}>
+                                            <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '15px', textAlign: 'center' }}>
+                                                ISAR ACQUISITION FAILED
+                                            </div>
+                                            <div style={{ fontSize: '12px', marginBottom: '10px' }}>
+                                                Flight profile does not meet ISAR requirements:
+                                            </div>
+
+                                            {/* Altitude Status */}
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                marginBottom: '8px',
+                                                color: validation.altitude ? '#00FF00' : '#FF0000'
+                                            }}>
+                                                <span>Altitude:</span>
+                                                <span>{validation.details.currentAltitude?.toFixed(0) || 0}' (Req: 5,000' - 35,000')</span>
+                                            </div>
+
+                                            {/* Groundspeed Status */}
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                marginBottom: '8px',
+                                                color: validation.groundspeed ? '#00FF00' : '#FF0000'
+                                            }}>
+                                                <span>Groundspeed:</span>
+                                                <span>{validation.details.currentSpeed?.toFixed(0) || 0} kts (Req: 180-250 kts)</span>
+                                            </div>
+
+                                            {/* Wings Level Status */}
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                marginBottom: '8px',
+                                                color: validation.wingsLevel ? '#00FF00' : '#FF0000'
+                                            }}>
+                                                <span>Wings Level:</span>
+                                                <span>{validation.wingsLevel ? 'OK' : 'Required (15s min)'}</span>
+                                            </div>
+
+                                            {/* Grazing Angle Status */}
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                marginBottom: '8px',
+                                                color: validation.grazingAngle ? '#00FF00' : '#FF0000'
+                                            }}>
+                                                <span>Grazing Angle:</span>
+                                                <span>{validation.details.grazingAngle?.toFixed(2) || 0}° (Req: 0.01° - 4°)</span>
+                                            </div>
+
+                                            {/* Range Status */}
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                marginBottom: '8px',
+                                                color: validation.range ? '#00FF00' : '#FF0000'
+                                            }}>
+                                                <span>Slant Range:</span>
+                                                <span>
+                                                    {validation.details.slantRange?.toFixed(1) || 0} NM
+                                                    (Req: {validation.details.minRange?.toFixed(0) || 0}-{validation.details.maxRange?.toFixed(0) || 0} NM)
+                                                </span>
+                                            </div>
+
+                                            <div style={{
+                                                marginTop: '15px',
+                                                fontSize: '11px',
+                                                opacity: 0.7,
+                                                textAlign: 'center'
+                                            }}>
+                                                Adjust flight parameters to acquire ISAR imagery
+                                            </div>
+                                        </div>
+                                    );
+                                } else if (!isarImageErrors.has(asset.id)) {
+                                    // IN PROFILE: Display ISAR image
+                                    return (
+                                        <img
+                                            key={asset.id}
+                                            src={`ISAR/${asset.platform.isar}`}
+                                            alt={asset.name}
+                                            style={{
+                                                maxWidth: '100%',
+                                                maxHeight: '100%',
+                                                display: 'block',
+                                                border: '1px solid #00FF00',
+                                                objectFit: 'contain'
+                                            }}
+                                            onError={() => {
+                                                setIsarImageErrors(prev => new Set([...prev, asset.id]));
+                                            }}
+                                        />
+                                    );
+                                } else {
+                                    // IMAGE ERROR: Display error message
+                                    return (
+                                        <div style={{ color: '#FF0000', textAlign: 'center', padding: '50px' }}>
+                                            ISAR image not found
+                                        </div>
+                                    );
+                                }
+                            })()}
                         </div>
 
                         {/* Footer Info */}
@@ -5974,8 +6233,6 @@ function AICSimulator() {
                             borderTop: '1px solid rgba(0, 255, 0, 0.3)',
                             flexShrink: 0
                         }}>
-                            <div><strong>Platform:</strong> {asset.platform.name}</div>
-                            <div><strong>Domain:</strong> {asset.domain.toUpperCase()}</div>
                             <div><strong>Type:</strong> ISAR IMAGERY</div>
                         </div>
                     </div>
@@ -6140,7 +6397,9 @@ function ControlPanel({
     selectedTargetAssetId, setSelectedTargetAssetId,
     selectedWeaponType, setSelectedWeaponType,
     weaponConfigs,
-    addBehavior, updateBehavior, deleteBehavior
+    addBehavior, updateBehavior, deleteBehavior,
+    validateIsarFlightProfile,
+    wingsLevelDuration
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
@@ -6475,10 +6734,56 @@ function ControlPanel({
                             style={{
                                 flex: 1,
                                 padding: '8px',
-                                background: selectedSystemTab === 'isar' ? (isarEnabled ? '#00FF00' : '#FF0000') : 'transparent',
-                                color: selectedSystemTab === 'isar' ? '#000' : (isarEnabled ? '#00FF00' : '#FF0000'),
+                                background: selectedSystemTab === 'isar' ? (() => {
+                                    // Check flight profile validation for tab color
+                                    const ownship = assets.find(a => a.type === 'ownship');
+                                    if (!ownship) return isarEnabled ? '#00FF00' : '#FF0000';
+                                    // Create dummy target at optimal range for current altitude
+                                    const rangeLimits = getIsarRangeLimits(ownship.altitude);
+                                    const optimalRange = (rangeLimits.min + rangeLimits.max) / 2;
+                                    const dummyTarget = {
+                                        lat: ownship.lat + (optimalRange / 60),
+                                        lon: ownship.lon
+                                    };
+                                    const validation = validateIsarFlightProfile(dummyTarget);
+                                    return getIsarTabColor(isarEnabled, validation.valid);
+                                })() : 'transparent',
+                                color: (() => {
+                                    // Black text when selected, color-coded text when unselected
+                                    const ownship = assets.find(a => a.type === 'ownship');
+                                    if (!ownship) {
+                                        return selectedSystemTab === 'isar' ? '#000' : (isarEnabled ? '#00FF00' : '#FF0000');
+                                    }
+                                    // Create dummy target at optimal range for current altitude
+                                    const rangeLimits = getIsarRangeLimits(ownship.altitude);
+                                    const optimalRange = (rangeLimits.min + rangeLimits.max) / 2;
+                                    const dummyTarget = {
+                                        lat: ownship.lat + (optimalRange / 60),
+                                        lon: ownship.lon
+                                    };
+                                    const validation = validateIsarFlightProfile(dummyTarget);
+                                    const tabColor = getIsarTabColor(isarEnabled, validation.valid);
+                                    // Black text ONLY when selected (background is colored)
+                                    if (selectedSystemTab === 'isar') {
+                                        return '#000';
+                                    }
+                                    // When unselected, use the color for text (background is transparent)
+                                    return tabColor;
+                                })(),
                                 border: 'none',
-                                borderBottom: selectedSystemTab === 'isar' ? `2px solid ${isarEnabled ? '#00FF00' : '#FF0000'}` : '2px solid transparent',
+                                borderBottom: selectedSystemTab === 'isar' ? (() => {
+                                    const ownship = assets.find(a => a.type === 'ownship');
+                                    if (!ownship) return `2px solid ${isarEnabled ? '#00FF00' : '#FF0000'}`;
+                                    // Create dummy target at optimal range for current altitude
+                                    const rangeLimits = getIsarRangeLimits(ownship.altitude);
+                                    const optimalRange = (rangeLimits.min + rangeLimits.max) / 2;
+                                    const dummyTarget = {
+                                        lat: ownship.lat + (optimalRange / 60),
+                                        lon: ownship.lon
+                                    };
+                                    const validation = validateIsarFlightProfile(dummyTarget);
+                                    return `2px solid ${getIsarTabColor(isarEnabled, validation.valid)}`;
+                                })() : '2px solid transparent',
                                 cursor: 'pointer',
                                 fontSize: '10px',
                                 fontWeight: 'bold',
@@ -7080,10 +7385,68 @@ function ControlPanel({
                                 </button>
                             </div>
 
+                            {/* Flight Profile Status */}
+                            {isarEnabled && (() => {
+                                const ownship = assets.find(a => a.type === 'ownship');
+                                if (!ownship) return null;
+
+                                // Create dummy target at optimal range for current altitude
+                                // Use middle of valid range to ensure geometry is valid for status check
+                                const rangeLimits = getIsarRangeLimits(ownship.altitude);
+                                const optimalRange = (rangeLimits.min + rangeLimits.max) / 2;
+
+                                // Place dummy target at optimal range (convert NM to degrees lat, roughly 1° = 60 NM)
+                                const dummyTarget = {
+                                    lat: ownship.lat + (optimalRange / 60),
+                                    lon: ownship.lon
+                                };
+                                const validation = validateIsarFlightProfile(dummyTarget);
+
+                                return (
+                                    <div style={{
+                                        marginBottom: '15px',
+                                        padding: '10px',
+                                        border: `1px solid ${validation.valid ? '#00FF00' : '#FFAA00'}`,
+                                        borderRadius: '4px',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.3)'
+                                    }}>
+                                        <div style={{
+                                            fontSize: '11px',
+                                            fontWeight: 'bold',
+                                            marginBottom: '8px',
+                                            color: validation.valid ? '#00FF00' : '#FFAA00'
+                                        }}>
+                                            ISAR ACQUISITION STATUS: {validation.valid ? 'READY' : 'NOT READY'}
+                                        </div>
+
+                                        <div style={{ fontSize: '10px', lineHeight: '1.6' }}>
+                                            <div style={{ color: validation.altitude ? '#00FF00' : '#FF0000' }}>
+                                                ✓ Altitude: {ownship.altitude?.toFixed(0) || 0}' {validation.altitude ? '(OK)' : '(5,000-35,000\' required)'}
+                                            </div>
+                                            <div style={{ color: validation.groundspeed ? '#00FF00' : '#FF0000' }}>
+                                                ✓ Groundspeed: {ownship.speed?.toFixed(0) || 0} kts {validation.groundspeed ? '(OK)' : '(180-250 kts required)'}
+                                            </div>
+                                            <div style={{ color: validation.wingsLevel ? '#00FF00' : '#FF0000' }}>
+                                                ✓ Wings Level: {validation.wingsLevel ? '(OK)' : '(15s minimum required)'}
+                                            </div>
+                                        </div>
+
+                                        <div style={{
+                                            marginTop: '8px',
+                                            fontSize: '9px',
+                                            opacity: 0.7,
+                                            fontStyle: 'italic'
+                                        }}>
+                                            Select target to view ISAR imagery when all parameters are met
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
                             {/* ISAR Information */}
                             <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px', fontSize: '10px', opacity: 0.7 }}>
                                 <p style={{ margin: '0 0 10px 0' }}>ISAR (Inverse Synthetic Aperture Radar) provides high-resolution radar imagery of surface and subsurface platforms.</p>
-                                <p style={{ margin: '0 0 10px 0' }}>Select a surface or subsurface asset on the map, then click the ISAR button in the asset panel to view the radar image.</p>
+                                <p style={{ margin: '0 0 10px 0' }}>Requirements: Altitude 5,000-35,000', Speed 180-250 kts, Wings level 15s minimum, Proper geometry to target.</p>
                                 <p style={{ margin: 0 }}>System must be powered ON to view images.</p>
                             </div>
                         </div>
@@ -8971,30 +9334,49 @@ function ControlPanel({
                                         EO/IR
                                     </button>
                                 )}
-                                {selectedAsset.platform && selectedAsset.platform.isar && (
-                                    <button
-                                        onClick={() => {
-                                            if (isarEnabled) {
-                                                setIsarSelectedAssetId(selectedAsset.id);
-                                            }
-                                        }}
-                                        style={{
-                                            flex: 1,
-                                            padding: '8px',
-                                            background: isarSelectedAssetId === selectedAsset.id ? '#00FF00' : 'transparent',
-                                            color: isarSelectedAssetId === selectedAsset.id ? '#000' : (isarEnabled ? '#00FF00' : '#FF0000'),
-                                            border: 'none',
-                                            borderBottom: isarSelectedAssetId === selectedAsset.id ? '2px solid #00FF00' : '2px solid transparent',
-                                            cursor: isarEnabled ? 'pointer' : 'not-allowed',
-                                            fontSize: '10px',
-                                            fontWeight: 'bold',
-                                            transition: 'all 0.2s',
-                                            opacity: isarEnabled ? 1 : 0.5
-                                        }}
-                                    >
-                                        ISAR
-                                    </button>
-                                )}
+                                {selectedAsset.platform && selectedAsset.platform.isar && (() => {
+                                    const validation = validateIsarFlightProfile(selectedAsset);
+
+                                    return (
+                                        <button
+                                            onClick={() => {
+                                                if (isarEnabled) {
+                                                    setIsarSelectedAssetId(selectedAsset.id);
+                                                }
+                                            }}
+                                            style={{
+                                                flex: 1,
+                                                padding: '8px',
+                                                background: isarSelectedAssetId === selectedAsset.id
+                                                    ? '#00FF00'
+                                                    : (isarEnabled && validation.valid
+                                                        ? 'transparent'
+                                                        : (isarEnabled ? '#FFAA00' : 'transparent')),
+                                                color: isarSelectedAssetId === selectedAsset.id
+                                                    ? '#000'
+                                                    : (isarEnabled && validation.valid
+                                                        ? '#00FF00'
+                                                        : (isarEnabled ? '#000' : '#FF0000')),
+                                                border: 'none',
+                                                borderBottom: isarSelectedAssetId === selectedAsset.id
+                                                    ? '2px solid #00FF00'
+                                                    : (isarEnabled && !validation.valid
+                                                        ? '2px solid #FFAA00'
+                                                        : '2px solid transparent'),
+                                                cursor: isarEnabled ? 'pointer' : 'not-allowed',
+                                                fontSize: '10px',
+                                                fontWeight: 'bold',
+                                                transition: 'all 0.2s',
+                                                opacity: isarEnabled ? 1 : 0.5
+                                            }}
+                                            title={isarEnabled && !validation.valid
+                                                ? 'ISAR acquisition requirements not met. Check ISAR tab for details.'
+                                                : ''}
+                                        >
+                                            {validation.valid ? 'ISAR' : 'ISAR ⚠'}
+                                        </button>
+                                    );
+                                })()}
                             </>
                         )}
                     </div>
