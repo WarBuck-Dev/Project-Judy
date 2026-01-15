@@ -15,7 +15,8 @@
       "maxClimb": 2500,
       "maxTurn": 10,
       "image": "ownship.png",
-      "threatLevel": 2
+      "threatLevel": 2,
+      "hasDatalink": true
     },
     {
       "name": "F-18E",
@@ -32,7 +33,8 @@
       "maxClimb": 44000,
       "maxTurn": 15,
       "image": "F-18E.jpg",
-      "threatLevel": 2
+      "threatLevel": 2,
+      "hasDatalink": true
     },
     {
       "name": "F-18F",
@@ -49,7 +51,8 @@
       "maxClimb": 44000,
       "maxTurn": 15,
       "image": "F-18F.jpg",
-      "threatLevel": 2
+      "threatLevel": 2,
+      "hasDatalink": true
     },
     {
       "name": "F-16",
@@ -66,7 +69,8 @@
       "maxClimb": 50000,
       "maxTurn": 15,
       "image": "f-16.jpg",
-      "threatLevel": 2
+      "threatLevel": 2,
+      "hasDatalink": true
     },
     {
       "name": "F-15",
@@ -83,7 +87,8 @@
       "maxClimb": 50000,
       "maxTurn": 15,
       "image": "f-15.jpg",
-      "threatLevel": 2
+      "threatLevel": 2,
+      "hasDatalink": true
     },
     {
       "name": "Com-Air",
@@ -100,7 +105,8 @@
       "maxClimb": 2500,
       "maxTurn": 8,
       "image": "com-air.png",
-      "threatLevel": 3
+      "threatLevel": 3,
+      "hasDatalink": false
     },
     {
       "name": "MiG-21",
@@ -117,7 +123,8 @@
       "maxClimb": 50000,
       "maxTurn": 16,
       "image": "mig-21.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "MiG-29",
@@ -134,7 +141,8 @@
       "maxClimb": 65000,
       "maxTurn": 17,
       "image": "mig-29.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "F-5",
@@ -151,7 +159,8 @@
       "maxClimb": 34500,
       "maxTurn": 15,
       "image": "f-5.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "F-4",
@@ -168,7 +177,8 @@
       "maxClimb": 49800,
       "maxTurn": 13,
       "image": "f-4.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "F-14",
@@ -185,7 +195,8 @@
       "maxClimb": 45000,
       "maxTurn": 14,
       "image": "f-14.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "Su-24",
@@ -202,7 +213,8 @@
       "maxClimb": 6000,
       "maxTurn": 10,
       "image": "su-24.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "P-3",
@@ -219,7 +231,8 @@
       "maxClimb": 1950,
       "maxTurn": 6,
       "image": "p-3.png",
-      "threatLevel": 2
+      "threatLevel": 2,
+      "hasDatalink": true
     },
     {
       "name": "Tu-95",
@@ -236,7 +249,8 @@
       "maxClimb": 2000,
       "maxTurn": 5,
       "image": "tu-95.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     }
   ],
   "surface": [
@@ -256,7 +270,8 @@
       "maxTurn": 0.5,
       "image": "container-ship.png",
       "isar": "group-3-merchant.png",
-      "threatLevel": 3
+      "threatLevel": 3,
+      "hasDatalink": false
     },
     {
       "name": "Dhow",
@@ -274,7 +289,8 @@
       "maxTurn": 2,
       "image": "dhow.png",
       "isar": "small-craft.png",
-      "threatLevel": 3
+      "threatLevel": 3,
+      "hasDatalink": false
     },
     {
       "name": "Cruise-Ship",
@@ -292,7 +308,8 @@
       "maxTurn": 0.5,
       "image": "cruise-ship.png",
       "isar": "group-1-merchant.png",
-      "threatLevel": 3
+      "threatLevel": 3,
+      "hasDatalink": false
     },
     {
       "name": "Oil-Tanker",
@@ -310,7 +327,8 @@
       "maxTurn": 0.3,
       "image": "oil-tanker.png",
       "isar": "group-3-merchant.png",
-      "threatLevel": 3
+      "threatLevel": 3,
+      "hasDatalink": false
     },
     {
       "name": "Fishing-Vessel",
@@ -328,7 +346,8 @@
       "maxTurn": 1.5,
       "image": "fishing-vessel.png",
       "isar": "small-craft.png",
-      "threatLevel": 3
+      "threatLevel": 3,
+      "hasDatalink": false
     },
     {
       "name": "Freighter",
@@ -346,7 +365,8 @@
       "maxTurn": 0.5,
       "image": "freighter.png",
       "isar": "group-3-merchant.png",
-      "threatLevel": 3
+      "threatLevel": 3,
+      "hasDatalink": false
     },
     {
       "name": "Combattante",
@@ -364,7 +384,8 @@
       "maxTurn": 2.5,
       "image": "combattante.png",
       "isar": "minor-combatant.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "Houdong",
@@ -382,7 +403,8 @@
       "maxTurn": 2.5,
       "image": "houdong.png",
       "isar": "minor-combatant.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "Huangfen",
@@ -400,7 +422,8 @@
       "maxTurn": 2,
       "image": "huangfen.png",
       "isar": "minor-combatant.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "Krivak",
@@ -418,7 +441,8 @@
       "maxTurn": 1.5,
       "image": "krivak.png",
       "isar": "combatant.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "Najin",
@@ -436,7 +460,8 @@
       "maxTurn": 1,
       "image": "najin.png",
       "isar": "combatant.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "Nanuchka",
@@ -454,7 +479,8 @@
       "maxTurn": 2,
       "image": "nanuchka.png",
       "isar": "minor-combatant.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "Osa",
@@ -472,7 +498,8 @@
       "maxTurn": 2.5,
       "image": "osa.png",
       "isar": "minor-combatant.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "Perry FFG",
@@ -490,7 +517,8 @@
       "maxTurn": 1.5,
       "image": "perry-class-FFG.png",
       "isar": "combatant.png",
-      "threatLevel": 2
+      "threatLevel": 2,
+      "hasDatalink": true
     },
     {
       "name": "Sovremenny",
@@ -508,7 +536,8 @@
       "maxTurn": 1.5,
       "image": "sovremenny.png",
       "isar": "combatant.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "Udaloy",
@@ -526,7 +555,8 @@
       "maxTurn": 1.5,
       "image": "udaloy.png",
       "isar": "combatant.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     }
   ],
   "subSurface": [
@@ -546,7 +576,8 @@
       "maxTurn": 1,
       "image": "kilo.png",
       "isar": "submarine.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     },
     {
       "name": "Romeo",
@@ -564,7 +595,8 @@
       "maxTurn": 1,
       "image": "romeo.png",
       "isar": "submarine.png",
-      "threatLevel": 1
+      "threatLevel": 1,
+      "hasDatalink": false
     }
   ]
 }

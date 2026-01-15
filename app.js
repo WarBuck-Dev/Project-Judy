@@ -8749,23 +8749,25 @@ function ControlPanel({
                                 >
                                     IFF
                                 </button>
-                                <button
-                                    onClick={() => setSelectedAssetTab('datalink')}
-                                    style={{
-                                        flex: 1,
-                                        padding: '8px',
-                                        background: selectedAssetTab === 'datalink' ? '#00FF00' : 'transparent',
-                                        color: selectedAssetTab === 'datalink' ? '#000' : '#00FF00',
-                                        border: 'none',
-                                        borderBottom: selectedAssetTab === 'datalink' ? '2px solid #00FF00' : '2px solid transparent',
-                                        cursor: 'pointer',
-                                        fontSize: '10px',
-                                        fontWeight: 'bold',
-                                        transition: 'all 0.2s'
-                                    }}
-                                >
-                                    DATALINK
-                                </button>
+                                {selectedAsset.platform && selectedAsset.platform.hasDatalink && (
+                                    <button
+                                        onClick={() => setSelectedAssetTab('datalink')}
+                                        style={{
+                                            flex: 1,
+                                            padding: '8px',
+                                            background: selectedAssetTab === 'datalink' ? '#00FF00' : 'transparent',
+                                            color: selectedAssetTab === 'datalink' ? '#000' : '#00FF00',
+                                            border: 'none',
+                                            borderBottom: selectedAssetTab === 'datalink' ? '2px solid #00FF00' : '2px solid transparent',
+                                            cursor: 'pointer',
+                                            fontSize: '10px',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        DATALINK
+                                    </button>
+                                )}
                                 {selectedAsset.platform && selectedAsset.platform.emitters && selectedAsset.platform.emitters.length > 0 && (
                                     <button
                                         onClick={() => setSelectedAssetTab('emitter')}
