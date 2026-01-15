@@ -4610,9 +4610,11 @@ function AICSimulator() {
                     </>
                 )}
 
-                {/* Heading line */}
-                <line x1={pos.x} y1={pos.y} x2={headingX} y2={headingY}
-                      stroke={config.color} strokeWidth="2" />
+                {/* Heading line - hide for land domain (stationary) */}
+                {asset.domain !== 'land' && (
+                    <line x1={pos.x} y1={pos.y} x2={headingX} y2={headingY}
+                          stroke={config.color} strokeWidth="2" />
+                )}
 
                 {/* Asset symbol - MIL-STD-2525 symbology based on domain */}
                 {asset.domain === 'air' ? (

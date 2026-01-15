@@ -479,11 +479,51 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 2.6
-**Last Updated**: January 13, 2026
+**Version**: 2.6.5
+**Last Updated**: January 15, 2026
 **Status**: Production Ready
 
 ## Recent Updates
+
+### Version 2.6.5 (January 2026)
+
+#### Land Domain for SAM Sites
+- **Land-Based SAM Systems**: Stationary Surface-to-Air Missile sites
+  - New "Land" domain added to DOMAIN_TYPES (air, surface, sub-surface, land)
+  - 6 SAM platform types: SA-2 Guideline, SA-3 Goa, SA-5 Gammon, SA-6 Gainful, SA-8 Gecko, EW Radar
+  - MIL-STD-2525 land symbology (square with clipped corners)
+  - Stationary behavior: maxSpeed=0, no movement, no waypoints
+  - Speed and heading controls hidden for land domain assets
+  - No heading indicator line (stationary installations)
+
+- **SAM Missile Systems**:
+  - 5 Soviet/Russian SAM missiles added to weapons database
+  - S-75 Dvina (SA-2): 25 NM range, Mach 3.8
+  - S-125 Neva (SA-3): 15 NM range, Mach 3.4
+  - S-200 Angara (SA-5): 150 NM range, Mach 7.0 (long-range strategic)
+  - 2K12 Kub (SA-6): 12 NM range, Mach 2.7
+  - 9K33 Osa (SA-8): 9 NM range, Mach 2.4 (point defense)
+  - All missiles feature realistic fuel consumption, booster phases, and self-destruct timers
+
+- **Radar and Sensor Behavior**:
+  - Land assets generate no radar returns (ground clutter exclusion)
+  - Land assets generate no IFF returns (no airborne transponders)
+  - No ISAR imaging capability for land installations
+  - Emitter systems fully functional (FAN SONG, LOW BLOW, SQUARE PAIR, STRAIGHT FLUSH, LAND ROLL)
+  - Early Warning radars: BIG BIRD, TALL KING, SPOON REST
+
+- **Physics and Movement**:
+  - Position updates skipped for land domain (enforced at physics level)
+  - Waypoint processing disabled for stationary assets
+  - Speed locked at 0 knots, heading locked at 0 degrees on creation
+  - Land assets remain at placement coordinates throughout simulation
+
+- **Platform Database Expansion**:
+  - Total platforms increased from 31 to 37
+  - Land domain platforms use NATO reporting names for emitters
+  - All land platforms have threatLevel=1 (hostile)
+  - No datalink capability for land installations
+  - Platform-specific missile loadouts (4-6 SAMs per site)
 
 ### Version 2.6 (January 2026)
 
@@ -853,17 +893,20 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - Access via DATALINK button in SYSTEMS section
 
 ### Platform Database
-- **31 Military Platforms** across air, surface, and subsurface domains
+- **37 Military Platforms** across air, surface, sub-surface, and land domains
   - **Air Domain (13 platforms)**:
     - US/Allied: F-18E, F-18F, F-16, F-15, F-5, F-4, F-14, P-3
     - Enemy: MiG-21, MiG-29, Su-24, Tu-95
     - Civilian: Com-Air (commercial aircraft)
   - **Surface Domain (16 platforms)**:
-    - US/Allied: Perry FFG
+    - US/Allied: Perry FFG, Arleigh Burke DDG, Ticonderoga CG, Nimitz CVN
     - Enemy: Combattante, Houdong, Huangfen, Krivak, Najin, Nanuchka, Osa, Sovremenny, Udaloy
     - Civilian: Container-Ship, Dhow, Cruise-Ship, Oil-Tanker, Fishing-Vessel, Freighter
   - **Sub-Surface Domain (2 platforms)**:
     - Enemy: Kilo, Romeo (diesel-electric submarines)
+  - **Land Domain (6 platforms)**:
+    - Enemy SAM Sites: SA-2 Guideline, SA-3 Goa, SA-5 Gammon, SA-6 Gainful, SA-8 Gecko
+    - Enemy Early Warning: EW Radar (BIG BIRD, TALL KING, SPOON REST)
 - **Platform Attributes**:
   - Name, domain, weapons loadout, emitters (radar systems)
   - Performance: max speed, max altitude/depth, climb rate, turn rate
