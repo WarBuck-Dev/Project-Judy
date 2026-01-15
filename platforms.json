@@ -68,7 +68,7 @@
       "maxAltitude": 50000,
       "maxClimb": 50000,
       "maxTurn": 15,
-      "image": "f-16.jpg",
+      "image": "f-16.png",
       "threatLevel": 2,
       "hasDatalink": true
     },
@@ -86,7 +86,7 @@
       "maxAltitude": 65000,
       "maxClimb": 50000,
       "maxTurn": 15,
-      "image": "f-15.jpg",
+      "image": "f-15.png",
       "threatLevel": 2,
       "hasDatalink": true
     },
@@ -534,7 +534,7 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1.5,
-      "image": "arleigh-burke.png",
+      "image": "ddg.png",
       "isar": "combatant.png",
       "threatLevel": 2,
       "hasDatalink": true
@@ -553,7 +553,7 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1.5,
-      "image": "ticonderoga.png",
+      "image": "cg.png",
       "isar": "combatant.png",
       "threatLevel": 2,
       "hasDatalink": true
@@ -572,8 +572,8 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 0.5,
-      "image": "nimitz.png",
-      "isar": "carrier.png",
+      "image": "cvn.png",
+      "isar": "combatant.png",
       "threatLevel": 2,
       "hasDatalink": true
     },
