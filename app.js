@@ -9024,14 +9024,18 @@ function ControlPanel({
                             </div>
 
                             <div className="input-group">
-                                <label className="input-label">
-                                    Speed (KTAS)
+                                <label className="input-label" style={{ display: 'block' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span>Speed (KTAS)</span>
+                                        {selectedAsset && selectedAsset.platform && selectedAsset.platform.maxSpeed && (
+                                            <span style={{ opacity: 0.6, fontSize: '8px' }}>Max: {selectedAsset.platform.maxSpeed} kts</span>
+                                        )}
+                                    </div>
                                     {selectedAsset && (
-                                        <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                        <div style={{ fontSize: '8px', opacity: 0.7, marginTop: '2px' }}>
                                             Current: {Math.round(selectedAsset.speed)} kts
                                             {selectedAsset.targetSpeed !== null && ` → ${Math.round(selectedAsset.targetSpeed)} kts`}
-                                            {selectedAsset.platform && selectedAsset.platform.maxSpeed && ` (Max: ${selectedAsset.platform.maxSpeed})`}
-                                        </span>
+                                        </div>
                                     )}
                                 </label>
                                 <div style={{ display: 'flex', gap: '5px' }}>
@@ -9067,14 +9071,18 @@ function ControlPanel({
 
                             {(selectedAsset.domain === 'air' || !selectedAsset.domain) && (
                                 <div className="input-group">
-                                    <label className="input-label">
-                                        Altitude (feet)
+                                    <label className="input-label" style={{ display: 'block' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span>Altitude (feet)</span>
+                                            {selectedAsset && selectedAsset.platform && selectedAsset.platform.maxAltitude && (
+                                                <span style={{ opacity: 0.6, fontSize: '8px' }}>Max: FL{Math.round(selectedAsset.platform.maxAltitude / 100)}</span>
+                                            )}
+                                        </div>
                                         {selectedAsset && (
-                                            <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                            <div style={{ fontSize: '8px', opacity: 0.7, marginTop: '2px' }}>
                                                 Current: FL{Math.round(selectedAsset.altitude / 100)}
                                                 {selectedAsset.targetAltitude !== null && ` → FL${Math.round(selectedAsset.targetAltitude / 100)}`}
-                                                {selectedAsset.platform && selectedAsset.platform.maxAltitude && ` (Max: FL${Math.round(selectedAsset.platform.maxAltitude / 100)})`}
-                                            </span>
+                                            </div>
                                         )}
                                     </label>
                                     <div style={{ display: 'flex', gap: '5px' }}>
@@ -9143,14 +9151,18 @@ function ControlPanel({
 
                             {selectedAsset.domain === 'subSurface' && (
                                 <div className="input-group">
-                                    <label className="input-label">
-                                        Depth (feet)
+                                    <label className="input-label" style={{ display: 'block' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span>Depth (feet)</span>
+                                            {selectedAsset && selectedAsset.platform && selectedAsset.platform.maxDepth && (
+                                                <span style={{ opacity: 0.6, fontSize: '8px' }}>Max: {selectedAsset.platform.maxDepth}ft</span>
+                                            )}
+                                        </div>
                                         {selectedAsset && (
-                                            <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                            <div style={{ fontSize: '8px', opacity: 0.7, marginTop: '2px' }}>
                                                 Current: {Math.round(selectedAsset.depth || 0)}ft
                                                 {selectedAsset.targetDepth !== null && ` → ${Math.round(selectedAsset.targetDepth)}ft`}
-                                                {selectedAsset.platform && selectedAsset.platform.maxDepth && ` (Max: ${selectedAsset.platform.maxDepth}ft)`}
-                                            </span>
+                                            </div>
                                         )}
                                     </label>
                                     <div style={{ display: 'flex', gap: '5px' }}>
