@@ -1310,6 +1310,14 @@ function AICSimulator() {
                 }
             }
 
+            // Enforce platform speed limit
+            if (asset.platform && asset.platform.maxSpeed !== undefined) {
+                updated.speed = Math.min(updated.speed, asset.platform.maxSpeed);
+                if (updated.targetSpeed !== null) {
+                    updated.targetSpeed = Math.min(updated.targetSpeed, asset.platform.maxSpeed);
+                }
+            }
+
             // Update altitude (only for air domain)
             if (domainConfig.hasAltitude && asset.targetAltitude !== null) {
                 const altDiff = asset.targetAltitude - asset.altitude;
@@ -1322,6 +1330,14 @@ function AICSimulator() {
                 }
             }
 
+            // Enforce platform altitude limit
+            if (asset.platform && asset.platform.maxAltitude !== undefined && domainConfig.hasAltitude) {
+                updated.altitude = Math.min(updated.altitude, asset.platform.maxAltitude);
+                if (updated.targetAltitude !== null) {
+                    updated.targetAltitude = Math.min(updated.targetAltitude, asset.platform.maxAltitude);
+                }
+            }
+
             // Update depth (only for sub-surface domain)
             if (domainConfig.hasDepth && asset.targetDepth !== null) {
                 const depthDiff = asset.targetDepth - asset.depth;
@@ -1331,6 +1347,14 @@ function AICSimulator() {
                 } else {
                     updated.depth = asset.targetDepth;
                     updated.targetDepth = null;
+                }
+            }
+
+            // Enforce platform depth limit
+            if (asset.platform && asset.platform.maxDepth !== undefined && domainConfig.hasDepth) {
+                updated.depth = Math.min(updated.depth, asset.platform.maxDepth);
+                if (updated.targetDepth !== null) {
+                    updated.targetDepth = Math.min(updated.targetDepth, asset.platform.maxDepth);
                 }
             }
 
@@ -2312,20 +2336,36 @@ function AICSimulator() {
 
             const updatedAsset = { ...a, ...updates };
 
-            // Apply ownship limits
-            if (updatedAsset.type === 'ownship') {
-                if (updates.targetSpeed !== undefined) {
-                    updatedAsset.targetSpeed = Math.min(220, updates.targetSpeed);
+            // Apply platform limits
+            if (updatedAsset.platform) {
+                // Speed limits
+                if (updatedAsset.platform.maxSpeed !== undefined) {
+                    if (updates.targetSpeed !== undefined) {
+                        updatedAsset.targetSpeed = Math.min(updatedAsset.platform.maxSpeed, updates.targetSpeed);
+                    }
+                    if (updatedAsset.speed > updatedAsset.platform.maxSpeed) {
+                        updatedAsset.speed = updatedAsset.platform.maxSpeed;
+                    }
                 }
-                if (updates.targetAltitude !== undefined) {
-                    updatedAsset.targetAltitude = Math.min(27000, updates.targetAltitude);
+
+                // Altitude limits
+                if (updatedAsset.platform.maxAltitude !== undefined) {
+                    if (updates.targetAltitude !== undefined) {
+                        updatedAsset.targetAltitude = Math.min(updatedAsset.platform.maxAltitude, updates.targetAltitude);
+                    }
+                    if (updatedAsset.altitude > updatedAsset.platform.maxAltitude) {
+                        updatedAsset.altitude = updatedAsset.platform.maxAltitude;
+                    }
                 }
-                // Also limit current values if they exceed limits
-                if (updatedAsset.speed > 220) {
-                    updatedAsset.speed = 220;
-                }
-                if (updatedAsset.altitude > 27000) {
-                    updatedAsset.altitude = 27000;
+
+                // Depth limits
+                if (updatedAsset.platform.maxDepth !== undefined) {
+                    if (updates.targetDepth !== undefined) {
+                        updatedAsset.targetDepth = Math.min(updatedAsset.platform.maxDepth, updates.targetDepth);
+                    }
+                    if (updatedAsset.depth > updatedAsset.platform.maxDepth) {
+                        updatedAsset.depth = updatedAsset.platform.maxDepth;
+                    }
                 }
             }
 
@@ -8990,6 +9030,7 @@ function ControlPanel({
                                         <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
                                             Current: {Math.round(selectedAsset.speed)} kts
                                             {selectedAsset.targetSpeed !== null && ` → ${Math.round(selectedAsset.targetSpeed)} kts`}
+                                            {selectedAsset.platform && selectedAsset.platform.maxSpeed && ` (Max: ${selectedAsset.platform.maxSpeed})`}
                                         </span>
                                     )}
                                 </label>
@@ -8998,6 +9039,7 @@ function ControlPanel({
                                         className="input-field"
                                         type="number"
                                         min="0"
+                                        max={selectedAsset.platform && selectedAsset.platform.maxSpeed ? selectedAsset.platform.maxSpeed : undefined}
                                         value={editValues.speed || 0}
                                         onFocus={() => setActivelyEditingFields(prev => ({ ...prev, speed: true }))}
                                         onBlur={() => setActivelyEditingFields(prev => ({ ...prev, speed: false }))}
@@ -9031,6 +9073,7 @@ function ControlPanel({
                                             <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
                                                 Current: FL{Math.round(selectedAsset.altitude / 100)}
                                                 {selectedAsset.targetAltitude !== null && ` → FL${Math.round(selectedAsset.targetAltitude / 100)}`}
+                                                {selectedAsset.platform && selectedAsset.platform.maxAltitude && ` (Max: FL${Math.round(selectedAsset.platform.maxAltitude / 100)})`}
                                             </span>
                                         )}
                                     </label>
@@ -9039,6 +9082,7 @@ function ControlPanel({
                                             className="input-field"
                                             type="number"
                                             min="0"
+                                            max={selectedAsset.platform && selectedAsset.platform.maxAltitude ? selectedAsset.platform.maxAltitude : undefined}
                                             value={editValues.altitude || 0}
                                             onFocus={() => setActivelyEditingFields(prev => ({ ...prev, altitude: true }))}
                                             onBlur={() => setActivelyEditingFields(prev => ({ ...prev, altitude: false }))}
@@ -9105,6 +9149,7 @@ function ControlPanel({
                                             <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
                                                 Current: {Math.round(selectedAsset.depth || 0)}ft
                                                 {selectedAsset.targetDepth !== null && ` → ${Math.round(selectedAsset.targetDepth)}ft`}
+                                                {selectedAsset.platform && selectedAsset.platform.maxDepth && ` (Max: ${selectedAsset.platform.maxDepth}ft)`}
                                             </span>
                                         )}
                                     </label>
@@ -9113,6 +9158,7 @@ function ControlPanel({
                                             className="input-field"
                                             type="number"
                                             min="0"
+                                            max={selectedAsset.platform && selectedAsset.platform.maxDepth ? selectedAsset.platform.maxDepth : undefined}
                                             value={editValues.depth || 0}
                                             onFocus={() => setActivelyEditingFields(prev => ({ ...prev, depth: true }))}
                                             onBlur={() => setActivelyEditingFields(prev => ({ ...prev, depth: false }))}

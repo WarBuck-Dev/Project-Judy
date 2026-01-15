@@ -32,7 +32,7 @@
       "maxAltitude": 50000,
       "maxClimb": 44000,
       "maxTurn": 15,
-      "image": "F-18E.jpg",
+      "image": "F-18E.png",
       "threatLevel": 2,
       "hasDatalink": true
     },
@@ -50,7 +50,7 @@
       "maxAltitude": 50000,
       "maxClimb": 44000,
       "maxTurn": 15,
-      "image": "F-18F.jpg",
+      "image": "f-18f.png",
       "threatLevel": 2,
       "hasDatalink": true
     },
@@ -631,6 +631,7 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1,
+      "maxDepth": 787,
       "image": "kilo.png",
       "isar": "submarine.png",
       "threatLevel": 1,
@@ -650,6 +651,7 @@
       "maxAltitude": 0,
       "maxClimb": 0,
       "maxTurn": 1,
+      "maxDepth": 885,
       "image": "romeo.png",
       "isar": "submarine.png",
       "threatLevel": 1,
