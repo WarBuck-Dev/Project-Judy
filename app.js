@@ -542,11 +542,18 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
             // Actions Display
             React.createElement('div', { style: { marginBottom: '15px', padding: '10px', border: '1px solid #00FF00' } },
                 React.createElement('div', { style: { fontWeight: 'bold', marginBottom: '5px' } }, 'ACTIONS:'),
-                ...currentBehavior.actions.map((action, idx) =>
-                    React.createElement('div', { key: idx, style: { marginBottom: '5px' } },
-                        `${idx + 1}. ${action.type}: ${action.value}`
-                    )
-                )
+                ...currentBehavior.actions.map((action, idx) => {
+                    // Format action display based on type
+                    let actionText = `${idx + 1}. ${action.type}`;
+                    if (action.type === 'makeVisible') {
+                        actionText = `${idx + 1}. Make Visible (uncheck HIDDEN)`;
+                    } else if (action.type === 'makeInvisible') {
+                        actionText = `${idx + 1}. Make Invisible (check HIDDEN)`;
+                    } else if (action.value !== undefined) {
+                        actionText = `${idx + 1}. ${action.type}: ${action.value}`;
+                    }
+                    return React.createElement('div', { key: idx, style: { marginBottom: '5px' } }, actionText);
+                })
             ),
 
             // Action Buttons
@@ -811,7 +818,9 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                             React.createElement('option', { value: 'changeSpeed' }, 'Change Speed'),
                             React.createElement('option', { value: 'changeAltitude' }, 'Change Altitude'),
                             React.createElement('option', { value: 'turnEmitterOn' }, 'Turn Emitter On'),
-                            React.createElement('option', { value: 'turnEmitterOff' }, 'Turn Emitter Off')
+                            React.createElement('option', { value: 'turnEmitterOff' }, 'Turn Emitter Off'),
+                            React.createElement('option', { value: 'makeVisible' }, 'Make Visible'),
+                            React.createElement('option', { value: 'makeInvisible' }, 'Make Invisible')
                         ),
 
                         // Action-specific inputs
@@ -897,7 +906,16 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                             (!asset.platform || !asset.platform.emitters || asset.platform.emitters.length === 0) && React.createElement('div', {
                                 style: { color: '#FFAA00', fontSize: '10px', marginTop: '5px' }
                             }, 'No emitters available for this platform')
-                        )
+                        ),
+
+                        // Make Visible/Invisible - no additional config needed
+                        action.type === 'makeVisible' && React.createElement('div', {
+                            style: { color: '#00FF00', fontSize: '11px', padding: '8px', backgroundColor: 'rgba(0, 255, 0, 0.1)', borderRadius: '3px' }
+                        }, 'Unchecks the HIDDEN box, making this asset visible to the student.'),
+
+                        action.type === 'makeInvisible' && React.createElement('div', {
+                            style: { color: '#FFAA00', fontSize: '11px', padding: '8px', backgroundColor: 'rgba(255, 170, 0, 0.1)', borderRadius: '3px' }
+                        }, 'Checks the HIDDEN box, making this asset invisible to the student.')
                     )
                 ),
 
@@ -1563,6 +1581,12 @@ function AICSimulator() {
                                         [action.value]: false
                                     };
                                     break;
+                                case 'makeVisible':
+                                    updated.hidden = false;
+                                    break;
+                                case 'makeInvisible':
+                                    updated.hidden = true;
+                                    break;
                             }
                         });
 
@@ -1715,12 +1739,15 @@ function AICSimulator() {
             const impactedWeapons = updatedWeapons.filter(w => w.impact);
             if (impactedWeapons.length > 0) {
                 const targetIdsToRemove = impactedWeapons.map(w => w.impactTargetId);
+
+                // Remove assets regardless of launch mode - weapons always destroy their targets
+                // In student mode, the student track will age naturally after 2 sweeps without radar returns
                 setAssets(prevAssets => prevAssets.filter(a => !targetIdsToRemove.includes(a.id)));
             }
 
             return updatedWeapons.filter(w => !w.impact);
         });
-    }, [weaponConfigs, assets, missionTime]);
+    }, [weaponConfigs, assets, missionTime, simulatorMode]);
 
     // Start/stop physics engine
     useEffect(() => {
@@ -1919,10 +1946,37 @@ function AICSimulator() {
             studentTracks.forEach(track => {
                 const asset = assets.find(a => a.id === track.assetId);
 
-                // Asset deleted by instructor → age immediately
+                // Asset deleted → track will age after 20 seconds without radar returns
+                // Continue dead reckoning based on last known course and speed
                 if (!asset) {
-                    if (!track.isAged) {
+                    const timeSinceLastDetection = missionTime - track.lastDetectionTime;
+
+                    // Dead reckon the track position based on last known course and speed
+                    // Calculate position from last known position based on total time elapsed
+                    if (track.estimatedSpeed > 0 && track.domain !== 'land' && track.lastKnownLat !== undefined) {
+                        const speedNMPerSec = track.estimatedSpeed / 3600;
+                        const totalDistance = speedNMPerSec * timeSinceLastDetection;
+
+                        const headingRad = track.estimatedHeading * Math.PI / 180;
+                        const latRad = track.lastKnownLat * Math.PI / 180;
+
+                        const deltaLat = (totalDistance * Math.cos(headingRad)) / 60;
+                        const deltaLon = (totalDistance * Math.sin(headingRad)) / (60 * Math.cos(latRad));
+
+                        const newLat = track.lastKnownLat + deltaLat;
+                        const newLon = track.lastKnownLon + deltaLon;
+
+                        // Update track position (dead reckoning from last known position)
+                        updateStudentTrack(track.id, {
+                            lat: newLat,
+                            lon: newLon
+                        });
+                    }
+
+                    // Age the track after 20 seconds without radar returns
+                    if (timeSinceLastDetection >= 20 && !track.isAged) {
                         updateStudentTrack(track.id, { isAged: true });
+                        console.log(`[Student Mode] Track ${track.id} aged (asset destroyed for ${timeSinceLastDetection.toFixed(0)}s)`);
                     }
                     return;
                 }
@@ -1986,6 +2040,8 @@ function AICSimulator() {
                         lat: asset.lat,
                         lon: asset.lon,
                         lastDetectionTime: missionTime,
+                        lastKnownLat: asset.lat,               // Store position for dead reckoning
+                        lastKnownLon: asset.lon,               // Store position for dead reckoning
                         estimatedHeading: asset.heading || track.estimatedHeading,
                         estimatedSpeed: asset.speed || track.estimatedSpeed,
                         isAged: false,
@@ -2518,6 +2574,8 @@ function AICSimulator() {
             creationTime: missionTime,
             estimatedHeading: asset.heading || 0,  // For dead reckoning
             estimatedSpeed: asset.speed || 0,      // For dead reckoning
+            lastKnownLat: asset.lat,               // For dead reckoning from last detection
+            lastKnownLon: asset.lon,               // For dead reckoning from last detection
             iffModeI: asset.iffSquawking ? asset.iffModeI : '',
             iffModeII: asset.iffSquawking ? asset.iffModeII : '',
             iffModeIII: asset.iffSquawking ? asset.iffModeIII : '',
@@ -2653,7 +2711,14 @@ function AICSimulator() {
             return;
         }
 
-        const affiliation = firingAsset.identity === 'friendly' || firingAsset.type === 'ownship' ? 'friendly' : 'hostile';
+        // In student mode, use student track identity for weapon affiliation
+        let affiliation;
+        if (simulatorMode === 'student') {
+            const studentTrack = studentTracks.find(t => t.assetId === firingAsset.id);
+            affiliation = (studentTrack && studentTrack.identity === 'friendly') || firingAsset.type === 'ownship' ? 'friendly' : 'hostile';
+        } else {
+            affiliation = firingAsset.identity === 'friendly' || firingAsset.type === 'ownship' ? 'friendly' : 'hostile';
+        }
 
         const newWeapon = {
             id: nextWeaponId,
@@ -2668,6 +2733,7 @@ function AICSimulator() {
             firingAssetId: firingAssetId,
             affiliation: affiliation,
             launchTime: missionTime,
+            launchMode: simulatorMode,           // Store mode at launch time
             // Fuel system properties
             fuelRemaining: config.fuelTime || 60,
             boosterActive: true,
@@ -2685,7 +2751,7 @@ function AICSimulator() {
                 [weaponType]: Math.max(0, prev[weaponType] - 1)
             }));
         }
-    }, [assets, weaponConfigs, nextWeaponId, missionTime]);
+    }, [assets, weaponConfigs, nextWeaponId, missionTime, simulatorMode, studentTracks]);
 
     const updateAsset = useCallback((assetId, updates) => {
         setAssets(prev => prev.map(a => {
@@ -3716,14 +3782,31 @@ function AICSimulator() {
             }
         }
 
-        // Check if clicking on an asset
+        // Check if clicking on an asset or student track
         let clickedAsset = null;
-        for (const asset of assets) {
-            const pos = latLonToScreen(asset.lat, asset.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
-            const dist = Math.sqrt((x - pos.x) ** 2 + (y - pos.y) ** 2);
-            if (dist < 15) {
-                clickedAsset = asset;
-                break;
+        let clickedTrack = null;
+
+        // In student mode, check for tracks first
+        if (simulatorMode === 'student') {
+            for (const track of studentTracks) {
+                const pos = latLonToScreen(track.lat, track.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                const dist = Math.sqrt((x - pos.x) ** 2 + (y - pos.y) ** 2);
+                if (dist < 15) {
+                    clickedTrack = track;
+                    break;
+                }
+            }
+        }
+
+        // Check for assets (instructor mode or underlying assets)
+        if (!clickedTrack) {
+            for (const asset of assets) {
+                const pos = latLonToScreen(asset.lat, asset.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                const dist = Math.sqrt((x - pos.x) ** 2 + (y - pos.y) ** 2);
+                if (dist < 15) {
+                    clickedAsset = asset;
+                    break;
+                }
             }
         }
 
@@ -3764,8 +3847,20 @@ function AICSimulator() {
             setRadarControlsSelected(false);
             setEsmControlsSelected(false);
             setTempMark(null);
+        } else if (clickedTrack) {
+            // Student track clicked
+            setSelectedTrackId(clickedTrack.id);
+            setSelectedAssetId(null);
+            setBullseyeSelected(false);
+            setSelectedGeoPointId(null);
+            setSelectedShapeId(null);
+            setRadarControlsSelected(false);
+            setEsmControlsSelected(false);
+            setTempMark(null);
+            setSelectedAssetTab('general'); // Reset to general tab for tracks
         } else if (clickedAsset) {
             setSelectedAssetId(clickedAsset.id);
+            setSelectedTrackId(null);
             setBullseyeSelected(false);
             setSelectedGeoPointId(null);
             setSelectedShapeId(null);
@@ -3777,13 +3872,14 @@ function AICSimulator() {
             const latLon = screenToLatLon(x, y, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
             setTempMark(latLon);
             setSelectedAssetId(null);
+            setSelectedTrackId(null);
             setBullseyeSelected(false);
             setSelectedGeoPointId(null);
             setSelectedShapeId(null);
             setRadarControlsSelected(false);
             setEsmControlsSelected(false);
         }
-    }, [assets, geoPoints, shapes, contextMenu, mapCenter, scale, creatingShape, addLineSegmentPoint]);
+    }, [assets, geoPoints, shapes, contextMenu, mapCenter, scale, creatingShape, addLineSegmentPoint, simulatorMode, studentTracks, setSelectedTrackId, setSelectedAssetTab]);
 
     const handleSVGRightClick = useCallback((e) => {
         e.preventDefault();
@@ -3875,16 +3971,36 @@ function AICSimulator() {
             }
         }
 
-        // Priority 1: If a non-ownship asset is selected, always show "Engage with"
-        if (clickedTargetAsset && selectedAsset && selectedAsset.type !== 'ownship') {
-            setContextMenu({
-                x: e.clientX,
-                y: e.clientY,
-                type: 'engage',
-                targetAssetId: clickedTargetAsset.id,
-                firingAssetId: selectedAsset.id
-            });
-            return;
+        // Priority 1: If a non-ownship asset/track is selected, show "Engage with" (student mode: friendly only)
+        if (clickedTargetAsset) {
+            if (simulatorMode === 'student') {
+                // In student mode, check if a friendly track is selected
+                const selectedTrack = selectedTrackId ? studentTracks.find(t => t.id === selectedTrackId) : null;
+                if (selectedTrack && selectedTrack.identity === 'friendly') {
+                    // Get the underlying asset for the firing asset ID
+                    const firingAsset = assets.find(a => a.id === selectedTrack.assetId);
+                    if (firingAsset) {
+                        setContextMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            type: 'engage',
+                            targetAssetId: clickedTargetAsset.id,
+                            firingAssetId: firingAsset.id
+                        });
+                        return;
+                    }
+                }
+            } else if (selectedAsset && selectedAsset.type !== 'ownship') {
+                // Instructor mode - show engage for any non-ownship asset
+                setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    type: 'engage',
+                    targetAssetId: clickedTargetAsset.id,
+                    firingAssetId: selectedAsset.id
+                });
+                return;
+            }
         }
 
         // Priority 2: If WEAPON tab is open (and no non-ownship selected), show "Target With" for ownship
@@ -3901,7 +4017,24 @@ function AICSimulator() {
             }
         }
 
-        // Context menu for asset or empty space
+        // Context menu for asset, track (student mode), or empty space
+        // In student mode, check if a track is selected
+        if (simulatorMode === 'student' && selectedTrackId) {
+            const selectedTrack = studentTracks.find(t => t.id === selectedTrackId);
+            if (selectedTrack) {
+                setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    type: 'track',
+                    trackId: selectedTrackId,
+                    assetId: selectedTrack.assetId,
+                    lat: latLon.lat,
+                    lon: latLon.lon
+                });
+                return;
+            }
+        }
+
         setContextMenu({
             x: e.clientX,
             y: e.clientY,
@@ -3910,7 +4043,7 @@ function AICSimulator() {
             lat: latLon.lat,
             lon: latLon.lon
         });
-    }, [selectedAsset, assets, geoPoints, shapes, mapCenter, scale, selectedAssetId]);
+    }, [selectedAsset, assets, geoPoints, shapes, mapCenter, scale, selectedAssetId, simulatorMode, selectedTrackId, studentTracks, selectedSystemTab]);
 
     const handleMouseMove = useCallback((e) => {
         const svg = svgRef.current;
@@ -4136,6 +4269,7 @@ function AICSimulator() {
                     setEsmControlsSelected(false);
                     setIffControlsSelected(false);
                     setTempMark(null);
+                    setSelectedAssetTab('general'); // Reset to general tab for tracks
                     return;
                 }
             }
@@ -4199,7 +4333,7 @@ function AICSimulator() {
                 centerLon: mapCenter.lon
             });
         }
-    }, [assets, geoPoints, shapes, selectedAsset, selectedGeoPointId, selectedShapeId, bullseyeSelected, bullseyePosition, mapCenter, scale, simulatorMode, studentTracks, setBullseyeSelected, setSelectedAssetId, setSelectedGeoPointId, setSelectedShapeId, setRadarControlsSelected, setEsmControlsSelected, setIffControlsSelected, setTempMark, setDraggedBullseye, setDraggedShapeId, setDraggedShapePointIndex, setDraggedGeoPointId, setDraggedWaypoint, setDraggedAssetId, setIsDragging, setDragStart, setSelectedTrackId]);
+    }, [assets, geoPoints, shapes, selectedAsset, selectedGeoPointId, selectedShapeId, bullseyeSelected, bullseyePosition, mapCenter, scale, simulatorMode, studentTracks, setBullseyeSelected, setSelectedAssetId, setSelectedGeoPointId, setSelectedShapeId, setRadarControlsSelected, setEsmControlsSelected, setIffControlsSelected, setTempMark, setDraggedBullseye, setDraggedShapeId, setDraggedShapePointIndex, setDraggedGeoPointId, setDraggedWaypoint, setDraggedAssetId, setIsDragging, setDragStart, setSelectedTrackId, setSelectedAssetTab]);
 
     const handleMouseUp = useCallback(() => {
         setIsDragging(false);
@@ -7295,8 +7429,8 @@ function ControlPanel({
                 </div>
             )}
 
-            {/* Systems Controls - Hide when asset or geo-point is selected */}
-            {!selectedAsset && !selectedGeoPointId && !selectedShapeId && (
+            {/* Systems Controls - Hide when asset, geo-point, or track (student mode) is selected */}
+            {!selectedAsset && !selectedGeoPointId && !selectedShapeId && !(simulatorMode === 'student' && selectedTrackId) && (
                 <div className="control-section">
                     <div className="section-header">SYSTEMS</div>
 
@@ -9826,8 +9960,8 @@ function ControlPanel({
                 </div>
             )}
 
-            {/* Asset List - Only show when no asset is selected, bullseye is not selected, geo-point is not selected, and radar/ESM/IFF/Datalink controls are not selected */}
-            {!selectedAsset && !bullseyeSelected && !selectedGeoPointId && !selectedShapeId && !radarControlsSelected && !esmControlsSelected && !iffControlsSelected && !datalinkControlsSelected && (
+            {/* Asset List - Only show when no asset is selected, bullseye is not selected, geo-point is not selected, track not selected (student mode), and radar/ESM/IFF/Datalink controls are not selected */}
+            {!selectedAsset && !bullseyeSelected && !selectedGeoPointId && !selectedShapeId && !radarControlsSelected && !esmControlsSelected && !iffControlsSelected && !datalinkControlsSelected && !(simulatorMode === 'student' && selectedTrackId) && (
                 <div className="control-section">
                     <div className="section-header">ASSETS ({assets.length})</div>
                     <div className="asset-list">
@@ -9867,10 +10001,10 @@ function ControlPanel({
                 </div>
             )}
 
-            {/* Selected Asset */}
-            {selectedAsset && (
+            {/* Selected Asset or Track (Student Mode) */}
+            {(selectedAsset || (simulatorMode === 'student' && selectedTrackId)) && (
                 <div className="control-section">
-                    <div className="section-header">SELECTED ASSET</div>
+                    <div className="section-header">{simulatorMode === 'student' ? 'SELECTED TRACK' : 'SELECTED ASSET'}</div>
 
                     {/* Tab Navigation - Row 1: Configuration Tabs */}
                     <div style={{ display: 'flex', gap: '5px', marginBottom: '5px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
@@ -9891,7 +10025,7 @@ function ControlPanel({
                         >
                             GENERAL
                         </button>
-                        {simulatorMode === 'instructor' && selectedAsset.type !== 'ownship' && (
+                        {simulatorMode === 'instructor' && selectedAsset && selectedAsset.type !== 'ownship' && (
                             <>
                                 <button
                                     onClick={() => setSelectedAssetTab('iff')}
@@ -9973,7 +10107,7 @@ function ControlPanel({
                                 BEHAVIORS
                             </button>
                         )}
-                        {selectedAsset.type !== 'ownship' && (selectedAsset.platform?.image || selectedAsset.platform?.isar) && (
+                        {selectedAsset && selectedAsset.type !== 'ownship' && (selectedAsset.platform?.image || selectedAsset.platform?.isar) && (
                             <>
                                 {selectedAsset.platform && selectedAsset.platform.image && (
                                     <button
@@ -10048,8 +10182,8 @@ function ControlPanel({
 
                     {/* GENERAL TAB */}
                     {selectedAssetTab === 'general' && (
-                        simulatorMode === 'instructor' ? (
-                            // INSTRUCTOR MODE - Full controls
+                        simulatorMode === 'instructor' && selectedAsset ? (
+                            // INSTRUCTOR MODE - Full controls (requires selectedAsset)
                             <>
                                 <div className="input-group">
                                     <label className="input-label">Name</label>
@@ -10349,7 +10483,7 @@ function ControlPanel({
                             )}
 
                             {/* HIDDEN and TRACK FILE checkboxes - Instructor mode only, not for ownship */}
-                            {selectedAsset.type !== 'ownship' && (
+                            {selectedAsset && selectedAsset.type !== 'ownship' && (
                                 <>
                                     <div className="input-group">
                                         <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -11007,8 +11141,8 @@ function ControlPanel({
                         )
                     )}
 
-                    {/* IFF TAB */}
-                    {selectedAssetTab === 'iff' && (
+                    {/* IFF TAB - Only for instructor mode with selected asset */}
+                    {selectedAssetTab === 'iff' && selectedAsset && (
                         <div className="input-group">
                             <label className="input-label">IFF Codes</label>
                             <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
@@ -11138,8 +11272,8 @@ function ControlPanel({
                         </div>
                     )}
 
-                    {/* DATALINK TAB */}
-                    {selectedAssetTab === 'datalink' && (
+                    {/* DATALINK TAB - Only for instructor mode with selected asset */}
+                    {selectedAssetTab === 'datalink' && selectedAsset && (
                         <div className="input-group">
                             <label className="input-label">Datalink</label>
                             <div style={{ padding: '10px', background: '#2a2a2a', borderRadius: '3px' }}>
@@ -11285,8 +11419,8 @@ function ControlPanel({
                         </div>
                     )}
 
-                    {/* EMITTER TAB */}
-                    {selectedAssetTab === 'emitter' && (
+                    {/* EMITTER TAB - Only for instructor mode with selected asset */}
+                    {selectedAssetTab === 'emitter' && selectedAsset && (
                         <div className="input-group">
                             <label className="input-label">Emitters</label>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -11328,7 +11462,8 @@ function ControlPanel({
                         </div>
                     )}
 
-                    {selectedAssetTab === 'behaviors' && (
+                    {/* BEHAVIORS TAB - Only for instructor mode with selected asset */}
+                    {selectedAssetTab === 'behaviors' && selectedAsset && (
                         <BehaviorsTab
                             asset={selectedAsset}
                             assets={assets}
@@ -11341,7 +11476,7 @@ function ControlPanel({
                     <div className="playback-controls" style={{ marginTop: '10px' }}>
                         {simulatorMode === 'instructor' ? (
                             // INSTRUCTOR MODE - Asset controls
-                            selectedAsset.type !== 'ownship' && (
+                            selectedAsset && selectedAsset.type !== 'ownship' && (
                                 <>
                                     <button className="control-btn" onClick={() => reportTrack(selectedAsset.id)}>
                                         REPORT TRACK
@@ -11392,6 +11527,12 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             return true; // Instructor has full access
         }
         // Student mode - check if ownship or friendly track
+        // Handle 'track' type context menu
+        if (contextMenu.type === 'track' && contextMenu.trackId) {
+            const track = studentTracks.find(t => t.id === contextMenu.trackId);
+            return track && track.identity === 'friendly';
+        }
+        // Handle 'asset' type context menu
         // NOTE: assetId can be 0 (ownship), so check for undefined/null explicitly
         if (contextMenu.type === 'asset' && contextMenu.assetId !== undefined && contextMenu.assetId !== null) {
             // Check if the asset is ownship
@@ -11424,14 +11565,27 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                 addAsset({ lat: contextMenu.lat, lon: contextMenu.lon, domain, platform });
                 break;
             case 'goTo':
-                addWaypoint(selectedAsset.id, contextMenu.lat, contextMenu.lon, true);
+                // Use assetId from context menu (works for both asset and track types)
+                if (contextMenu.assetId !== undefined) {
+                    addWaypoint(contextMenu.assetId, contextMenu.lat, contextMenu.lon, true);
+                } else if (selectedAsset) {
+                    addWaypoint(selectedAsset.id, contextMenu.lat, contextMenu.lon, true);
+                }
                 break;
             case 'addWaypoint':
-                addWaypoint(selectedAsset.id, contextMenu.lat, contextMenu.lon, false);
+                // Use assetId from context menu (works for both asset and track types)
+                if (contextMenu.assetId !== undefined) {
+                    addWaypoint(contextMenu.assetId, contextMenu.lat, contextMenu.lon, false);
+                } else if (selectedAsset) {
+                    addWaypoint(selectedAsset.id, contextMenu.lat, contextMenu.lon, false);
+                }
                 break;
             case 'clearWaypoints':
                 if (window.confirm('Clear all waypoints for this asset?')) {
-                    clearWaypoints(selectedAsset.id);
+                    const assetId = contextMenu.assetId !== undefined ? contextMenu.assetId : selectedAsset?.id;
+                    if (assetId !== undefined) {
+                        clearWaypoints(assetId);
+                    }
                 }
                 break;
             case 'deleteWaypoint':
@@ -11534,6 +11688,7 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             )}
 
             {/* Waypoint options - Instructor OR Friendly in Student */}
+            {/* For 'asset' type - use selectedAsset */}
             {contextMenu.type === 'asset' && !selectedAsset?.waypoints.length && isFriendlyAssetOrTrack() && (
                 <div className="context-menu-item" onClick={() => handleClick('goTo')}>
                     Go To
@@ -11559,6 +11714,40 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                     </div>
                 </>
             )}
+
+            {/* For 'track' type in student mode - look up the underlying asset */}
+            {contextMenu.type === 'track' && isFriendlyAssetOrTrack() && (() => {
+                const trackAsset = assets.find(a => a.id === contextMenu.assetId);
+                if (!trackAsset) return null;
+
+                if (!trackAsset.waypoints || trackAsset.waypoints.length === 0) {
+                    return (
+                        <div className="context-menu-item" onClick={() => handleClick('goTo')}>
+                            Go To
+                        </div>
+                    );
+                } else {
+                    return (
+                        <>
+                            <div className="context-menu-item" onClick={() => handleClick('addWaypoint')}>
+                                Add Waypoint
+                            </div>
+                            <div
+                                className="context-menu-item"
+                                style={{
+                                    color: '#FF0000',
+                                    borderTop: '1px solid #333',
+                                    marginTop: '5px',
+                                    paddingTop: '8px'
+                                }}
+                                onClick={() => handleClick('clearWaypoints')}
+                            >
+                                Clear All Waypoints
+                            </div>
+                        </>
+                    );
+                }
+            })()}
 
             {contextMenu.type === 'waypoint' && (
                 <div className="context-menu-item" onClick={() => handleClick('deleteWaypoint')}>

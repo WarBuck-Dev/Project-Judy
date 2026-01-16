@@ -479,11 +479,32 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 3.0
-**Last Updated**: January 15, 2026
+**Version**: 3.1
+**Last Updated**: January 16, 2026
 **Status**: Production Ready
 
 ## Recent Updates
+
+### Version 3.1 (January 2026)
+
+#### Student/Instructor Mode Improvements
+- **Dead Reckoning for Destroyed Assets**: When a weapon destroys an asset in student mode, the student track continues to dead reckon based on the last known course and speed until it ages after 2 sweeps
+- **Aged Track Selection**: Gray (aged) tracks can now be properly selected and deleted by students
+- **Track Selection UI**: Fixed track selection to properly show the SELECTED TRACK panel and hide SYSTEMS/ASSETS panels
+- **Context Menu for Tracks**: "Go To", "Add Waypoint", and "Engage with" options now work properly when selecting friendly tracks in student mode
+- **Fixed Mode Switching Errors**: Resolved crashes when selecting tracks while other UI elements (like ESM lines) were selected
+
+#### New Behavior Actions
+- **Make Visible**: New behavior action that unchecks the HIDDEN box, making the asset visible to students
+- **Make Invisible**: New behavior action that checks the HIDDEN box, making the asset invisible to students
+- These actions allow instructors to create scenarios where assets appear or disappear based on triggers (mission time, distance, or waypoint arrival)
+
+#### Bug Fixes
+- Fixed datalink track block initialization when loading saved scenarios
+- Fixed friendly track lat/lon format to use DMM format matching instructor mode
+- Changed track generation threshold from 2-4 to 2-3 sweeps for more consistent track creation
+- Fixed weapon color (blue/red) to be based on student track identity rather than instructor asset identity
+- Fixed context menu restrictions so non-friendly tracks cannot access "Engage with" function
 
 ### Version 3.0 (January 2026)
 
@@ -543,7 +564,7 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - Hidden tabs: IFF, DATALINK, EMITTER, BEHAVIORS (instructor only)
 
 - **Automatic Track Generation**: Radar returns create track files
-  - Random threshold: 2-4 radar returns required
+  - Random threshold: 2-3 radar returns required
   - Track appears after threshold met
   - Default identity: "unknownUnevaluated" (orange)
   - Track positioned at last radar detection
@@ -584,7 +605,7 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 - **Track Management**: Student controls track lifecycle
   - DELETE TRACK button removes student track file
   - Deleting track does NOT remove instructor asset
-  - Radar will regenerate track after 2-4 returns
+  - Radar will regenerate track after 2-3 returns
   - New track will NOT have track number (student must report again)
   - Empty space click deselects tracks
 
@@ -818,12 +839,14 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
     - Triggers when asset arrives within 0.5 NM of waypoint
     - Waypoint numbering preserved after completion
 
-- **Five Action Types**:
+- **Seven Action Types**:
   - **Change Heading**: Set asset heading to specified value (0-359°)
   - **Change Speed**: Set asset speed to specified value (knots)
   - **Change Altitude**: Set asset altitude to specified value (feet, air domain only)
   - **Turn Emitter On**: Activate specified radar emitter
   - **Turn Emitter Off**: Deactivate specified radar emitter
+  - **Make Visible**: Uncheck HIDDEN box, making asset visible to students
+  - **Make Invisible**: Check HIDDEN box, making asset invisible to students
 
 - **Multiple Actions Per Trigger**:
   - Execute unlimited actions simultaneously when trigger fires
