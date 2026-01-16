@@ -493,11 +493,26 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 - **Track Selection UI**: Fixed track selection to properly show the SELECTED TRACK panel and hide SYSTEMS/ASSETS panels
 - **Context Menu for Tracks**: "Go To", "Add Waypoint", and "Engage with" options now work properly when selecting friendly tracks in student mode
 - **Fixed Mode Switching Errors**: Resolved crashes when selecting tracks while other UI elements (like ESM lines) were selected
+- **Friendly Track Controls**: Students can now set heading, speed, and altitude for friendly tracks via the track panel
+
+#### Operator Track System
+- **Create Operator Tracks**: Right-click on empty space in student mode to create manual operator tracks
+- **Domain Selection**: Choose Air, Surface, or Subsurface domain when creating operator tracks
+- **Default Values**: New operator tracks start with heading 360°, speed 0 kts, altitude/depth 0 ft
+- **Editable Properties**: Manually enter course, speed, altitude, and depth for operator tracks
+- **Draggable Tracks**: Select an operator track and drag it to reposition
+- **Track Fusion**: Select operator track, right-click radar track, choose "Fuse Track" to combine them
+  - Fused track uses radar's position/speed/heading but retains operator track's label and identity
 
 #### New Behavior Actions
 - **Make Visible**: New behavior action that unchecks the HIDDEN box, making the asset visible to students
 - **Make Invisible**: New behavior action that checks the HIDDEN box, making the asset invisible to students
 - These actions allow instructors to create scenarios where assets appear or disappear based on triggers (mission time, distance, or waypoint arrival)
+
+#### UI Improvements
+- **Styled Alert Dialogs**: Datalink validation messages now use styled popups instead of browser alerts
+- **Rounded Values**: Track panel heading, speed, and altitude fields display whole numbers only
+- **Cursor Bearing/Range**: Fixed bearing and range readout from cursor when a track is selected
 
 #### Bug Fixes
 - Fixed datalink track block initialization when loading saved scenarios
@@ -505,6 +520,7 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 - Changed track generation threshold from 2-4 to 2-3 sweeps for more consistent track creation
 - Fixed weapon color (blue/red) to be based on student track identity rather than instructor asset identity
 - Fixed context menu restrictions so non-friendly tracks cannot access "Engage with" function
+- Fixed friendly track heading/speed/altitude controls not applying values when SET button clicked
 
 ### Version 3.0 (January 2026)
 

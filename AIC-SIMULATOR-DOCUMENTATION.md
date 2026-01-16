@@ -1,8 +1,8 @@
 # AIC Simulator - Requirements & Features Documentation
 
 **Air Intercept Control Simulator**
-Version 2.5
-Last Updated: January 10, 2026
+Version 3.1
+Last Updated: January 16, 2026
 
 ---
 
@@ -931,12 +931,109 @@ Examples:
 
 ---
 
+## Student/Instructor Mode System (v3.0+)
+
+### Overview
+
+The Student/Instructor Mode system provides a dual-mode training environment that separates the instructor's scenario-building capabilities from the student's radar operator experience. This creates a realistic training environment where students interact with radar-generated tracks rather than directly with assets.
+
+### Mode Selection
+
+When starting the simulator, users choose between:
+- **Instructor Mode**: Full access to all simulator controls for scenario building
+- **Student Mode**: Radar operator interface with track-based interaction
+
+### Instructor Mode Features
+
+#### Full Control
+- Complete asset creation, editing, and deletion
+- Access to all tabs: GENERAL, IFF, DATALINK, EMITTER, EO/IR, ISAR, BEHAVIORS
+- Scenario building and configuration
+- All sensor systems and weapons
+
+#### HIDDEN Checkbox
+- Located in GENERAL tab for each asset
+- Assets with HIDDEN checked produce no radar returns
+- Track files age and disappear when HIDDEN toggled during scenario
+
+#### Asset Behaviors
+- Create automated behaviors with triggers and actions
+- **Triggers**: At Mission Time, At Distance From Asset, At Waypoint
+- **Actions**: Change Heading, Change Speed, Change Altitude, Turn Emitter On/Off, Make Visible, Make Invisible
+
+### Student Mode Features
+
+#### Track-Based Interface
+- Students see radar-generated tracks, not instructor assets
+- Tracks appear after 2-3 radar sweeps detect an asset
+- Default track identity: "Unknown Unevaluated" (orange)
+
+#### Track Properties
+- **Label**: Custom text to identify tracks
+- **Identity**: Friendly, Hostile, Neutral, Unknown, Unknown Unevaluated
+- **Domain**: Air, Surface, Subsurface (display only)
+- **Track Number**: Assigned via REPORT TRACK when datalink configured
+
+#### Track Aging
+- Tracks turn gray after 2 missed radar sweeps
+- Aged tracks can still be selected and deleted
+- Dead reckoning continues for aged tracks
+
+#### Friendly Track Controls
+- Students can set heading, speed, and altitude for friendly tracks
+- Controls the underlying asset through the track interface
+- Values displayed as whole numbers
+
+### Operator Track System (v3.1)
+
+#### Creating Operator Tracks
+1. In student mode, right-click on empty space
+2. Select "Create Operator Track"
+3. Choose domain (Air, Surface, Subsurface)
+4. Track appears with default values: heading 360°, speed 0, altitude/depth 0
+
+#### Editing Operator Tracks
+- Select operator track to access editable fields
+- Modify heading, speed, altitude/depth, latitude, longitude
+- Operator tracks move based on entered speed and heading (dead reckoning)
+
+#### Dragging Operator Tracks
+- Select an operator track
+- Click and drag to reposition on map
+
+#### Track Fusion
+1. Select an operator track
+2. Right-click on a radar-generated track
+3. Select "Fuse Track"
+4. Result: Radar track inherits operator track's label and identity
+5. Operator track is deleted; fused track continues following radar
+
+### Datalink System
+
+#### Configuration
+- NET: Network identifier
+- JU: 5-digit Joint Unit identifier
+- Track Block: Start and end numbers for track assignment
+
+#### REPORT TRACK
+- Assigns track number from configured track block
+- Requires powered datalink with NET, JU, and track block
+- Styled alert dialogs for validation messages
+
+### Cursor Information
+
+- Bearing and range from selected reference (ownship, mark, or track)
+- Yellow information box updates in real-time
+- Works with track selection in student mode
+
+---
+
 ## Document Metadata
 
-**Document Version**: 2.0
-**Application Version**: 2.0
+**Document Version**: 3.1
+**Application Version**: 3.1
 **Created**: December 30, 2025
-**Last Updated**: January 3, 2026
+**Last Updated**: January 16, 2026
 **Author**: AIC Simulator Development Team
 **Status**: Production
 
