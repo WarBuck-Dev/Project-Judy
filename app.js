@@ -1893,10 +1893,15 @@ function AICSimulator() {
                             setRadarDetectionCounts(prev => ({ ...prev, [asset.id]: newCount }));
                             setLastDetectionSweepAngle(prev => ({ ...prev, [asset.id]: missionTime }));
 
-                            // Create student track when threshold is reached
+                            // Create student track when threshold is reached (only if trackFileEnabled)
                             if (newCount >= threshold && !studentTracks.find(t => t.assetId === asset.id)) {
-                                console.log(`[Student Mode] Asset ${asset.id} (${asset.name}) - Creating track (${threshold} sweeps completed)`);
-                                createStudentTrack(asset);
+                                // Check if trackFileEnabled is true (default to true for backward compatibility)
+                                if (asset.trackFileEnabled !== false) {
+                                    console.log(`[Student Mode] Asset ${asset.id} (${asset.name}) - Creating track (${threshold} sweeps completed)`);
+                                    createStudentTrack(asset);
+                                } else {
+                                    console.log(`[Student Mode] Asset ${asset.id} (${asset.name}) - Track file disabled, no track created`);
+                                }
                             }
                         }
                     }
@@ -1905,9 +1910,9 @@ function AICSimulator() {
         }
     }, [isRunning, radarEnabled, radarSweepAngle, assets, missionTime, simulatorMode, studentTracks, createStudentTrack, detectionThresholds, radarDetectionCounts, lastDetectionSweepAngle]);
 
-    // STUDENT MODE: Track aging system
+    // STUDENT MODE: Track aging and dead reckoning system
     useEffect(() => {
-        if (isRunning && simulatorMode === 'student' && radarEnabled) {
+        if (isRunning && simulatorMode === 'student') {
             const ownship = assets.find(a => a.type === 'ownship');
             if (!ownship) return;
 
@@ -1916,19 +1921,50 @@ function AICSimulator() {
 
                 // Asset deleted by instructor → age immediately
                 if (!asset) {
-                    updateStudentTrack(track.id, { isAged: true });
+                    if (!track.isAged) {
+                        updateStudentTrack(track.id, { isAged: true });
+                    }
                     return;
                 }
 
-                // Asset HIDDEN → increment aging timer
-                if (asset.hidden) {
-                    setTrackAgingTimers(prev => {
-                        const missedSweeps = (prev[track.id] || 0) + 1;
-                        if (missedSweeps >= 2 && !track.isAged) {
-                            updateStudentTrack(track.id, { isAged: true });
-                        }
-                        return { ...prev, [track.id]: missedSweeps };
+                // Dead reckoning: Use actual asset position for realistic tracking
+                // This simulates the track following the actual asset movement
+                const timeSinceLastDetection = missionTime - track.lastDetectionTime;
+
+                // Only update if position has changed (avoid continuous state updates)
+                const positionChanged = asset && (
+                    Math.abs(asset.lat - track.lat) > 0.0001 ||
+                    Math.abs(asset.lon - track.lon) > 0.0001 ||
+                    Math.abs((asset.heading || 0) - track.estimatedHeading) > 0.1 ||
+                    Math.abs((asset.speed || 0) - track.estimatedSpeed) > 0.1
+                );
+
+                if (asset && timeSinceLastDetection > 0 && positionChanged) {
+                    // Simply use the instructor asset's actual position for dead reckoning
+                    // This gives perfect tracking behavior without complex calculations
+                    updateStudentTrack(track.id, {
+                        lat: asset.lat,
+                        lon: asset.lon,
+                        estimatedHeading: asset.heading || track.estimatedHeading,
+                        estimatedSpeed: asset.speed || track.estimatedSpeed
                     });
+                }
+
+                // Radar OFF → age after 20 seconds (2 sweep rotations)
+                if (!radarEnabled) {
+                    if (timeSinceLastDetection >= 20 && !track.isAged) {
+                        updateStudentTrack(track.id, { isAged: true });
+                        console.log(`[Student Mode] Track ${track.id} aged (radar OFF for ${timeSinceLastDetection.toFixed(0)}s)`);
+                    }
+                    return;
+                }
+
+                // Asset HIDDEN → age after 20 seconds (2 sweeps)
+                if (asset.hidden) {
+                    if (timeSinceLastDetection >= 20 && !track.isAged) {
+                        updateStudentTrack(track.id, { isAged: true });
+                        console.log(`[Student Mode] Track ${track.id} aged (HIDDEN for ${timeSinceLastDetection.toFixed(0)}s)`);
+                    }
                     return;
                 }
 
@@ -1945,27 +1981,23 @@ function AICSimulator() {
                 const sweepDetected = angleDiff < 1;
 
                 if (sweepDetected && isDetectable) {
-                    // Reset aging timer and update position
-                    setTrackAgingTimers(prev => ({ ...prev, [track.id]: 0 }));
+                    // Reset to actual asset position and update estimated course/speed
                     updateStudentTrack(track.id, {
                         lat: asset.lat,
                         lon: asset.lon,
                         lastDetectionTime: missionTime,
+                        estimatedHeading: asset.heading || track.estimatedHeading,
+                        estimatedSpeed: asset.speed || track.estimatedSpeed,
                         isAged: false,
                         iffModeI: asset.iffSquawking ? asset.iffModeI : '',
                         iffModeII: asset.iffSquawking ? asset.iffModeII : '',
                         iffModeIII: asset.iffSquawking ? asset.iffModeIII : '',
                         datalinkJU: asset.datalinkJU || ''
                     });
-                } else if (!isDetectable) {
-                    // Out of range → increment aging timer
-                    setTrackAgingTimers(prev => {
-                        const missedSweeps = (prev[track.id] || 0) + 1;
-                        if (missedSweeps >= 2 && !track.isAged) {
-                            updateStudentTrack(track.id, { isAged: true });
-                        }
-                        return { ...prev, [track.id]: missedSweeps };
-                    });
+                } else if (!isDetectable && timeSinceLastDetection >= 20 && !track.isAged) {
+                    // Out of range for 20+ seconds → age
+                    updateStudentTrack(track.id, { isAged: true });
+                    console.log(`[Student Mode] Track ${track.id} aged (out of range for ${timeSinceLastDetection.toFixed(0)}s)`);
                 }
             });
         }
@@ -2484,6 +2516,8 @@ function AICSimulator() {
             isAged: false,
             lastDetectionTime: missionTime,
             creationTime: missionTime,
+            estimatedHeading: asset.heading || 0,  // For dead reckoning
+            estimatedSpeed: asset.speed || 0,      // For dead reckoning
             iffModeI: asset.iffSquawking ? asset.iffModeI : '',
             iffModeII: asset.iffSquawking ? asset.iffModeII : '',
             iffModeIII: asset.iffSquawking ? asset.iffModeIII : '',
@@ -3865,6 +3899,7 @@ function AICSimulator() {
             x: e.clientX,
             y: e.clientY,
             type: selectedAsset ? 'asset' : 'empty',
+            assetId: selectedAsset ? selectedAsset.id : undefined,
             lat: latLon.lat,
             lon: latLon.lon
         });
@@ -4145,6 +4180,10 @@ function AICSimulator() {
             setRadarControlsSelected(false);
             setEsmControlsSelected(false);
             setIffControlsSelected(false);
+            // Deselect student track in student mode
+            if (simulatorMode === 'student') {
+                setSelectedTrackId(null);
+            }
             setIsDragging(true);
             setDragStart({
                 x: e.clientX,
@@ -4153,7 +4192,7 @@ function AICSimulator() {
                 centerLon: mapCenter.lon
             });
         }
-    }, [assets, geoPoints, shapes, selectedAsset, selectedGeoPointId, selectedShapeId, bullseyeSelected, bullseyePosition, mapCenter, scale, simulatorMode, studentTracks, setBullseyeSelected, setSelectedAssetId, setSelectedGeoPointId, setSelectedShapeId, setRadarControlsSelected, setEsmControlsSelected, setIffControlsSelected, setTempMark, setDraggedBullseye, setDraggedShapeId, setDraggedShapePointIndex, setDraggedGeoPointId, setDraggedWaypoint, setDraggedAssetId, setIsDragging, setDragStart]);
+    }, [assets, geoPoints, shapes, selectedAsset, selectedGeoPointId, selectedShapeId, bullseyeSelected, bullseyePosition, mapCenter, scale, simulatorMode, studentTracks, setBullseyeSelected, setSelectedAssetId, setSelectedGeoPointId, setSelectedShapeId, setRadarControlsSelected, setEsmControlsSelected, setIffControlsSelected, setTempMark, setDraggedBullseye, setDraggedShapeId, setDraggedShapePointIndex, setDraggedGeoPointId, setDraggedWaypoint, setDraggedAssetId, setIsDragging, setDragStart, setSelectedTrackId]);
 
     const handleMouseUp = useCallback(() => {
         setIsDragging(false);
@@ -5302,10 +5341,13 @@ function AICSimulator() {
         const size = 12; // Consistent size for all tracks
         const strokeWidth = 2;
 
-        // Get underlying asset for heading (if not aged and asset exists)
+        // Get underlying asset for heading
         const asset = assets.find(a => a.id === track.assetId);
         const headingLength = 30;
-        const headingRad = (asset?.heading || 0) * Math.PI / 180;
+
+        // Use track's estimatedHeading for dead reckoning, or asset heading if available
+        const heading = track.estimatedHeading || asset?.heading || 0;
+        const headingRad = heading * Math.PI / 180;
         const headingX = pos.x + headingLength * Math.sin(headingRad);
         const headingY = pos.y - headingLength * Math.cos(headingRad);
 
@@ -5358,8 +5400,8 @@ function AICSimulator() {
                     </>
                 )}
 
-                {/* Heading line - hide for aged or land domain */}
-                {!track.isAged && asset && track.domain !== 'land' && (
+                {/* Heading line - show for all non-land tracks (including aged) using estimated heading */}
+                {track.domain !== 'land' && (
                     <line x1={pos.x} y1={pos.y} x2={headingX} y2={headingY}
                           stroke={config.color} strokeWidth="2" />
                 )}
@@ -5534,6 +5576,38 @@ function AICSimulator() {
 
                     return <g>{labels}</g>;
                 })()}
+
+                {/* Waypoints - only show for friendly tracks and get from underlying asset */}
+                {track.identity === 'friendly' && asset && asset.waypoints && asset.waypoints
+                    .filter(wp => !wp.reached) // Only render unreached waypoints
+                    .map((wp, i) => {
+                        const wpPos = latLonToScreen(wp.lat, wp.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+
+                        // Calculate previous position for line drawing
+                        const unreachedWaypoints = asset.waypoints.filter(w => !w.reached);
+                        const prevPos = i === 0 ? pos : latLonToScreen(
+                            unreachedWaypoints[i-1].lat,
+                            unreachedWaypoints[i-1].lon,
+                            mapCenter.lat, mapCenter.lon, scale, width, height
+                        );
+
+                        return (
+                            <g key={wp.id}> {/* Use waypoint ID as key */}
+                                <line x1={prevPos.x} y1={prevPos.y} x2={wpPos.x} y2={wpPos.y}
+                                      stroke={config.color} strokeWidth="1" strokeDasharray="5,5" />
+                                <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
+                                    <line x1={-6} y1={0} x2={6} y2={0} stroke={config.color} strokeWidth="2" />
+                                    <line x1={0} y1={-6} x2={0} y2={6} stroke={config.color} strokeWidth="2" />
+                                </g>
+                                {/* Waypoint label using ID to preserve numbering */}
+                                <text x={wpPos.x} y={wpPos.y-10} fill={config.color} fontSize="8"
+                                      textAnchor="middle" fontWeight="700">
+                                    WP{wp.id}
+                                </text>
+                            </g>
+                        );
+                    })
+                }
             </g>
         );
     };
@@ -10301,6 +10375,165 @@ function ControlPanel({
                             // STUDENT MODE - Restricted controls
                             <>
                                 {(() => {
+                                    // Check if ownship is selected (selectedAsset is set, not selectedTrackId)
+                                    if (selectedAsset && selectedAsset.type === 'ownship') {
+                                        return (
+                                            <>
+                                                {/* Heading control */}
+                                                <div className="input-group">
+                                                    <label className="input-label">
+                                                        Heading (degrees)
+                                                        <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                                            Current: {Math.round(selectedAsset.heading)}°
+                                                            {selectedAsset.targetHeading !== null && ` → ${Math.round(selectedAsset.targetHeading)}°`}
+                                                        </span>
+                                                    </label>
+                                                    <div style={{ display: 'flex', gap: '5px' }}>
+                                                        <input
+                                                            className="input-field"
+                                                            type="number"
+                                                            min="0"
+                                                            max="359"
+                                                            value={editValues.heading || 0}
+                                                            onFocus={() => setActivelyEditingFields(prev => ({ ...prev, heading: true }))}
+                                                            onBlur={() => setActivelyEditingFields(prev => ({ ...prev, heading: false }))}
+                                                            onChange={(e) => {
+                                                                handleUpdate('heading', e.target.value);
+                                                                e.target.style.color = '#00BFFF';
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    applyTarget('heading');
+                                                                    e.target.style.color = '#00FF00';
+                                                                }
+                                                            }}
+                                                            style={{ flex: 1, color: '#00FF00' }}
+                                                        />
+                                                        <button
+                                                            className="control-btn"
+                                                            onClick={() => applyTarget('heading')}
+                                                            style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                                        >
+                                                            SET
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Speed control */}
+                                                <div className="input-group">
+                                                    <label className="input-label">
+                                                        Speed (KTAS)
+                                                        <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                                            Current: {Math.round(selectedAsset.speed)} kts
+                                                            {selectedAsset.targetSpeed !== null && ` → ${Math.round(selectedAsset.targetSpeed)} kts`}
+                                                        </span>
+                                                    </label>
+                                                    <div style={{ display: 'flex', gap: '5px' }}>
+                                                        <input
+                                                            className="input-field"
+                                                            type="number"
+                                                            min="0"
+                                                            value={editValues.speed || 0}
+                                                            onFocus={() => setActivelyEditingFields(prev => ({ ...prev, speed: true }))}
+                                                            onBlur={() => setActivelyEditingFields(prev => ({ ...prev, speed: false }))}
+                                                            onChange={(e) => {
+                                                                handleUpdate('speed', e.target.value);
+                                                                e.target.style.color = '#00BFFF';
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    applyTarget('speed');
+                                                                    e.target.style.color = '#00FF00';
+                                                                }
+                                                            }}
+                                                            style={{ flex: 1, color: '#00FF00' }}
+                                                        />
+                                                        <button
+                                                            className="control-btn"
+                                                            onClick={() => applyTarget('speed')}
+                                                            style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                                        >
+                                                            SET
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Altitude control */}
+                                                <div className="input-group">
+                                                    <label className="input-label">
+                                                        Altitude (feet)
+                                                        <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                                            Current: FL{Math.round(selectedAsset.altitude / 100)}
+                                                            {selectedAsset.targetAltitude !== null && ` → FL${Math.round(selectedAsset.targetAltitude / 100)}`}
+                                                        </span>
+                                                    </label>
+                                                    <div style={{ display: 'flex', gap: '5px' }}>
+                                                        <input
+                                                            className="input-field"
+                                                            type="number"
+                                                            min="0"
+                                                            value={editValues.altitude || 0}
+                                                            onFocus={() => setActivelyEditingFields(prev => ({ ...prev, altitude: true }))}
+                                                            onBlur={() => setActivelyEditingFields(prev => ({ ...prev, altitude: false }))}
+                                                            onChange={(e) => {
+                                                                handleUpdate('altitude', e.target.value);
+                                                                e.target.style.color = '#00BFFF';
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    applyTarget('altitude');
+                                                                    e.target.style.color = '#00FF00';
+                                                                }
+                                                            }}
+                                                            style={{ flex: 1, color: '#00FF00' }}
+                                                        />
+                                                        <button
+                                                            className="control-btn"
+                                                            onClick={() => applyTarget('altitude')}
+                                                            style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                                        >
+                                                            SET
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Latitude control */}
+                                                <div className="input-group">
+                                                    <label className="input-label">Latitude</label>
+                                                    <input
+                                                        type="text"
+                                                        className="input-field"
+                                                        value={editValues.lat || ''}
+                                                        onChange={(e) => setEditValues(prev => ({ ...prev, lat: e.target.value.toUpperCase() }))}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                applyAssetCoordinate('lat');
+                                                            }
+                                                        }}
+                                                        placeholder="N26 30.0"
+                                                    />
+                                                </div>
+
+                                                {/* Longitude control */}
+                                                <div className="input-group">
+                                                    <label className="input-label">Longitude</label>
+                                                    <input
+                                                        type="text"
+                                                        className="input-field"
+                                                        value={editValues.lon || ''}
+                                                        onChange={(e) => setEditValues(prev => ({ ...prev, lon: e.target.value.toUpperCase() }))}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                applyAssetCoordinate('lon');
+                                                            }
+                                                        }}
+                                                        placeholder="E054 00.0"
+                                                    />
+                                                </div>
+                                            </>
+                                        );
+                                    }
+
                                     const selectedTrack = studentTracks.find(t => t.id === selectedTrackId);
                                     if (!selectedTrack) return <div className="input-group">No track selected</div>;
 
@@ -10347,7 +10580,7 @@ function ControlPanel({
                                                 </div>
                                             </div>
 
-                                            {/* Heading, Speed, Altitude - only for friendly tracks */}
+                                            {/* Editable Heading, Speed, Altitude, Lat/Lon - only for friendly tracks */}
                                             {isFriendlyTrack(selectedTrack) && (() => {
                                                 const asset = assets.find(a => a.id === selectedTrack.assetId);
                                                 if (!asset) return null;
@@ -10552,6 +10785,126 @@ function ControlPanel({
                                                                 value={asset.lon || 0}
                                                                 onChange={(e) => updateAsset(asset.id, { lon: parseFloat(e.target.value) })}
                                                             />
+                                                        </div>
+                                                    </>
+                                                );
+                                            })()}
+
+                                            {/* Read-only Course, Speed, Altitude, Lat/Lon for non-friendly tracks */}
+                                            {!isFriendlyTrack(selectedTrack) && (() => {
+                                                const asset = assets.find(a => a.id === selectedTrack.assetId);
+                                                if (!asset) return null;
+
+                                                return (
+                                                    <>
+                                                        {/* Heading - read-only for non-friendly, hide for land */}
+                                                        {asset.domain !== 'land' && (
+                                                            <div className="input-group">
+                                                                <label className="input-label">Course (degrees)</label>
+                                                                <div
+                                                                    className="input-field"
+                                                                    style={{
+                                                                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                                                        color: '#00FF00',
+                                                                        padding: '10px',
+                                                                        cursor: 'not-allowed',
+                                                                        opacity: 0.7
+                                                                    }}
+                                                                >
+                                                                    {Math.round(asset.heading)}°
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Speed - read-only for non-friendly, hide for land */}
+                                                        {asset.domain !== 'land' && (
+                                                            <div className="input-group">
+                                                                <label className="input-label">Speed (knots)</label>
+                                                                <div
+                                                                    className="input-field"
+                                                                    style={{
+                                                                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                                                        color: '#00FF00',
+                                                                        padding: '10px',
+                                                                        cursor: 'not-allowed',
+                                                                        opacity: 0.7
+                                                                    }}
+                                                                >
+                                                                    {Math.round(asset.speed)}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Altitude - read-only for air domain */}
+                                                        {asset.domain === 'air' && (
+                                                            <div className="input-group">
+                                                                <label className="input-label">Altitude (feet)</label>
+                                                                <div
+                                                                    className="input-field"
+                                                                    style={{
+                                                                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                                                        color: '#00FF00',
+                                                                        padding: '10px',
+                                                                        cursor: 'not-allowed',
+                                                                        opacity: 0.7
+                                                                    }}
+                                                                >
+                                                                    {Math.round(asset.altitude)}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Depth - read-only for subsurface domain */}
+                                                        {asset.domain === 'subSurface' && (
+                                                            <div className="input-group">
+                                                                <label className="input-label">Depth (feet)</label>
+                                                                <div
+                                                                    className="input-field"
+                                                                    style={{
+                                                                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                                                        color: '#00FF00',
+                                                                        padding: '10px',
+                                                                        cursor: 'not-allowed',
+                                                                        opacity: 0.7
+                                                                    }}
+                                                                >
+                                                                    {Math.round(asset.depth)}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Latitude - read-only */}
+                                                        <div className="input-group">
+                                                            <label className="input-label">Latitude</label>
+                                                            <div
+                                                                className="input-field"
+                                                                style={{
+                                                                    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                                                    color: '#00FF00',
+                                                                    padding: '10px',
+                                                                    cursor: 'not-allowed',
+                                                                    opacity: 0.7
+                                                                }}
+                                                            >
+                                                                {decimalToDMM(asset.lat, true)}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Longitude - read-only */}
+                                                        <div className="input-group">
+                                                            <label className="input-label">Longitude</label>
+                                                            <div
+                                                                className="input-field"
+                                                                style={{
+                                                                    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                                                    color: '#00FF00',
+                                                                    padding: '10px',
+                                                                    cursor: 'not-allowed',
+                                                                    opacity: 0.7
+                                                                }}
+                                                            >
+                                                                {decimalToDMM(asset.lon, false)}
+                                                            </div>
                                                         </div>
                                                     </>
                                                 );
@@ -11021,10 +11374,17 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
         if (simulatorMode === 'instructor') {
             return true; // Instructor has full access
         }
-        // Student mode - check track identity
-        if (contextMenu.type === 'asset' && contextMenu.assetId) {
+        // Student mode - check if ownship or friendly track
+        // NOTE: assetId can be 0 (ownship), so check for undefined/null explicitly
+        if (contextMenu.type === 'asset' && contextMenu.assetId !== undefined && contextMenu.assetId !== null) {
+            // Check if the asset is ownship
+            const asset = assets.find(a => a.id === contextMenu.assetId);
+            if (asset && asset.type === 'ownship') {
+                return true;
+            }
+            // Check if there's a friendly student track for this asset
             const track = studentTracks.find(t => t.assetId === contextMenu.assetId);
-            return track && (track.identity === 'friendly' || track.type === 'ownship');
+            return track && track.identity === 'friendly';
         }
         return false;
     };
