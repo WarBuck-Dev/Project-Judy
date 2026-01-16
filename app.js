@@ -20,7 +20,8 @@ const ASSET_TYPES = {
     neutral: { color: '#00FF00', badge: 'NEU', shape: 'square' },
     unknown: { color: '#FFFF00', badge: 'UNK', shape: 'square' },
     unknownUnevaluated: { color: '#FFA500', badge: 'UNU', shape: 'square' },
-    ownship: { color: '#808080', badge: 'OWN', shape: 'ownship' }
+    ownship: { color: '#808080', badge: 'OWN', shape: 'ownship' },
+    aged: { color: '#808080', badge: 'AGED', shape: 'square' } // Student mode aged track
 };
 
 // Geo-point type configurations
@@ -1174,6 +1175,15 @@ function AICSimulator() {
     const [selectedWeaponType, setSelectedWeaponType] = useState(null);
     const [showRangeWarning, setShowRangeWarning] = useState(false);
 
+    // STUDENT/INSTRUCTOR MODE STATE
+    const [simulatorMode, setSimulatorMode] = useState('instructor'); // 'instructor' | 'student'
+    const [studentTracks, setStudentTracks] = useState([]); // Track files in student mode
+    const [radarDetectionCounts, setRadarDetectionCounts] = useState({}); // { assetId: count }
+    const [detectionThresholds, setDetectionThresholds] = useState({}); // { assetId: threshold } - Random 2-4 per asset
+    const [trackAgingTimers, setTrackAgingTimers] = useState({}); // { trackId: missedSweeps }
+    const [nextStudentTrackId, setNextStudentTrackId] = useState(1);
+    const [selectedTrackId, setSelectedTrackId] = useState(null); // Separate from selectedAssetId
+
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
@@ -1834,6 +1844,9 @@ function AICSimulator() {
                 const angleDiff = Math.abs(((bearing - radarSweepAngle + 540) % 360) - 180);
 
                 if (angleDiff < 1) {
+                    // STUDENT MODE: Skip HIDDEN assets
+                    if (simulatorMode === 'student' && asset.hidden) return;
+
                     // Create radar return for this asset
                     const newReturn = {
                         assetId: asset.id,
@@ -1847,10 +1860,101 @@ function AICSimulator() {
                         id: `${asset.id}-${missionTime}-${Math.random()}`
                     };
                     setRadarReturns(prev => [...prev, newReturn]);
+
+                    // STUDENT MODE: Increment detection count and auto-create tracks
+                    if (simulatorMode === 'student') {
+                        // Set threshold for this asset if not already set
+                        setDetectionThresholds(prevThresholds => {
+                            if (!prevThresholds[asset.id]) {
+                                const newThreshold = 2 + Math.floor(Math.random() * 3); // Random 2-4
+                                return { ...prevThresholds, [asset.id]: newThreshold };
+                            }
+                            return prevThresholds;
+                        });
+
+                        setRadarDetectionCounts(prev => {
+                            const currentCount = prev[asset.id] || 0;
+                            const newCount = currentCount + 1;
+                            const threshold = detectionThresholds[asset.id] || 2; // Default to 2 if not yet set
+
+                            // Create student track when threshold is reached
+                            if (newCount >= threshold && !studentTracks.find(t => t.assetId === asset.id)) {
+                                createStudentTrack(asset);
+                            }
+
+                            return { ...prev, [asset.id]: newCount };
+                        });
+                    }
                 }
             });
         }
-    }, [isRunning, radarEnabled, radarSweepAngle, assets, missionTime]);
+    }, [isRunning, radarEnabled, radarSweepAngle, assets, missionTime, simulatorMode, studentTracks, createStudentTrack, detectionThresholds]);
+
+    // STUDENT MODE: Track aging system
+    useEffect(() => {
+        if (isRunning && simulatorMode === 'student' && radarEnabled) {
+            const ownship = assets.find(a => a.type === 'ownship');
+            if (!ownship) return;
+
+            studentTracks.forEach(track => {
+                const asset = assets.find(a => a.id === track.assetId);
+
+                // Asset deleted by instructor → age immediately
+                if (!asset) {
+                    updateStudentTrack(track.id, { isAged: true });
+                    return;
+                }
+
+                // Asset HIDDEN → increment aging timer
+                if (asset.hidden) {
+                    setTrackAgingTimers(prev => {
+                        const missedSweeps = (prev[track.id] || 0) + 1;
+                        if (missedSweeps >= 2 && !track.isAged) {
+                            updateStudentTrack(track.id, { isAged: true });
+                        }
+                        return { ...prev, [track.id]: missedSweeps };
+                    });
+                    return;
+                }
+
+                // Check if detectable (range and horizon)
+                const bearing = calculateBearing(ownship.lat, ownship.lon, asset.lat, asset.lon);
+                const distance = calculateDistance(ownship.lat, ownship.lon, asset.lat, asset.lon);
+
+                const ownshipAltFt = ownship.altitude || 0;
+                const targetAltFt = asset.domain === 'air' ? (asset.altitude || 0) : 0;
+                const radarHorizonNM = 1.23 * (Math.sqrt(ownshipAltFt) + Math.sqrt(targetAltFt));
+
+                const isDetectable = distance <= 320 && distance <= radarHorizonNM;
+                const angleDiff = Math.abs(((bearing - radarSweepAngle + 540) % 360) - 180);
+                const sweepDetected = angleDiff < 1;
+
+                if (sweepDetected && isDetectable) {
+                    // Reset aging timer and update position
+                    setTrackAgingTimers(prev => ({ ...prev, [track.id]: 0 }));
+                    updateStudentTrack(track.id, {
+                        lat: asset.lat,
+                        lon: asset.lon,
+                        lastDetectionTime: missionTime,
+                        isAged: false,
+                        iffModeI: asset.iffSquawking ? asset.iffModeI : '',
+                        iffModeII: asset.iffSquawking ? asset.iffModeII : '',
+                        iffModeIII: asset.iffSquawking ? asset.iffModeIII : '',
+                        datalinkJU: asset.datalinkJU || ''
+                    });
+                } else if (!isDetectable) {
+                    // Out of range → increment aging timer
+                    setTrackAgingTimers(prev => {
+                        const missedSweeps = (prev[track.id] || 0) + 1;
+                        if (missedSweeps >= 2 && !track.isAged) {
+                            updateStudentTrack(track.id, { isAged: true });
+                        }
+                        return { ...prev, [track.id]: missedSweeps };
+                    });
+                }
+            });
+        }
+    }, [isRunning, simulatorMode, radarEnabled, radarSweepAngle, studentTracks, assets, missionTime, updateStudentTrack]);
 
     // Clean up old radar returns based on decay setting
     useEffect(() => {
@@ -2323,7 +2427,10 @@ function AICSimulator() {
             datalinkTrackBlockEnd: assetData.datalinkTrackBlockEnd || '',
             datalinkActive: false, // Whether asset is active in datalink
             datalinkAssignedTrack: null, // Track number assigned when reported to datalink
-            behaviors: []
+            behaviors: [],
+            hidden: assetData.hidden !== undefined ? assetData.hidden : true, // HIDDEN checkbox (instructor only) - defaults to CHECKED
+            trackFileEnabled: assetData.trackFileEnabled !== undefined ? assetData.trackFileEnabled : true, // TRACK FILE checkbox (instructor only)
+            studentLabel: assetData.studentLabel || '' // Student-assigned label (student mode)
         };
 
         setAssets(prev => [...prev, newAsset]);
@@ -2344,6 +2451,89 @@ function AICSimulator() {
             setSelectedAssetId(null);
         }
     }, [selectedAssetId, assets]);
+
+    // ========================================================================
+    // STUDENT/INSTRUCTOR MODE TRACK MANAGEMENT FUNCTIONS
+    // ========================================================================
+
+    const createStudentTrack = useCallback((asset) => {
+        const newTrack = {
+            id: nextStudentTrackId,
+            assetId: asset.id,
+            lat: asset.lat,
+            lon: asset.lon,
+            domain: asset.domain,
+            identity: 'unknownUnevaluated', // Default orange
+            label: '',
+            trackNumber: null,
+            isAged: false,
+            lastDetectionTime: missionTime,
+            creationTime: missionTime,
+            iffModeI: asset.iffSquawking ? asset.iffModeI : '',
+            iffModeII: asset.iffSquawking ? asset.iffModeII : '',
+            iffModeIII: asset.iffSquawking ? asset.iffModeIII : '',
+            datalinkJU: asset.datalinkJU || ''
+        };
+
+        setStudentTracks(prev => [...prev, newTrack]);
+        setNextStudentTrackId(prev => prev + 1);
+        setTrackAgingTimers(prev => ({ ...prev, [newTrack.id]: 0 }));
+    }, [nextStudentTrackId, missionTime]);
+
+    const updateStudentTrack = useCallback((trackId, updates) => {
+        setStudentTracks(prev => prev.map(t => t.id === trackId ? { ...t, ...updates } : t));
+    }, []);
+
+    const deleteStudentTrack = useCallback((trackId) => {
+        setStudentTracks(prev => prev.filter(t => t.id !== trackId));
+        setTrackAgingTimers(prev => {
+            const { [trackId]: _, ...rest } = prev;
+            return rest;
+        });
+        setRadarDetectionCounts(prev => {
+            const track = studentTracks.find(t => t.id === trackId);
+            if (track) {
+                const { [track.assetId]: _, ...rest } = prev;
+                return rest;
+            }
+            return prev;
+        });
+        if (selectedTrackId === trackId) setSelectedTrackId(null);
+    }, [selectedTrackId, studentTracks]);
+
+    const reportStudentTrack = useCallback((trackId) => {
+        const track = studentTracks.find(t => t.id === trackId);
+        if (!track) return;
+
+        // Validate datalink configuration
+        const datalinkActive = datalinkEnabled && datalinkNet && datalinkJU.length === 5 &&
+                               datalinkTrackBlockStart && datalinkTrackBlockEnd;
+        if (!datalinkActive) {
+            alert('Datalink must be powered on with NET, JU, and Track Block configured');
+            return;
+        }
+
+        // Check track block availability
+        if (nextDatalinkTrackNumber === null) {
+            alert('Track block start must be configured');
+            return;
+        }
+
+        const trackBlockEnd = parseInt(datalinkTrackBlockEnd);
+        if (nextDatalinkTrackNumber > trackBlockEnd) {
+            alert('Track block exhausted. No more tracks available.');
+            return;
+        }
+
+        // Assign track number
+        updateStudentTrack(trackId, { trackNumber: nextDatalinkTrackNumber });
+        setNextDatalinkTrackNumber(prev => prev + 1);
+    }, [studentTracks, datalinkEnabled, datalinkNet, datalinkJU, datalinkTrackBlockStart,
+        datalinkTrackBlockEnd, nextDatalinkTrackNumber, updateStudentTrack]);
+
+    const isFriendlyTrack = useCallback((track) => {
+        return track && (track.identity === 'friendly' || track.type === 'ownship');
+    }, []);
 
     const centerMapOnAsset = useCallback((assetId) => {
         const asset = assets.find(a => a.id === assetId);
@@ -3019,7 +3209,7 @@ function AICSimulator() {
 
     const saveToLocalStorage = useCallback((name) => {
         const saveData = {
-            version: '1.0',
+            version: '1.1', // Increment version for student/instructor mode
             timestamp: new Date().toISOString(),
             assets,
             bullseye: bullseyePosition,
@@ -3041,16 +3231,22 @@ function AICSimulator() {
             nextWeaponId,
             weaponEnabled,
             weaponArmed,
-            selectedWeaponType
+            selectedWeaponType,
+            simulatorMode,
+            studentTracks,
+            radarDetectionCounts,
+            detectionThresholds,
+            trackAgingTimers,
+            nextStudentTrackId
         };
 
         localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
         alert(`Scenario saved to application: ${name}`);
-    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType]);
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType, simulatorMode, studentTracks, radarDetectionCounts, detectionThresholds, trackAgingTimers, nextStudentTrackId]);
 
     const saveToFile = useCallback((name) => {
         const saveData = {
-            version: '1.0',
+            version: '1.1', // Increment version for student/instructor mode
             timestamp: new Date().toISOString(),
             assets,
             bullseye: bullseyePosition,
@@ -3072,7 +3268,13 @@ function AICSimulator() {
             nextWeaponId,
             weaponEnabled,
             weaponArmed,
-            selectedWeaponType
+            selectedWeaponType,
+            simulatorMode,
+            studentTracks,
+            radarDetectionCounts,
+            detectionThresholds,
+            trackAgingTimers,
+            nextStudentTrackId
         };
 
         const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' });
@@ -3082,7 +3284,7 @@ function AICSimulator() {
         a.download = `${name}-${new Date().toISOString().split('T')[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
-    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType]);
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType, simulatorMode, studentTracks, radarDetectionCounts, detectionThresholds, trackAgingTimers, nextStudentTrackId]);
 
     const loadFromLocalStorage = useCallback((name) => {
         const data = localStorage.getItem(`aic-scenario-${name}`);
@@ -3113,6 +3315,17 @@ function AICSimulator() {
                 // Add behaviors if missing (backward compatibility)
                 if (migrated.behaviors === undefined) {
                     migrated.behaviors = [];
+                }
+
+                // Add student/instructor mode fields if missing (backward compatibility)
+                if (migrated.hidden === undefined) {
+                    migrated.hidden = false;
+                }
+                if (migrated.trackFileEnabled === undefined) {
+                    migrated.trackFileEnabled = true;
+                }
+                if (migrated.studentLabel === undefined) {
+                    migrated.studentLabel = '';
                 }
 
                 return migrated;
@@ -3180,6 +3393,15 @@ function AICSimulator() {
             setSelectedTargetAssetId(null);
             setSelectedWeaponType(saveData.selectedWeaponType || null);
 
+            // Load student/instructor mode state (with backward compatibility)
+            setSimulatorMode(saveData.simulatorMode || 'instructor');
+            setStudentTracks(saveData.studentTracks || []);
+            setRadarDetectionCounts(saveData.radarDetectionCounts || {});
+            setDetectionThresholds(saveData.detectionThresholds || {});
+            setTrackAgingTimers(saveData.trackAgingTimers || {});
+            setNextStudentTrackId(saveData.nextStudentTrackId || 1);
+            setSelectedTrackId(null);
+
             // Find max asset ID
             const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
             setNextAssetId(maxId + 1);
@@ -3235,6 +3457,17 @@ function AICSimulator() {
                         // Add behaviors if missing (backward compatibility)
                         if (migrated.behaviors === undefined) {
                             migrated.behaviors = [];
+                        }
+
+                        // Add student/instructor mode fields if missing (backward compatibility)
+                        if (migrated.hidden === undefined) {
+                            migrated.hidden = false;
+                        }
+                        if (migrated.trackFileEnabled === undefined) {
+                            migrated.trackFileEnabled = true;
+                        }
+                        if (migrated.studentLabel === undefined) {
+                            migrated.studentLabel = '';
                         }
 
                         return migrated;
@@ -3301,6 +3534,15 @@ function AICSimulator() {
                     setWeaponGuardOpen(false);
                     setSelectedTargetAssetId(null);
                     setSelectedWeaponType(saveData.selectedWeaponType || null);
+
+                    // Load student/instructor mode state (with backward compatibility)
+                    setSimulatorMode(saveData.simulatorMode || 'instructor');
+                    setStudentTracks(saveData.studentTracks || []);
+                    setRadarDetectionCounts(saveData.radarDetectionCounts || {});
+                    setDetectionThresholds(saveData.detectionThresholds || {});
+                    setTrackAgingTimers(saveData.trackAgingTimers || {});
+                    setNextStudentTrackId(saveData.nextStudentTrackId || 1);
+                    setSelectedTrackId(null);
 
                     const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
                     setNextAssetId(maxId + 1);
@@ -3822,6 +4064,26 @@ function AICSimulator() {
             }
         }
 
+        // STUDENT MODE: Check if clicking on a student track
+        if (simulatorMode === 'student') {
+            for (const track of studentTracks) {
+                const trackPos = latLonToScreen(track.lat, track.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                const dist = Math.sqrt((x - trackPos.x) ** 2 + (y - trackPos.y) ** 2);
+                if (dist < 15) {
+                    setSelectedTrackId(track.id);
+                    setSelectedAssetId(null);
+                    setSelectedGeoPointId(null);
+                    setSelectedShapeId(null);
+                    setBullseyeSelected(false);
+                    setRadarControlsSelected(false);
+                    setEsmControlsSelected(false);
+                    setIffControlsSelected(false);
+                    setTempMark(null);
+                    return;
+                }
+            }
+        }
+
         // Check if clicking on a waypoint from ANY asset
         for (const asset of assets) {
             for (let i = 0; i < asset.waypoints.length; i++) {
@@ -3876,7 +4138,7 @@ function AICSimulator() {
                 centerLon: mapCenter.lon
             });
         }
-    }, [assets, geoPoints, shapes, selectedAsset, selectedGeoPointId, selectedShapeId, bullseyeSelected, bullseyePosition, mapCenter, scale, setBullseyeSelected, setSelectedAssetId, setSelectedGeoPointId, setSelectedShapeId, setRadarControlsSelected, setEsmControlsSelected, setIffControlsSelected, setTempMark, setDraggedBullseye, setDraggedShapeId, setDraggedShapePointIndex, setDraggedGeoPointId, setDraggedWaypoint, setDraggedAssetId, setIsDragging, setDragStart]);
+    }, [assets, geoPoints, shapes, selectedAsset, selectedGeoPointId, selectedShapeId, bullseyeSelected, bullseyePosition, mapCenter, scale, simulatorMode, studentTracks, setBullseyeSelected, setSelectedAssetId, setSelectedGeoPointId, setSelectedShapeId, setRadarControlsSelected, setEsmControlsSelected, setIffControlsSelected, setTempMark, setDraggedBullseye, setDraggedShapeId, setDraggedShapePointIndex, setDraggedGeoPointId, setDraggedWaypoint, setDraggedAssetId, setIsDragging, setDragStart]);
 
     const handleMouseUp = useCallback(() => {
         setIsDragging(false);
@@ -4708,6 +4970,10 @@ function AICSimulator() {
     };
 
     const renderAsset = (asset, width, height) => {
+        // STUDENT MODE: Hide HIDDEN assets and assets with trackFileEnabled=false (but always show ownship)
+        if (simulatorMode === 'student' && asset.type !== 'ownship' && asset.hidden) return null;
+        if (simulatorMode === 'student' && asset.type !== 'ownship' && asset.trackFileEnabled === false) return null;
+
         // Use 'ownship' if type is ownship, otherwise use identity for symbol
         const symbolType = asset.type === 'ownship' ? 'ownship' : (asset.identity || 'unknown');
         const config = ASSET_TYPES[symbolType];
@@ -5008,6 +5274,251 @@ function AICSimulator() {
                         );
                     })
                 }
+            </g>
+        );
+    };
+
+    const renderStudentTrack = (track, width, height) => {
+        // Use 'aged' type if track is aged, otherwise use track identity
+        const symbolType = track.isAged ? 'aged' : (track.identity || 'unknownUnevaluated');
+        const config = ASSET_TYPES[symbolType];
+        const pos = latLonToScreen(track.lat, track.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
+        const isSelected = track.id === selectedTrackId;
+        const size = 12; // Consistent size for all tracks
+        const strokeWidth = 2;
+
+        // Get underlying asset for heading (if not aged and asset exists)
+        const asset = assets.find(a => a.id === track.assetId);
+        const headingLength = 30;
+        const headingRad = (asset?.heading || 0) * Math.PI / 180;
+        const headingX = pos.x + headingLength * Math.sin(headingRad);
+        const headingY = pos.y - headingLength * Math.cos(headingRad);
+
+        return (
+            <g key={`track-${track.id}`}>
+                {/* Selection ring - rendered first (behind track) */}
+                {isSelected && (
+                    <>
+                        {/* Outer glow ring */}
+                        <circle
+                            cx={pos.x}
+                            cy={pos.y}
+                            r={22}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth="1.5"
+                            opacity="0.4"
+                        />
+                        {/* Main selection ring */}
+                        <circle
+                            cx={pos.x}
+                            cy={pos.y}
+                            r={20}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth="2.5"
+                            strokeDasharray="4,3"
+                            opacity="0.9"
+                        >
+                            {/* Rotating animation */}
+                            <animateTransform
+                                attributeName="transform"
+                                type="rotate"
+                                from={`0 ${pos.x} ${pos.y}`}
+                                to={`360 ${pos.x} ${pos.y}`}
+                                dur="4s"
+                                repeatCount="indefinite"
+                            />
+                        </circle>
+                        {/* Inner ring */}
+                        <circle
+                            cx={pos.x}
+                            cy={pos.y}
+                            r={18}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth="1"
+                            opacity="0.3"
+                        />
+                    </>
+                )}
+
+                {/* Heading line - hide for aged or land domain */}
+                {!track.isAged && asset && track.domain !== 'land' && (
+                    <line x1={pos.x} y1={pos.y} x2={headingX} y2={headingY}
+                          stroke={config.color} strokeWidth="2" />
+                )}
+
+                {/* Track symbol - MIL-STD-2525 symbology based on domain */}
+                {track.domain === 'air' ? (
+                    // AIR DOMAIN - Top half only
+                    config.shape === 'circle' ? (
+                        // Friendly: Top half of circle (arc)
+                        <path
+                            d={`M ${pos.x - size} ${pos.y} A ${size} ${size} 0 0 1 ${pos.x + size} ${pos.y}`}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    ) : config.shape === 'diamond' ? (
+                        // Hostile: Top half of diamond (triangle without bottom line)
+                        <path
+                            d={`M ${pos.x - size} ${pos.y} L ${pos.x} ${pos.y - size} L ${pos.x + size} ${pos.y}`}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    ) : (
+                        // Neutral/Unknown/Unknown Unevaluated/Aged: Top half of square
+                        <path
+                            d={`M ${pos.x - size} ${pos.y} L ${pos.x - size} ${pos.y - size} L ${pos.x + size} ${pos.y - size} L ${pos.x + size} ${pos.y}`}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    )
+                ) : track.domain === 'surface' ? (
+                    // SURFACE DOMAIN - Whole shape
+                    config.shape === 'circle' ? (
+                        // Friendly: Full circle
+                        <circle
+                            cx={pos.x}
+                            cy={pos.y}
+                            r={size}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    ) : config.shape === 'diamond' ? (
+                        // Hostile: Full diamond
+                        <path
+                            d={`M ${pos.x} ${pos.y - size} L ${pos.x + size} ${pos.y} L ${pos.x} ${pos.y + size} L ${pos.x - size} ${pos.y} Z`}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    ) : (
+                        // Neutral/Unknown/Unknown Unevaluated/Aged: Full square
+                        <rect
+                            x={pos.x - size}
+                            y={pos.y - size}
+                            width={size * 2}
+                            height={size * 2}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    )
+                ) : track.domain === 'subSurface' ? (
+                    // SUB-SURFACE DOMAIN - Bottom half only
+                    config.shape === 'circle' ? (
+                        // Friendly: Bottom half of circle (arc)
+                        <path
+                            d={`M ${pos.x + size} ${pos.y} A ${size} ${size} 0 0 1 ${pos.x - size} ${pos.y}`}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    ) : config.shape === 'diamond' ? (
+                        // Hostile: Bottom half of diamond (inverted triangle)
+                        <path
+                            d={`M ${pos.x - size} ${pos.y} L ${pos.x} ${pos.y + size} L ${pos.x + size} ${pos.y}`}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    ) : (
+                        // Neutral/Unknown/Unknown Unevaluated/Aged: Bottom half of square
+                        <path
+                            d={`M ${pos.x - size} ${pos.y} L ${pos.x - size} ${pos.y + size} L ${pos.x + size} ${pos.y + size} L ${pos.x + size} ${pos.y}`}
+                            fill="none"
+                            stroke={config.color}
+                            strokeWidth={strokeWidth}
+                        />
+                    )
+                ) : track.domain === 'land' ? (
+                    // LAND DOMAIN - Square with clipped corners (MIL-STD-2525)
+                    <path
+                        d={`M ${pos.x - size} ${pos.y - size * 0.3} L ${pos.x - size * 0.3} ${pos.y - size} L ${pos.x + size * 0.3} ${pos.y - size} L ${pos.x + size} ${pos.y - size * 0.3} L ${pos.x + size} ${pos.y + size} L ${pos.x - size} ${pos.y + size} Z`}
+                        fill="none"
+                        stroke={config.color}
+                        strokeWidth={strokeWidth}
+                    />
+                ) : null}
+
+                {/* Student label above - only show if label exists */}
+                {track.label && (
+                    <text x={pos.x} y={pos.y-size-5} fill={config.color} fontSize="10"
+                          textAnchor="middle" fontWeight="700">
+                        {track.label}
+                    </text>
+                )}
+
+                {/* Labels below track - dynamically positioned */}
+                {(() => {
+                    let currentY = pos.y + size + 15;
+                    const lineSpacing = 12;
+                    const labels = [];
+
+                    // Track number - only if assigned via Report Track
+                    if (track.trackNumber) {
+                        labels.push(
+                            <text key="tn" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                  textAnchor="middle" fontWeight="700">
+                                TN#{track.trackNumber}
+                            </text>
+                        );
+                        currentY += lineSpacing;
+                    }
+
+                    // IFF Codes - from track data (read-only)
+                    if (track.iffModeI) {
+                        labels.push(
+                            <text key="m1" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                  textAnchor="middle" fontWeight="700">
+                                M1: {track.iffModeI}
+                            </text>
+                        );
+                        currentY += lineSpacing;
+                    }
+                    if (track.iffModeII) {
+                        labels.push(
+                            <text key="m2" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                  textAnchor="middle" fontWeight="700">
+                                M2: {track.iffModeII}
+                            </text>
+                        );
+                        currentY += lineSpacing;
+                    }
+                    if (track.iffModeIII) {
+                        labels.push(
+                            <text key="m3" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                  textAnchor="middle" fontWeight="700">
+                                M3: {track.iffModeIII}
+                            </text>
+                        );
+                        currentY += lineSpacing;
+                    }
+
+                    // Altitude / Depth - from underlying asset if available
+                    if (asset && track.domain === 'air') {
+                        labels.push(
+                            <text key="alt" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                  textAnchor="middle" fontWeight="700">
+                                ALT: FL{Math.round(asset.altitude/100)}
+                            </text>
+                        );
+                    } else if (asset && track.domain === 'subSurface' && asset.depth !== null) {
+                        labels.push(
+                            <text key="depth" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                  textAnchor="middle" fontWeight="700">
+                                DEPTH: {Math.round(asset.depth)}ft
+                            </text>
+                        );
+                    }
+
+                    return <g>{labels}</g>;
+                })()}
             </g>
         );
     };
@@ -5570,7 +6081,17 @@ function AICSimulator() {
                                 );
                             })()}
                             {geoPoints.map(gp => renderGeoPoint(gp, svgRef.current.clientWidth, svgRef.current.clientHeight))}
-                            {assets.map(asset => renderAsset(asset, svgRef.current.clientWidth, svgRef.current.clientHeight))}
+                            {/* Conditional rendering: Student tracks + ownship in student mode, all assets in instructor mode */}
+                            {simulatorMode === 'student' ? (
+                                <>
+                                    {/* Always render ownship in student mode */}
+                                    {assets.filter(a => a.type === 'ownship').map(asset => renderAsset(asset, svgRef.current.clientWidth, svgRef.current.clientHeight))}
+                                    {/* Render student tracks */}
+                                    {studentTracks.map(track => renderStudentTrack(track, svgRef.current.clientWidth, svgRef.current.clientHeight))}
+                                </>
+                            ) : (
+                                assets.map(asset => renderAsset(asset, svgRef.current.clientWidth, svgRef.current.clientHeight))
+                            )}
                             {renderEsmLines(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                             {renderManualBearingLines(svgRef.current.clientWidth, svgRef.current.clientHeight)}
                         </>
@@ -5798,6 +6319,16 @@ function AICSimulator() {
                 deleteBehavior={deleteBehavior}
                 validateIsarFlightProfile={validateIsarFlightProfile}
                 wingsLevelDuration={wingsLevelDuration}
+                simulatorMode={simulatorMode}
+                setSimulatorMode={setSimulatorMode}
+                studentTracks={studentTracks}
+                setStudentTracks={setStudentTracks}
+                selectedTrackId={selectedTrackId}
+                setSelectedTrackId={setSelectedTrackId}
+                updateStudentTrack={updateStudentTrack}
+                deleteStudentTrack={deleteStudentTrack}
+                reportStudentTrack={reportStudentTrack}
+                isFriendlyTrack={isFriendlyTrack}
             />
 
             {/* Context Menu */}
@@ -5823,6 +6354,8 @@ function AICSimulator() {
                     fireWeapon={fireWeapon}
                     setSelectedTargetAssetId={setSelectedTargetAssetId}
                     setSelectedWeaponType={setSelectedWeaponType}
+                    simulatorMode={simulatorMode}
+                    studentTracks={studentTracks}
                 />
             )}
 
@@ -6399,7 +6932,12 @@ function ControlPanel({
     weaponConfigs,
     addBehavior, updateBehavior, deleteBehavior,
     validateIsarFlightProfile,
-    wingsLevelDuration
+    wingsLevelDuration,
+    simulatorMode, setSimulatorMode,
+    studentTracks, setStudentTracks,
+    selectedTrackId, setSelectedTrackId,
+    updateStudentTrack, deleteStudentTrack, reportStudentTrack,
+    isFriendlyTrack
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
@@ -6603,6 +7141,35 @@ function ControlPanel({
     return (
         <div className="control-panel">
             <h1>AIC SIMULATOR</h1>
+
+            {/* Mode Toggle - Always visible for switching between modes */}
+            <div className="control-section">
+                <div className="section-header">SIMULATOR MODE</div>
+                <div className="playback-controls">
+                    <button
+                        className="control-btn"
+                        style={{
+                            backgroundColor: simulatorMode === 'instructor' ? '#00ff00' : '#333',
+                            color: simulatorMode === 'instructor' ? '#000' : '#fff',
+                            fontWeight: simulatorMode === 'instructor' ? 'bold' : 'normal'
+                        }}
+                        onClick={() => setSimulatorMode('instructor')}
+                    >
+                        INSTRUCTOR
+                    </button>
+                    <button
+                        className="control-btn"
+                        style={{
+                            backgroundColor: simulatorMode === 'student' ? '#00ff00' : '#333',
+                            color: simulatorMode === 'student' ? '#000' : '#fff',
+                            fontWeight: simulatorMode === 'student' ? 'bold' : 'normal'
+                        }}
+                        onClick={() => setSimulatorMode('student')}
+                    >
+                        STUDENT
+                    </button>
+                </div>
+            </div>
 
             {/* Playback Controls */}
             <div className="control-section">
@@ -9228,7 +9795,7 @@ function ControlPanel({
                         >
                             GENERAL
                         </button>
-                        {selectedAsset.type !== 'ownship' && (
+                        {simulatorMode === 'instructor' && selectedAsset.type !== 'ownship' && (
                             <>
                                 <button
                                     onClick={() => setSelectedAssetTab('iff')}
@@ -9291,23 +9858,25 @@ function ControlPanel({
 
                     {/* Tab Navigation - Row 2: Sensor Systems & Behaviors */}
                     <div style={{ display: 'flex', gap: '5px', marginBottom: '15px', borderBottom: '1px solid rgba(0, 255, 0, 0.3)' }}>
-                        <button
-                            onClick={() => setSelectedAssetTab('behaviors')}
-                            style={{
-                                flex: 1,
-                                padding: '8px',
-                                background: selectedAssetTab === 'behaviors' ? '#00FF00' : 'transparent',
-                                color: selectedAssetTab === 'behaviors' ? '#000' : '#00FF00',
-                                border: 'none',
-                                borderBottom: selectedAssetTab === 'behaviors' ? '2px solid #00FF00' : '2px solid transparent',
-                                cursor: 'pointer',
-                                fontSize: '10px',
-                                fontWeight: 'bold',
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            BEHAVIORS
-                        </button>
+                        {simulatorMode === 'instructor' && (
+                            <button
+                                onClick={() => setSelectedAssetTab('behaviors')}
+                                style={{
+                                    flex: 1,
+                                    padding: '8px',
+                                    background: selectedAssetTab === 'behaviors' ? '#00FF00' : 'transparent',
+                                    color: selectedAssetTab === 'behaviors' ? '#000' : '#00FF00',
+                                    border: 'none',
+                                    borderBottom: selectedAssetTab === 'behaviors' ? '2px solid #00FF00' : '2px solid transparent',
+                                    cursor: 'pointer',
+                                    fontSize: '10px',
+                                    fontWeight: 'bold',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                BEHAVIORS
+                            </button>
+                        )}
                         {selectedAsset.type !== 'ownship' && (selectedAsset.platform?.image || selectedAsset.platform?.isar) && (
                             <>
                                 {selectedAsset.platform && selectedAsset.platform.image && (
@@ -9383,16 +9952,18 @@ function ControlPanel({
 
                     {/* GENERAL TAB */}
                     {selectedAssetTab === 'general' && (
-                        <>
-                            <div className="input-group">
-                                <label className="input-label">Name</label>
-                                <input
-                                    className="input-field"
-                                    type="text"
-                                    value={editValues.name || ''}
-                                    onChange={(e) => handleUpdate('name', e.target.value)}
-                                />
-                            </div>
+                        simulatorMode === 'instructor' ? (
+                            // INSTRUCTOR MODE - Full controls
+                            <>
+                                <div className="input-group">
+                                    <label className="input-label">Name</label>
+                                    <input
+                                        className="input-field"
+                                        type="text"
+                                        value={editValues.name || ''}
+                                        onChange={(e) => handleUpdate('name', e.target.value)}
+                                    />
+                                </div>
 
                             <div className="input-group">
                                 <label className="input-label">Identity</label>
@@ -9680,7 +10251,375 @@ function ControlPanel({
                                     </div>
                                 </div>
                             )}
+
+                            {/* HIDDEN and TRACK FILE checkboxes - Instructor mode only, not for ownship */}
+                            {selectedAsset.type !== 'ownship' && (
+                                <>
+                                    <div className="input-group">
+                                        <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedAsset.hidden || false}
+                                                onChange={(e) => updateAsset(selectedAsset.id, { hidden: e.target.checked })}
+                                                style={{ width: 'auto', margin: 0 }}
+                                            />
+                                            <span>HIDDEN (invisible to student)</span>
+                                        </label>
+                                    </div>
+
+                                    <div className="input-group">
+                                        <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedAsset.trackFileEnabled !== false}
+                                                onChange={(e) => updateAsset(selectedAsset.id, { trackFileEnabled: e.target.checked })}
+                                                disabled={selectedAsset.hidden}
+                                                style={{ width: 'auto', margin: 0 }}
+                                            />
+                                            <span>TRACK FILE (display track or radar-only)</span>
+                                        </label>
+                                    </div>
+                                </>
+                            )}
                         </>
+                        ) : (
+                            // STUDENT MODE - Restricted controls
+                            <>
+                                {(() => {
+                                    const selectedTrack = studentTracks.find(t => t.id === selectedTrackId);
+                                    if (!selectedTrack) return <div className="input-group">No track selected</div>;
+
+                                    return (
+                                        <>
+                                            <div className="input-group">
+                                                <label className="input-label">Label</label>
+                                                <input
+                                                    className="input-field"
+                                                    type="text"
+                                                    value={selectedTrack.label || ''}
+                                                    onChange={(e) => updateStudentTrack(selectedTrack.id, { label: e.target.value })}
+                                                />
+                                            </div>
+
+                                            <div className="input-group">
+                                                <label className="input-label">Identity</label>
+                                                <select
+                                                    className="input-field"
+                                                    value={selectedTrack.identity || 'unknownUnevaluated'}
+                                                    onChange={(e) => updateStudentTrack(selectedTrack.id, { identity: e.target.value })}
+                                                >
+                                                    <option value="friendly">Friendly</option>
+                                                    <option value="hostile">Hostile</option>
+                                                    <option value="neutral">Neutral</option>
+                                                    <option value="unknown">Unknown</option>
+                                                    <option value="unknownUnevaluated">Unknown Unevaluated</option>
+                                                </select>
+                                            </div>
+
+                                            <div className="input-group">
+                                                <label className="input-label">Domain</label>
+                                                <div
+                                                    className="input-field"
+                                                    style={{
+                                                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                                        color: '#00FF00',
+                                                        padding: '10px',
+                                                        cursor: 'not-allowed',
+                                                        opacity: 0.7
+                                                    }}
+                                                >
+                                                    {selectedTrack.domain ? DOMAIN_TYPES[selectedTrack.domain].label : 'Unknown'}
+                                                </div>
+                                            </div>
+
+                                            {/* Heading, Speed, Altitude - only for friendly tracks */}
+                                            {isFriendlyTrack(selectedTrack) && (() => {
+                                                const asset = assets.find(a => a.id === selectedTrack.assetId);
+                                                if (!asset) return null;
+
+                                                return (
+                                                    <>
+                                                        {/* Heading control - hide for land domain */}
+                                                        {asset.domain !== 'land' && (
+                                                            <div className="input-group">
+                                                                <label className="input-label">
+                                                                    Heading (degrees)
+                                                                    <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                                                        Current: {Math.round(asset.heading)}°
+                                                                        {asset.targetHeading !== null && ` → ${Math.round(asset.targetHeading)}°`}
+                                                                    </span>
+                                                                </label>
+                                                                <div style={{ display: 'flex', gap: '5px' }}>
+                                                                    <input
+                                                                        className="input-field"
+                                                                        type="number"
+                                                                        min="0"
+                                                                        max="359"
+                                                                        value={editValues.heading || asset.heading || 0}
+                                                                        onFocus={() => setActivelyEditingFields(prev => ({ ...prev, heading: true }))}
+                                                                        onBlur={() => setActivelyEditingFields(prev => ({ ...prev, heading: false }))}
+                                                                        onChange={(e) => {
+                                                                            handleUpdate('heading', e.target.value);
+                                                                            e.target.style.color = '#00BFFF';
+                                                                        }}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                applyTarget('heading');
+                                                                                e.target.style.color = '#00FF00';
+                                                                            }
+                                                                        }}
+                                                                        style={{ flex: 1, color: '#00FF00' }}
+                                                                    />
+                                                                    <button
+                                                                        className="control-btn"
+                                                                        onClick={() => applyTarget('heading')}
+                                                                        style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                                                    >
+                                                                        SET
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Speed control - hide for land domain */}
+                                                        {asset.domain !== 'land' && (
+                                                            <div className="input-group">
+                                                                <label className="input-label" style={{ display: 'block' }}>
+                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                        <span>Speed (KTAS)</span>
+                                                                        {asset.platform && asset.platform.maxSpeed && (
+                                                                            <span style={{ opacity: 0.6, fontSize: '8px' }}>Max: {asset.platform.maxSpeed} kts</span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '8px', opacity: 0.7, marginTop: '2px' }}>
+                                                                        Current: {Math.round(asset.speed)} kts
+                                                                        {asset.targetSpeed !== null && ` → ${Math.round(asset.targetSpeed)} kts`}
+                                                                    </div>
+                                                                </label>
+                                                                <div style={{ display: 'flex', gap: '5px' }}>
+                                                                    <input
+                                                                        className="input-field"
+                                                                        type="number"
+                                                                        min="0"
+                                                                        max={asset.platform && asset.platform.maxSpeed ? asset.platform.maxSpeed : undefined}
+                                                                        value={editValues.speed || asset.speed || 0}
+                                                                        onFocus={() => setActivelyEditingFields(prev => ({ ...prev, speed: true }))}
+                                                                        onBlur={() => setActivelyEditingFields(prev => ({ ...prev, speed: false }))}
+                                                                        onChange={(e) => {
+                                                                            handleUpdate('speed', e.target.value);
+                                                                            e.target.style.color = '#00BFFF';
+                                                                        }}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                applyTarget('speed');
+                                                                                e.target.style.color = '#00FF00';
+                                                                            }
+                                                                        }}
+                                                                        style={{ flex: 1, color: '#00FF00' }}
+                                                                    />
+                                                                    <button
+                                                                        className="control-btn"
+                                                                        onClick={() => applyTarget('speed')}
+                                                                        style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                                                    >
+                                                                        SET
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Altitude - only for air domain */}
+                                                        {(asset.domain === 'air' || !asset.domain) && (
+                                                            <div className="input-group">
+                                                                <label className="input-label" style={{ display: 'block' }}>
+                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                        <span>Altitude (feet)</span>
+                                                                        {asset.platform && asset.platform.maxAltitude && (
+                                                                            <span style={{ opacity: 0.6, fontSize: '8px' }}>Max: FL{Math.round(asset.platform.maxAltitude / 100)}</span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '8px', opacity: 0.7, marginTop: '2px' }}>
+                                                                        Current: FL{Math.round(asset.altitude / 100)}
+                                                                        {asset.targetAltitude !== null && ` → FL${Math.round(asset.targetAltitude / 100)}`}
+                                                                    </div>
+                                                                </label>
+                                                                <div style={{ display: 'flex', gap: '5px' }}>
+                                                                    <input
+                                                                        className="input-field"
+                                                                        type="number"
+                                                                        min="0"
+                                                                        max={asset.platform && asset.platform.maxAltitude ? asset.platform.maxAltitude : undefined}
+                                                                        value={editValues.altitude || asset.altitude || 0}
+                                                                        onFocus={() => setActivelyEditingFields(prev => ({ ...prev, altitude: true }))}
+                                                                        onBlur={() => setActivelyEditingFields(prev => ({ ...prev, altitude: false }))}
+                                                                        onChange={(e) => {
+                                                                            handleUpdate('altitude', e.target.value);
+                                                                            e.target.style.color = '#00BFFF';
+                                                                        }}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                applyTarget('altitude');
+                                                                                e.target.style.color = '#00FF00';
+                                                                            }
+                                                                        }}
+                                                                        style={{ flex: 1, color: '#00FF00' }}
+                                                                    />
+                                                                    <button
+                                                                        className="control-btn"
+                                                                        onClick={() => applyTarget('altitude')}
+                                                                        style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                                                    >
+                                                                        SET
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Depth - only for sub-surface domain */}
+                                                        {asset.domain === 'subSurface' && (
+                                                            <div className="input-group">
+                                                                <label className="input-label" style={{ display: 'block' }}>
+                                                                    <span>Depth (feet)</span>
+                                                                    <div style={{ fontSize: '8px', opacity: 0.7, marginTop: '2px' }}>
+                                                                        Current: {Math.round(asset.depth)} ft
+                                                                        {asset.targetDepth !== null && ` → ${Math.round(asset.targetDepth)} ft`}
+                                                                    </div>
+                                                                </label>
+                                                                <div style={{ display: 'flex', gap: '5px' }}>
+                                                                    <input
+                                                                        className="input-field"
+                                                                        type="number"
+                                                                        min="0"
+                                                                        value={editValues.depth || asset.depth || 0}
+                                                                        onFocus={() => setActivelyEditingFields(prev => ({ ...prev, depth: true }))}
+                                                                        onBlur={() => setActivelyEditingFields(prev => ({ ...prev, depth: false }))}
+                                                                        onChange={(e) => {
+                                                                            handleUpdate('depth', e.target.value);
+                                                                            e.target.style.color = '#00BFFF';
+                                                                        }}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                applyTarget('depth');
+                                                                                e.target.style.color = '#00FF00';
+                                                                            }
+                                                                        }}
+                                                                        style={{ flex: 1, color: '#00FF00' }}
+                                                                    />
+                                                                    <button
+                                                                        className="control-btn"
+                                                                        onClick={() => applyTarget('depth')}
+                                                                        style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                                                    >
+                                                                        SET
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Lat/Lon - only for friendly */}
+                                                        <div className="input-group">
+                                                            <label className="input-label">Latitude</label>
+                                                            <input
+                                                                className="input-field"
+                                                                type="number"
+                                                                step="0.0001"
+                                                                value={asset.lat || 0}
+                                                                onChange={(e) => updateAsset(asset.id, { lat: parseFloat(e.target.value) })}
+                                                            />
+                                                        </div>
+
+                                                        <div className="input-group">
+                                                            <label className="input-label">Longitude</label>
+                                                            <input
+                                                                className="input-field"
+                                                                type="number"
+                                                                step="0.0001"
+                                                                value={asset.lon || 0}
+                                                                onChange={(e) => updateAsset(asset.id, { lon: parseFloat(e.target.value) })}
+                                                            />
+                                                        </div>
+                                                    </>
+                                                );
+                                            })()}
+
+                                            {/* IFF Codes - read-only display */}
+                                            {selectedTrack.iffModeI && (
+                                                <div className="input-group">
+                                                    <label className="input-label">IFF Mode I</label>
+                                                    <div
+                                                        className="input-field"
+                                                        style={{
+                                                            backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                                            color: '#00FF00',
+                                                            padding: '10px',
+                                                            cursor: 'not-allowed',
+                                                            opacity: 0.7
+                                                        }}
+                                                    >
+                                                        {selectedTrack.iffModeI}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {selectedTrack.iffModeII && (
+                                                <div className="input-group">
+                                                    <label className="input-label">IFF Mode II</label>
+                                                    <div
+                                                        className="input-field"
+                                                        style={{
+                                                            backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                                            color: '#00FF00',
+                                                            padding: '10px',
+                                                            cursor: 'not-allowed',
+                                                            opacity: 0.7
+                                                        }}
+                                                    >
+                                                        {selectedTrack.iffModeII}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {selectedTrack.iffModeIII && (
+                                                <div className="input-group">
+                                                    <label className="input-label">IFF Mode III</label>
+                                                    <div
+                                                        className="input-field"
+                                                        style={{
+                                                            backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                                            color: '#00FF00',
+                                                            padding: '10px',
+                                                            cursor: 'not-allowed',
+                                                            opacity: 0.7
+                                                        }}
+                                                    >
+                                                        {selectedTrack.iffModeIII}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* JU - read-only display */}
+                                            {selectedTrack.datalinkJU && (
+                                                <div className="input-group">
+                                                    <label className="input-label">JU</label>
+                                                    <div
+                                                        className="input-field"
+                                                        style={{
+                                                            backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                                            color: '#00FF00',
+                                                            padding: '10px',
+                                                            cursor: 'not-allowed',
+                                                            opacity: 0.7
+                                                        }}
+                                                    >
+                                                        {selectedTrack.datalinkJU}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()}
+                            </>
+                        )
                     )}
 
                     {/* IFF TAB */}
@@ -10015,15 +10954,33 @@ function ControlPanel({
                     )}
 
                     <div className="playback-controls" style={{ marginTop: '10px' }}>
-                        {selectedAsset.type !== 'ownship' && (
-                            <>
-                                <button className="control-btn" onClick={() => reportTrack(selectedAsset.id)}>
-                                    REPORT TRACK
-                                </button>
-                                <button className="control-btn danger" onClick={() => deleteAsset(selectedAsset.id)}>
-                                    DELETE
-                                </button>
-                            </>
+                        {simulatorMode === 'instructor' ? (
+                            // INSTRUCTOR MODE - Asset controls
+                            selectedAsset.type !== 'ownship' && (
+                                <>
+                                    <button className="control-btn" onClick={() => reportTrack(selectedAsset.id)}>
+                                        REPORT TRACK
+                                    </button>
+                                    <button className="control-btn danger" onClick={() => deleteAsset(selectedAsset.id)}>
+                                        DELETE
+                                    </button>
+                                </>
+                            )
+                        ) : (
+                            // STUDENT MODE - Track controls
+                            selectedTrackId && (() => {
+                                const selectedTrack = studentTracks.find(t => t.id === selectedTrackId);
+                                return selectedTrack && (
+                                    <>
+                                        <button className="control-btn" onClick={() => reportStudentTrack(selectedTrack.id)}>
+                                            REPORT TRACK
+                                        </button>
+                                        <button className="control-btn danger" onClick={() => deleteStudentTrack(selectedTrack.id)}>
+                                            DELETE TRACK
+                                        </button>
+                                    </>
+                                );
+                            })()
                         )}
                     </div>
                 </div>
@@ -10036,13 +10993,26 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, clearWaypoints, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, clearWaypoints, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType, simulatorMode, studentTracks }) {
     const [showDomainSubmenu, setShowDomainSubmenu] = useState(false);
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
     const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
     const [showEngageSubmenu, setShowEngageSubmenu] = useState(false);
 
     if (!contextMenu) return null;
+
+    // Helper function to check if asset/track is friendly (for student mode restrictions)
+    const isFriendlyAssetOrTrack = () => {
+        if (simulatorMode === 'instructor') {
+            return true; // Instructor has full access
+        }
+        // Student mode - check track identity
+        if (contextMenu.type === 'asset' && contextMenu.assetId) {
+            const track = studentTracks.find(t => t.assetId === contextMenu.assetId);
+            return track && (track.identity === 'friendly' || track.type === 'ownship');
+        }
+        return false;
+    };
 
     const handleClick = (action, param = null) => {
         switch (action) {
@@ -10105,26 +11075,29 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
         >
             {contextMenu.type === 'empty' && (
                 <>
-                    <div
-                        className="context-menu-item context-menu-parent"
-                        onMouseEnter={() => setShowDomainSubmenu(true)}
-                        onMouseLeave={() => setShowDomainSubmenu(false)}
-                    >
-                        Create Asset ›
-                        {showDomainSubmenu && (
-                            <div className="context-menu-submenu">
-                                {Object.entries(DOMAIN_TYPES).map(([domainKey, domainConfig]) => (
-                                    <div
-                                        key={domainKey}
-                                        className="context-menu-item"
-                                        onClick={() => handleClick('selectDomain', domainKey)}
-                                    >
-                                        {domainConfig.label}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                    {/* Create Asset - Instructor only */}
+                    {simulatorMode === 'instructor' && (
+                        <div
+                            className="context-menu-item context-menu-parent"
+                            onMouseEnter={() => setShowDomainSubmenu(true)}
+                            onMouseLeave={() => setShowDomainSubmenu(false)}
+                        >
+                            Create Asset ›
+                            {showDomainSubmenu && (
+                                <div className="context-menu-submenu">
+                                    {Object.entries(DOMAIN_TYPES).map(([domainKey, domainConfig]) => (
+                                        <div
+                                            key={domainKey}
+                                            className="context-menu-item"
+                                            onClick={() => handleClick('selectDomain', domainKey)}
+                                        >
+                                            {domainConfig.label}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <div
                         className="context-menu-item context-menu-parent"
                         onMouseEnter={() => setShowGeoPointSubmenu(true)}
@@ -10168,13 +11141,14 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                 </>
             )}
 
-            {contextMenu.type === 'asset' && !selectedAsset?.waypoints.length && (
+            {/* Waypoint options - Instructor OR Friendly in Student */}
+            {contextMenu.type === 'asset' && !selectedAsset?.waypoints.length && isFriendlyAssetOrTrack() && (
                 <div className="context-menu-item" onClick={() => handleClick('goTo')}>
                     Go To
                 </div>
             )}
 
-            {contextMenu.type === 'asset' && selectedAsset?.waypoints.length > 0 && (
+            {contextMenu.type === 'asset' && selectedAsset?.waypoints.length > 0 && isFriendlyAssetOrTrack() && (
                 <>
                     <div className="context-menu-item" onClick={() => handleClick('addWaypoint')}>
                         Add Waypoint
@@ -10218,7 +11192,8 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                 </div>
             )}
 
-            {contextMenu.type === 'targetWith' && (
+            {/* Engage/Target - Instructor OR Friendly in Student */}
+            {contextMenu.type === 'targetWith' && isFriendlyAssetOrTrack() && (
                 <div
                     className="context-menu-item context-menu-parent"
                     onMouseEnter={() => setShowEngageSubmenu(true)}
