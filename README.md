@@ -479,11 +479,218 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 2.6.6
+**Version**: 3.0
 **Last Updated**: January 15, 2026
 **Status**: Production Ready
 
 ## Recent Updates
+
+### Version 3.0 (January 2026)
+
+#### Student/Instructor Mode System
+- **Dual-Mode Operation**: Revolutionary training system with separate Instructor and Student modes
+  - Mode selection before simulation starts
+  - Complete functional separation between modes
+  - Realistic radar operator training environment
+  - Scenario-building capabilities for instructors
+
+#### Instructor Mode (Master Mode)
+- **Full Simulator Control**: Retains all existing functionality
+  - Complete asset creation, editing, and deletion
+  - Full access to all tabs and controls
+  - Scenario building and configuration
+  - All sensor systems and weapons available
+
+- **HIDDEN Checkbox**: Make assets invisible to students
+  - Located in GENERAL tab for each asset
+  - Assets with HIDDEN checked produce no radar returns
+  - No track files generated for hidden assets
+  - Track files age (2 sweeps) before disappearing when HIDDEN toggled ON during scenario
+  - Default: CHECKED for new assets
+
+- **TRACK FILE Checkbox**: Control track file display
+  - Located in GENERAL tab for each asset
+  - When unchecked, only radar returns shown (no track file)
+  - Default: CHECKED for new assets
+  - Disabled when HIDDEN is checked
+
+- **Scenario Planning**: Build training scenarios with pre-positioned hidden assets
+  - Place assets that will appear later during student training
+  - Configure realistic threat scenarios
+  - Save scenarios for repeated use
+
+#### Student Mode (Training Mode)
+- **Realistic Operator Experience**: Simulates actual radar operator console
+  - Limited controls mimic real-world constraints
+  - Automatic track generation from radar returns
+  - Track aging after missed detections
+  - Manual track number assignment
+
+- **Systems Panel Access**: Full sensor system capabilities
+  - RADAR tab: Complete radar control
+  - ESM tab: Electronic support measures
+  - IFF tab: Identification friend or foe
+  - DATALINK tab: Tactical data link
+  - EO/IR tab: Electro-optical/infrared imaging
+  - ISAR tab: Inverse synthetic aperture radar
+  - SONO tab: Sonobuoy deployment
+  - WEAPON tab: Weapons management
+
+- **Limited Asset Panel Tabs**: Restricted to relevant information
+  - GENERAL tab: Identity, domain, course, speed, altitude, position
+  - EO/IR tab: Visual identification images
+  - ISAR tab: Radar imaging
+  - Hidden tabs: IFF, DATALINK, EMITTER, BEHAVIORS (instructor only)
+
+- **Automatic Track Generation**: Radar returns create track files
+  - Random threshold: 2-4 radar returns required
+  - Track appears after threshold met
+  - Default identity: "unknownUnevaluated" (orange)
+  - Track positioned at last radar detection
+  - IFF codes captured if asset squawking
+  - Datalink JU captured if available
+
+- **Track Aging System**: Realistic track degradation
+  - 2 missed radar sweeps → track turns gray (aged)
+  - 20 seconds = 2 complete radar sweeps at 10-second rotation
+  - Aged tracks remain on display
+  - Students can still edit aged track identity
+  - Track ages when radar turned OFF
+  - Track ages when asset moves out of range
+  - Track ages when instructor toggles HIDDEN ON
+
+- **Dead Reckoning**: Track position updates between detections
+  - Position follows instructor asset's actual movement
+  - Course and speed updated from underlying asset
+  - Heading indicator line shows estimated heading
+  - Continues for aged tracks
+  - Provides realistic tracking behavior
+
+- **Restricted Asset Control**: Students can only modify friendly assets
+  - Friendly assets: Full control (heading, speed, altitude, position, waypoints)
+  - Ownship: Full control (editable heading, speed, altitude, lat/lon)
+  - Non-friendly tracks: Read-only information display
+    - Label and identity changeable
+    - Course, speed, altitude, lat/lon visible but read-only
+    - DMM coordinate format (N26 30.0, E054 00.0)
+
+- **Manual Track Numbering**: Student must assign track numbers
+  - REPORT TRACK button assigns next available track number
+  - Requires datalink configuration (NET, JU, track block)
+  - Track numbers drawn from configured track block
+  - No automatic track number on track regeneration
+  - Validates datalink system before assignment
+
+- **Track Management**: Student controls track lifecycle
+  - DELETE TRACK button removes student track file
+  - Deleting track does NOT remove instructor asset
+  - Radar will regenerate track after 2-4 returns
+  - New track will NOT have track number (student must report again)
+  - Empty space click deselects tracks
+
+- **Student Labels**: Custom track identification
+  - Label field in GENERAL tab
+  - Replaces instructor asset names on map
+  - Displayed above track symbol
+  - Allows student documentation system
+
+- **Waypoint Display**: Friendly track waypoints visible
+  - Waypoints shown for friendly identity tracks only
+  - Dashed lines connect unreached waypoints
+  - Cross markers at waypoint positions
+  - Waypoint labels (WP1, WP2, etc.)
+  - Go To and Add Waypoint functions available
+  - Waypoints pulled from underlying instructor asset
+
+- **Context Menu Restrictions**: Limited map interactions
+  - Cannot create new assets
+  - Can create geo-points and shapes
+  - Waypoint functions only for friendly assets and ownship
+  - Engage function only for friendly assets
+  - Cannot delete instructor assets
+
+#### Technical Implementation
+- **Mode State Management**: React state-based mode switching
+  - `simulatorMode` state: 'instructor' | 'student'
+  - Mode locked after simulation starts
+  - Mode selection UI hidden after start
+
+- **Student Track Data Structure**:
+  ```javascript
+  {
+    id: number,                    // Unique track file ID
+    assetId: number,               // Reference to instructor asset
+    lat: number,                   // Last known position
+    lon: number,
+    domain: string,                // 'air' | 'surface' | 'subSurface' | 'land'
+    identity: string,              // Default 'unknownUnevaluated'
+    label: string,                 // Student-defined label
+    trackNumber: number | null,    // Assigned via Report Track
+    isAged: boolean,               // Aged after 2 missed sweeps
+    lastDetectionTime: number,     // Mission time of last detection
+    creationTime: number,          // Mission time when created
+    estimatedHeading: number,      // For dead reckoning
+    estimatedSpeed: number,        // For dead reckoning
+    iffModeI: string,              // Read-only IFF codes
+    iffModeII: string,
+    iffModeIII: string,
+    datalinkJU: string             // Read-only JU
+  }
+  ```
+
+- **Extended Asset Properties**:
+  - `hidden`: Boolean (instructor only, default false)
+  - `trackFileEnabled`: Boolean (instructor only, default true)
+  - `studentLabel`: String (student mode label)
+
+- **Radar Detection Counting**: Automatic track generation
+  - `radarDetectionCounts` state tracks detections per asset
+  - Random threshold (2-4) per asset
+  - Track created when threshold reached
+  - Only for non-hidden assets in student mode
+
+- **Track Aging Logic**: Time-based aging system
+  - `trackAgingTimers` state tracks missed sweeps
+  - 20 seconds without detection → aged
+  - Resets on radar detection
+  - Increments when out of range or HIDDEN
+
+- **Dead Reckoning Implementation**: Position synchronization
+  - Direct position copy from instructor asset
+  - Course/speed updated from asset values
+  - Position change detection (0.0001° threshold)
+  - Prevents continuous state updates for performance
+
+- **Coordinate Format Functions**:
+  - `decimalToDMM()`: Convert decimal degrees to DMM format
+  - `dmmToDecimal()`: Parse DMM format to decimal
+  - Format: "N26 30.0" (degrees, space, minutes.decimal)
+
+- **Save/Load Integration**: Full state persistence
+  - Simulator mode saved with scenario
+  - Student tracks array saved
+  - Detection counts and aging timers preserved
+  - Backward compatibility with old save files
+  - Version 1.1 save format
+
+#### Use Cases
+- **Flight School Training**: Realistic radar operator training
+  - Students practice track management
+  - Manual track number assignment
+  - Identity determination skills
+  - Sensor correlation exercises
+
+- **Tactical Scenario Training**: Pre-built training scenarios
+  - Instructors create realistic threat environments
+  - Hidden assets appear at planned times
+  - Students react to developing situations
+  - Performance evaluation and debrief
+
+- **Proficiency Evaluation**: Standardized testing
+  - Consistent scenario replay
+  - Objective performance metrics
+  - Track management skills assessment
+  - Decision-making under pressure
 
 ### Version 2.6.6 (January 2026)
 
