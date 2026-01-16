@@ -2580,6 +2580,13 @@ function AICSimulator() {
     }, [studentTracks, datalinkEnabled, datalinkNet, datalinkJU, datalinkTrackBlockStart,
         datalinkTrackBlockEnd, nextDatalinkTrackNumber, updateStudentTrack]);
 
+    // Initialize nextDatalinkTrackNumber when datalinkTrackBlockStart is set
+    useEffect(() => {
+        if (datalinkTrackBlockStart && /^\d{1,5}$/.test(datalinkTrackBlockStart) && nextDatalinkTrackNumber === null) {
+            setNextDatalinkTrackNumber(parseInt(datalinkTrackBlockStart));
+        }
+    }, [datalinkTrackBlockStart, nextDatalinkTrackNumber]);
+
     const isFriendlyTrack = useCallback((track) => {
         return track && (track.identity === 'friendly' || track.type === 'ownship');
     }, []);
