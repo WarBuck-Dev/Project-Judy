@@ -10775,22 +10775,32 @@ function ControlPanel({
                                                         <div className="input-group">
                                                             <label className="input-label">Latitude</label>
                                                             <input
+                                                                type="text"
                                                                 className="input-field"
-                                                                type="number"
-                                                                step="0.0001"
-                                                                value={asset.lat || 0}
-                                                                onChange={(e) => updateAsset(asset.id, { lat: parseFloat(e.target.value) })}
+                                                                value={editValues.lat || ''}
+                                                                onChange={(e) => setEditValues(prev => ({ ...prev, lat: e.target.value.toUpperCase() }))}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        applyAssetCoordinate('lat');
+                                                                    }
+                                                                }}
+                                                                placeholder="N26 30.0"
                                                             />
                                                         </div>
 
                                                         <div className="input-group">
                                                             <label className="input-label">Longitude</label>
                                                             <input
+                                                                type="text"
                                                                 className="input-field"
-                                                                type="number"
-                                                                step="0.0001"
-                                                                value={asset.lon || 0}
-                                                                onChange={(e) => updateAsset(asset.id, { lon: parseFloat(e.target.value) })}
+                                                                value={editValues.lon || ''}
+                                                                onChange={(e) => setEditValues(prev => ({ ...prev, lon: e.target.value.toUpperCase() }))}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        applyAssetCoordinate('lon');
+                                                                    }
+                                                                }}
+                                                                placeholder="E054 00.0"
                                                             />
                                                         </div>
                                                     </>
