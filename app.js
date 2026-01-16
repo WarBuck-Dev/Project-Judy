@@ -1490,20 +1490,50 @@ function AICSimulator() {
                     const distToWP = calculateDistance(updated.lat, updated.lon, wp.lat, wp.lon);
 
                     if (distToWP < WAYPOINT_ARRIVAL_THRESHOLD) {
-                        // Mark waypoint as reached instead of removing it
+                        // Mark waypoint as reached
                         console.log(`Asset ${asset.name || asset.id} reached waypoint ${currentWpIndex} (id: ${wp.id})`);
-                        updated.waypoints = (updated.waypoints || asset.waypoints).map((w, idx) =>
-                            idx === currentWpIndex ? { ...w, reached: true } : w
-                        );
+                        const waypoints = updated.waypoints || asset.waypoints;
+                        const nextWpIndex = currentWpIndex + 1;
+                        const nextWp = waypoints[nextWpIndex];
+                        const prevWpIndex = currentWpIndex - 1;
+                        const prevWp = prevWpIndex >= 0 ? waypoints[prevWpIndex] : null;
 
-                        // Find next unreached waypoint
-                        const nextWpIndex = updated.waypoints.findIndex((w, idx) => idx > currentWpIndex && !w.reached);
-                        if (nextWpIndex !== -1) {
-                            const nextWP = updated.waypoints[nextWpIndex];
-                            updated.targetHeading = calculateBearing(updated.lat, updated.lon, nextWP.lat, nextWP.lon);
-                        } else {
-                            // No more waypoints, clear targets
-                            updated.targetHeading = null;
+                        // Check if NEXT waypoint is wrapped with current (go to wrapped waypoint)
+                        if (nextWp && nextWp.wrappedWithPrevious) {
+                            // Don't mark current as reached - keep both waypoints active for wrap loop
+                            // Just navigate to the wrapped waypoint
+                            updated.waypoints = waypoints.map((w, idx) => {
+                                if (idx === currentWpIndex) return { ...w, reached: true };
+                                if (idx === nextWpIndex) return { ...w, reached: false }; // Ensure next is unreached
+                                return w;
+                            });
+                            updated.targetHeading = calculateBearing(updated.lat, updated.lon, nextWp.lat, nextWp.lon);
+                        }
+                        // Check if THIS waypoint is wrapped with previous (go back to previous)
+                        else if (wp.wrappedWithPrevious && prevWp) {
+                            // Toggle: mark current as reached, un-reach the previous to go back
+                            updated.waypoints = waypoints.map((w, idx) => {
+                                if (idx === prevWpIndex) return { ...w, reached: false };
+                                if (idx === currentWpIndex) return { ...w, reached: true };
+                                return w;
+                            });
+                            updated.targetHeading = calculateBearing(updated.lat, updated.lon, prevWp.lat, prevWp.lon);
+                        }
+                        else {
+                            // Normal behavior - mark reached and go to next
+                            updated.waypoints = waypoints.map((w, idx) =>
+                                idx === currentWpIndex ? { ...w, reached: true } : w
+                            );
+
+                            // Find next unreached waypoint
+                            const foundNextWpIndex = updated.waypoints.findIndex((w, idx) => idx > currentWpIndex && !w.reached);
+                            if (foundNextWpIndex !== -1) {
+                                const foundNextWP = updated.waypoints[foundNextWpIndex];
+                                updated.targetHeading = calculateBearing(updated.lat, updated.lon, foundNextWP.lat, foundNextWP.lon);
+                            } else {
+                                // No more waypoints, clear targets
+                                updated.targetHeading = null;
+                            }
                         }
                     } else {
                         // Not at waypoint yet - continuously update heading toward it
@@ -3156,6 +3186,31 @@ function AICSimulator() {
         }));
     }, []);
 
+    const wrapWaypoint = useCallback((assetId, waypointIndex) => {
+        setAssets(prev => prev.map(asset => {
+            if (asset.id !== assetId) return asset;
+            if (waypointIndex < 1) return asset; // Can't wrap first waypoint
+
+            const newWaypoints = asset.waypoints.map((wp, idx) =>
+                idx === waypointIndex ? { ...wp, wrappedWithPrevious: true } : wp
+            );
+
+            return { ...asset, waypoints: newWaypoints };
+        }));
+    }, []);
+
+    const unwrapWaypoint = useCallback((assetId, waypointIndex) => {
+        setAssets(prev => prev.map(asset => {
+            if (asset.id !== assetId) return asset;
+
+            const newWaypoints = asset.waypoints.map((wp, idx) =>
+                idx === waypointIndex ? { ...wp, wrappedWithPrevious: false } : wp
+            );
+
+            return { ...asset, waypoints: newWaypoints };
+        }));
+    }, []);
+
     // ========================================================================
     // GEO-POINT MANAGEMENT
     // ========================================================================
@@ -4049,7 +4104,8 @@ function AICSimulator() {
                         y: e.clientY,
                         type: 'waypoint',
                         assetId: asset.id,
-                        waypointIndex: i
+                        waypointIndex: i,
+                        isWrapped: wp.wrappedWithPrevious || false
                     });
                     return;
                 }
@@ -5578,24 +5634,35 @@ function AICSimulator() {
                     return <g>{labels}</g>;
                 })()}
 
-                {/* Waypoints - filter out reached waypoints */}
-                {asset.waypoints
-                    .filter(wp => !wp.reached) // Only render unreached waypoints
-                    .map((wp, i) => {
+                {/* Waypoints - filter out reached waypoints, but keep wrapped waypoint pairs visible */}
+                {(() => {
+                    // Determine which waypoints to show:
+                    // - Unreached waypoints
+                    // - Waypoints that are part of a wrap pair (either has wrappedWithPrevious or next has it)
+                    const visibleWaypoints = asset.waypoints.filter((wp, idx) => {
+                        if (!wp.reached) return true; // Always show unreached
+                        if (wp.wrappedWithPrevious) return true; // Show wrapped waypoint even if reached
+                        // Check if next waypoint is wrapped with this one
+                        const nextWp = asset.waypoints[idx + 1];
+                        if (nextWp && nextWp.wrappedWithPrevious) return true;
+                        return false;
+                    });
+
+                    return visibleWaypoints.map((wp, i) => {
                         const wpPos = latLonToScreen(wp.lat, wp.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
 
                         // Calculate previous position for line drawing
-                        const unreachedWaypoints = asset.waypoints.filter(w => !w.reached);
                         const prevPos = i === 0 ? pos : latLonToScreen(
-                            unreachedWaypoints[i-1].lat,
-                            unreachedWaypoints[i-1].lon,
+                            visibleWaypoints[i-1].lat,
+                            visibleWaypoints[i-1].lon,
                             mapCenter.lat, mapCenter.lon, scale, width, height
                         );
 
                         return (
                             <g key={wp.id}> {/* Use waypoint ID as key */}
                                 <line x1={prevPos.x} y1={prevPos.y} x2={wpPos.x} y2={wpPos.y}
-                                      stroke={config.color} strokeWidth="1" strokeDasharray="5,5" />
+                                      stroke={config.color} strokeWidth={wp.wrappedWithPrevious ? "2" : "1"}
+                                      strokeDasharray={wp.wrappedWithPrevious ? "none" : "5,5"} />
                                 <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
                                     <line x1={-6} y1={0} x2={6} y2={0} stroke={config.color} strokeWidth="2" />
                                     <line x1={0} y1={-6} x2={0} y2={6} stroke={config.color} strokeWidth="2" />
@@ -5607,8 +5674,8 @@ function AICSimulator() {
                                 </text>
                             </g>
                         );
-                    })
-                }
+                    });
+                })()}
             </g>
         );
     };
@@ -5859,23 +5926,34 @@ function AICSimulator() {
                 })()}
 
                 {/* Waypoints - only show for friendly tracks and get from underlying asset */}
-                {track.identity === 'friendly' && asset && asset.waypoints && asset.waypoints
-                    .filter(wp => !wp.reached) // Only render unreached waypoints
-                    .map((wp, i) => {
+                {track.identity === 'friendly' && asset && asset.waypoints && (() => {
+                    // Determine which waypoints to show:
+                    // - Unreached waypoints
+                    // - Waypoints that are part of a wrap pair (either has wrappedWithPrevious or next has it)
+                    const visibleWaypoints = asset.waypoints.filter((wp, idx) => {
+                        if (!wp.reached) return true; // Always show unreached
+                        if (wp.wrappedWithPrevious) return true; // Show wrapped waypoint even if reached
+                        // Check if next waypoint is wrapped with this one
+                        const nextWp = asset.waypoints[idx + 1];
+                        if (nextWp && nextWp.wrappedWithPrevious) return true;
+                        return false;
+                    });
+
+                    return visibleWaypoints.map((wp, i) => {
                         const wpPos = latLonToScreen(wp.lat, wp.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
 
                         // Calculate previous position for line drawing
-                        const unreachedWaypoints = asset.waypoints.filter(w => !w.reached);
                         const prevPos = i === 0 ? pos : latLonToScreen(
-                            unreachedWaypoints[i-1].lat,
-                            unreachedWaypoints[i-1].lon,
+                            visibleWaypoints[i-1].lat,
+                            visibleWaypoints[i-1].lon,
                             mapCenter.lat, mapCenter.lon, scale, width, height
                         );
 
                         return (
                             <g key={wp.id}> {/* Use waypoint ID as key */}
                                 <line x1={prevPos.x} y1={prevPos.y} x2={wpPos.x} y2={wpPos.y}
-                                      stroke={config.color} strokeWidth="1" strokeDasharray="5,5" />
+                                      stroke={config.color} strokeWidth={wp.wrappedWithPrevious ? "2" : "1"}
+                                      strokeDasharray={wp.wrappedWithPrevious ? "none" : "5,5"} />
                                 <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
                                     <line x1={-6} y1={0} x2={6} y2={0} stroke={config.color} strokeWidth="2" />
                                     <line x1={0} y1={-6} x2={0} y2={6} stroke={config.color} strokeWidth="2" />
@@ -5887,8 +5965,8 @@ function AICSimulator() {
                                 </text>
                             </g>
                         );
-                    })
-                }
+                    });
+                })()}
             </g>
         );
     };
@@ -6724,6 +6802,8 @@ function AICSimulator() {
                     addWaypoint={addWaypoint}
                     clearWaypoints={clearWaypoints}
                     deleteWaypoint={deleteWaypoint}
+                    wrapWaypoint={wrapWaypoint}
+                    unwrapWaypoint={unwrapWaypoint}
                     addGeoPoint={addGeoPoint}
                     deleteGeoPoint={deleteGeoPoint}
                     startCreatingShape={startCreatingShape}
@@ -11922,7 +12002,7 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, clearWaypoints, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType, simulatorMode, studentTracks, setShowCreateOperatorTrackDialog, fuseTrack }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, clearWaypoints, deleteWaypoint, wrapWaypoint, unwrapWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType, simulatorMode, studentTracks, setShowCreateOperatorTrackDialog, fuseTrack }) {
     const [showDomainSubmenu, setShowDomainSubmenu] = useState(false);
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
     const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
@@ -11999,6 +12079,12 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                 break;
             case 'deleteWaypoint':
                 deleteWaypoint(contextMenu.assetId, contextMenu.waypointIndex);
+                break;
+            case 'wrapWaypoint':
+                wrapWaypoint(contextMenu.assetId, contextMenu.waypointIndex);
+                break;
+            case 'unwrapWaypoint':
+                unwrapWaypoint(contextMenu.assetId, contextMenu.waypointIndex);
                 break;
             case 'createGeoPoint':
                 addGeoPoint(contextMenu.lat, contextMenu.lon, param);
@@ -12187,9 +12273,22 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             )}
 
             {contextMenu.type === 'waypoint' && (
-                <div className="context-menu-item" onClick={() => handleClick('deleteWaypoint')}>
-                    Delete Waypoint
-                </div>
+                <>
+                    <div className="context-menu-item" onClick={() => handleClick('deleteWaypoint')}>
+                        Delete Waypoint
+                    </div>
+                    {/* Wrap/Unwrap - only show for waypoints that are not the first (index > 0) */}
+                    {contextMenu.waypointIndex > 0 && !contextMenu.isWrapped && (
+                        <div className="context-menu-item" onClick={() => handleClick('wrapWaypoint')}>
+                            Wrap Waypoint
+                        </div>
+                    )}
+                    {contextMenu.isWrapped && (
+                        <div className="context-menu-item" onClick={() => handleClick('unwrapWaypoint')}>
+                            Unwrap Waypoint
+                        </div>
+                    )}
+                </>
             )}
 
             {contextMenu.type === 'geopoint' && (

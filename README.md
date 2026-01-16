@@ -509,6 +509,14 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 - **Make Invisible**: New behavior action that checks the HIDDEN box, making the asset invisible to students
 - These actions allow instructors to create scenarios where assets appear or disappear based on triggers (mission time, distance, or waypoint arrival)
 
+#### Waypoint Wrapping
+- **Wrap Waypoints**: Right-click on any waypoint (except the first) to select "Wrap Waypoint"
+- **Back-and-Forth Navigation**: Wrapped waypoints cause assets to continuously fly between two waypoints
+- **Visual Indicator**: Solid line between wrapped waypoints (instead of dashed) indicates wrap state
+- **Unwrap Option**: Right-click on a wrapped waypoint to select "Unwrap Waypoint"
+- **Resume Navigation**: After unwrapping, asset continues to subsequent waypoints
+- **Works in Both Modes**: Available in instructor mode and student mode (friendly tracks only)
+
 #### UI Improvements
 - **Styled Alert Dialogs**: Datalink validation messages now use styled popups instead of browser alerts
 - **Rounded Values**: Track panel heading, speed, and altitude fields display whole numbers only

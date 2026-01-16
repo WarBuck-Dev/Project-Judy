@@ -1026,6 +1026,32 @@ When starting the simulator, users choose between:
 - Yellow information box updates in real-time
 - Works with track selection in student mode
 
+### Waypoint Wrapping (v3.1)
+
+Waypoint wrapping allows assets to continuously patrol between two waypoints until unwrapped.
+
+#### How to Wrap Waypoints
+1. Create at least 2 waypoints for an asset
+2. Right-click on any waypoint except the first one
+3. Select "Wrap Waypoint" from the context menu
+4. The line between the wrapped waypoint and its previous waypoint becomes solid
+
+#### Wrap Behavior
+- Asset flies to the wrapped waypoint, then back to the previous waypoint
+- This back-and-forth continues indefinitely until unwrapped
+- Both waypoints remain visible on the map during wrapping
+- Subsequent waypoints (WP3, WP4, etc.) are ignored while wrapping
+
+#### How to Unwrap
+1. Right-click on the wrapped waypoint (shows solid line)
+2. Select "Unwrap Waypoint" from the context menu
+3. Line returns to dashed
+4. Asset continues to subsequent waypoints after reaching the unwrapped waypoint
+
+#### Mode Availability
+- **Instructor Mode**: Available for all assets
+- **Student Mode**: Available for friendly tracks only
+
 ---
 
 ## Document Metadata
