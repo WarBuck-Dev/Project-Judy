@@ -55,6 +55,12 @@ The AIC Simulator is a web-based tactical air intercept control training applica
 - **Storage**: 100 MB for application and saved scenarios
 - **Network**: Not required (runs offline after initial load)
 
+### Antivirus Software Notice
+Some antivirus software may block or quarantine `start-server.bat` shortly after it runs. If you experience issues (such as images not loading or the app behaving unexpectedly):
+1. Add an exception for `start-server.bat` in your antivirus software
+2. Close the command window running the server
+3. Double-click `start-server.bat` again to restart
+
 ### Required Permissions (for recording)
 - Screen capture permission
 - Microphone access permission

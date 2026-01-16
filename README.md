@@ -16,6 +16,11 @@ A web-based tactical air intercept control training application designed for mil
 - Download Python from https://www.python.org/downloads/
 - Or download Node.js from https://nodejs.org/
 
+**Antivirus Warning**: Some antivirus software may block or quarantine `start-server.bat` shortly after it runs. If you experience issues (such as images not loading or the app behaving unexpectedly):
+1. Add an exception for `start-server.bat` in your antivirus software
+2. Close the command window running the server
+3. Double-click `start-server.bat` again to restart
+
 ### Option 2: Manual Python Server
 
 1. Open Command Prompt in the simulator folder
