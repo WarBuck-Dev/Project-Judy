@@ -1180,6 +1180,7 @@ function AICSimulator() {
     const [studentTracks, setStudentTracks] = useState([]); // Track files in student mode
     const [radarDetectionCounts, setRadarDetectionCounts] = useState({}); // { assetId: count }
     const [detectionThresholds, setDetectionThresholds] = useState({}); // { assetId: threshold } - Random 2-4 per asset
+    const [lastDetectionSweepAngle, setLastDetectionSweepAngle] = useState({}); // { assetId: angle } - Track last sweep angle where count was incremented
     const [trackAgingTimers, setTrackAgingTimers] = useState({}); // { trackId: missedSweeps }
     const [nextStudentTrackId, setNextStudentTrackId] = useState(1);
     const [selectedTrackId, setSelectedTrackId] = useState(null); // Separate from selectedAssetId
@@ -1861,34 +1862,48 @@ function AICSimulator() {
                     };
                     setRadarReturns(prev => [...prev, newReturn]);
 
-                    // STUDENT MODE: Increment detection count and auto-create tracks
+                    // STUDENT MODE: Increment detection count and auto-create tracks (once per sweep rotation)
                     if (simulatorMode === 'student') {
-                        // Set threshold for this asset if not already set
-                        setDetectionThresholds(prevThresholds => {
-                            if (!prevThresholds[asset.id]) {
-                                const newThreshold = 2 + Math.floor(Math.random() * 3); // Random 2-4
-                                return { ...prevThresholds, [asset.id]: newThreshold };
-                            }
-                            return prevThresholds;
-                        });
+                        // Initialize threshold if not set
+                        let currentThresholds = { ...detectionThresholds };
+                        if (!currentThresholds[asset.id]) {
+                            const newThreshold = 2 + Math.floor(Math.random() * 3); // Random 2-4
+                            currentThresholds[asset.id] = newThreshold;
+                            setDetectionThresholds(currentThresholds);
+                            console.log(`[Student Mode] Asset ${asset.id} (${asset.name}) - Set threshold: ${newThreshold}`);
+                        }
 
-                        setRadarDetectionCounts(prev => {
-                            const currentCount = prev[asset.id] || 0;
+                        // This code only executes when the sweep crosses the asset's bearing (once per rotation)
+                        // So we can safely increment on every execution
+                        const lastMissionTime = lastDetectionSweepAngle[asset.id];
+
+                        // Only increment if enough time has passed since last detection (prevent double-counting)
+                        // A full 360° sweep takes 10 seconds, so require at least 5 seconds between counts
+                        const shouldIncrement = !lastMissionTime || (missionTime - lastMissionTime) >= 5;
+
+                        if (shouldIncrement) {
+                            // Increment detection count
+                            const currentCount = radarDetectionCounts[asset.id] || 0;
                             const newCount = currentCount + 1;
-                            const threshold = detectionThresholds[asset.id] || 2; // Default to 2 if not yet set
+                            const threshold = currentThresholds[asset.id];
+
+                            console.log(`[Student Mode] Asset ${asset.id} (${asset.name}) - Sweep ${newCount}/${threshold} (time: ${missionTime}s)`);
+
+                            // Update detection count and last detection time
+                            setRadarDetectionCounts(prev => ({ ...prev, [asset.id]: newCount }));
+                            setLastDetectionSweepAngle(prev => ({ ...prev, [asset.id]: missionTime }));
 
                             // Create student track when threshold is reached
                             if (newCount >= threshold && !studentTracks.find(t => t.assetId === asset.id)) {
+                                console.log(`[Student Mode] Asset ${asset.id} (${asset.name}) - Creating track (${threshold} sweeps completed)`);
                                 createStudentTrack(asset);
                             }
-
-                            return { ...prev, [asset.id]: newCount };
-                        });
+                        }
                     }
                 }
             });
         }
-    }, [isRunning, radarEnabled, radarSweepAngle, assets, missionTime, simulatorMode, studentTracks, createStudentTrack, detectionThresholds]);
+    }, [isRunning, radarEnabled, radarSweepAngle, assets, missionTime, simulatorMode, studentTracks, createStudentTrack, detectionThresholds, radarDetectionCounts, lastDetectionSweepAngle]);
 
     // STUDENT MODE: Track aging system
     useEffect(() => {
