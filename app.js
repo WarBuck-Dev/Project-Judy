@@ -1106,6 +1106,10 @@ function AICSimulator() {
     const [showControlsDialog, setShowControlsDialog] = useState(false);
     const [showMissionProductsDialog, setShowMissionProductsDialog] = useState(false);
     const [missionProducts, setMissionProducts] = useState([]); // Array of {id, name, type, size, dateAdded, data}
+    const [isLoading, setIsLoading] = useState(true); // Start true for initial load
+    const [loadingMessage, setLoadingMessage] = useState('Initializing...');
+    const [platformsLoaded, setPlatformsLoaded] = useState(false);
+    const [weaponsLoaded, setWeaponsLoaded] = useState(false);
     const [nextAssetId, setNextAssetId] = useState(1);
     const [nextTrackNumber, setNextTrackNumber] = useState(6000);
     const [isDragging, setIsDragging] = useState(false);
@@ -1256,7 +1260,8 @@ function AICSimulator() {
                 console.error('Error loading platforms:', error);
                 // Set empty arrays if loading fails
                 setPlatforms({ air: [], surface: [], subSurface: [] });
-            });
+            })
+            .finally(() => setPlatformsLoaded(true));
     }, []);
 
     // Load weapon configurations from weapons.json
@@ -1270,8 +1275,21 @@ function AICSimulator() {
             .catch(error => {
                 console.error('Error loading weapons:', error);
                 setWeaponConfigs({});
-            });
+            })
+            .finally(() => setWeaponsLoaded(true));
     }, []);
+
+    // Clear loading screen when both platforms and weapons are loaded
+    // Add minimum display time so users can see the loading screen
+    useEffect(() => {
+        if (platformsLoaded && weaponsLoaded) {
+            // Ensure loading screen shows for at least 500ms
+            const timer = setTimeout(() => {
+                setIsLoading(false);
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [platformsLoaded, weaponsLoaded]);
 
     // Assign "Ownship" platform to ownship asset when platforms are loaded
     useEffect(() => {
@@ -3572,9 +3590,14 @@ function AICSimulator() {
     }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType, simulatorMode, studentTracks, radarDetectionCounts, detectionThresholds, trackAgingTimers, nextStudentTrackId, missionProducts]);
 
     const loadFromLocalStorage = useCallback((name) => {
-        const data = localStorage.getItem(`aic-scenario-${name}`);
-        if (data) {
-            const saveData = JSON.parse(data);
+        setIsLoading(true);
+        setLoadingMessage('Loading scenario...');
+
+        // Use setTimeout to allow loading screen to render before processing
+        setTimeout(() => {
+            const data = localStorage.getItem(`aic-scenario-${name}`);
+            if (data) {
+                const saveData = JSON.parse(data);
 
             // Ensure ownship is always present
             let loadedAssets = saveData.assets || [];
@@ -3710,12 +3733,17 @@ function AICSimulator() {
                 sonobuoyCount: saveData.sonobuoyCount !== undefined ? saveData.sonobuoyCount : 30,
                 nextSonobuoyId: saveData.nextSonobuoyId || 1
             });
-        }
+            }
+            setIsLoading(false);
+        }, 50);
     }, []);
 
     const loadFromFile = useCallback((event) => {
         const file = event.target.files[0];
         if (file) {
+            setIsLoading(true);
+            setLoadingMessage('Loading scenario...');
+
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
@@ -3855,10 +3883,16 @@ function AICSimulator() {
                         nextSonobuoyId: saveData.nextSonobuoyId || 1
                     });
 
+                    setIsLoading(false);
                     alert('Scenario loaded successfully!');
                 } catch (error) {
+                    setIsLoading(false);
                     alert('Failed to load scenario: Invalid file format');
                 }
+            };
+            reader.onerror = () => {
+                setIsLoading(false);
+                alert('Failed to read file');
             };
             reader.readAsText(file);
         }
@@ -3870,27 +3904,33 @@ function AICSimulator() {
 
     const restartSimulation = useCallback(() => {
         if (initialScenario) {
-            // Restart to loaded scenario
-            setAssets(JSON.parse(JSON.stringify(initialScenario.assets)));
-            setScale(initialScenario.scale);
-            setMapCenter(initialScenario.mapCenter);
-            setTempMark(initialScenario.tempMark);
-            setNextTrackNumber(initialScenario.nextTrackNumber);
-            setNextAssetId(initialScenario.nextAssetId);
-            setGeoPoints(JSON.parse(JSON.stringify(initialScenario.geoPoints || [])));
-            setNextGeoPointId(initialScenario.nextGeoPointId || 1);
-            setShapes(JSON.parse(JSON.stringify(initialScenario.shapes || [])));
-            setNextShapeId(initialScenario.nextShapeId || 1);
-            setSonobuoys(JSON.parse(JSON.stringify(initialScenario.sonobuoys || [])));
-            setSonobuoyCount(initialScenario.sonobuoyCount !== undefined ? initialScenario.sonobuoyCount : 30);
-            setNextSonobuoyId(initialScenario.nextSonobuoyId || 1);
-            setSelectedAssetId(null);
-            setSelectedGeoPointId(null);
-            setSelectedShapeId(null);
-            setIsRunning(false);
-            setMissionTime(0);
-            setRadarReturns([]);
-            setRadarSweepAngle(0);
+            setIsLoading(true);
+            setLoadingMessage('Restarting scenario...');
+
+            setTimeout(() => {
+                // Restart to loaded scenario
+                setAssets(JSON.parse(JSON.stringify(initialScenario.assets)));
+                setScale(initialScenario.scale);
+                setMapCenter(initialScenario.mapCenter);
+                setTempMark(initialScenario.tempMark);
+                setNextTrackNumber(initialScenario.nextTrackNumber);
+                setNextAssetId(initialScenario.nextAssetId);
+                setGeoPoints(JSON.parse(JSON.stringify(initialScenario.geoPoints || [])));
+                setNextGeoPointId(initialScenario.nextGeoPointId || 1);
+                setShapes(JSON.parse(JSON.stringify(initialScenario.shapes || [])));
+                setNextShapeId(initialScenario.nextShapeId || 1);
+                setSonobuoys(JSON.parse(JSON.stringify(initialScenario.sonobuoys || [])));
+                setSonobuoyCount(initialScenario.sonobuoyCount !== undefined ? initialScenario.sonobuoyCount : 30);
+                setNextSonobuoyId(initialScenario.nextSonobuoyId || 1);
+                setSelectedAssetId(null);
+                setSelectedGeoPointId(null);
+                setSelectedShapeId(null);
+                setIsRunning(false);
+                setMissionTime(0);
+                setRadarReturns([]);
+                setRadarSweepAngle(0);
+                setIsLoading(false);
+            }, 50);
         } else {
             // No scenario loaded, do a full page reload
             window.location.reload();
@@ -6482,6 +6522,9 @@ function AICSimulator() {
 
     return (
         <div className="app-container">
+            {/* Loading Screen */}
+            {isLoading && <LoadingScreen message={loadingMessage} />}
+
             {/* Radar Display */}
             <div className="radar-container">
                 {/* Top HUD */}
@@ -12898,6 +12941,17 @@ function PlatformSelectionDialog({ domain, platforms, onClose, onSelect }) {
                 <div className="modal-buttons" style={{ marginTop: '20px' }}>
                     <button className="control-btn full-width" onClick={onClose}>CANCEL</button>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+function LoadingScreen({ message = 'Loading' }) {
+    return (
+        <div className="loading-overlay">
+            <div className="loading-container">
+                <div className="loading-spinner"></div>
+                <div className="loading-text">{message}</div>
             </div>
         </div>
     );
