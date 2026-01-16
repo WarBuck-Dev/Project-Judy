@@ -1867,7 +1867,7 @@ function AICSimulator() {
                         // Initialize threshold if not set
                         let currentThresholds = { ...detectionThresholds };
                         if (!currentThresholds[asset.id]) {
-                            const newThreshold = 2 + Math.floor(Math.random() * 3); // Random 2-4
+                            const newThreshold = 2 + Math.floor(Math.random() * 2); // Random 2-3
                             currentThresholds[asset.id] = newThreshold;
                             setDetectionThresholds(currentThresholds);
                             console.log(`[Student Mode] Asset ${asset.id} (${asset.name}) - Set threshold: ${newThreshold}`);
