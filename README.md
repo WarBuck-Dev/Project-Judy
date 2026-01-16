@@ -517,6 +517,15 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 - **Resume Navigation**: After unwrapping, asset continues to subsequent waypoints
 - **Works in Both Modes**: Available in instructor mode and student mode (friendly tracks only)
 
+#### Mission Products
+- **File Attachments**: Attach mission briefs, orders, and reference documents to scenarios
+- **Supported Formats**: PDF, Word (.doc/.docx), Excel (.xls/.xlsx), PowerPoint (.ppt/.pptx)
+- **Access**: Press ESC to open pause menu, click "MISSION PRODUCTS" button
+- **Add Files**: Click "ADD FILE" to browse and attach documents (max 10 MB each)
+- **View/Download**: Click "VIEW" to download and open attached files
+- **Delete Files**: Click "DELETE" to remove files from the scenario
+- **Persistent Storage**: Files are embedded in scenario JSON and saved/loaded with scenarios
+
 #### UI Improvements
 - **Styled Alert Dialogs**: Datalink validation messages now use styled popups instead of browser alerts
 - **Rounded Values**: Track panel heading, speed, and altitude fields display whole numbers only

@@ -1054,6 +1054,53 @@ Waypoint wrapping allows assets to continuously patrol between two waypoints unt
 
 ---
 
+### Mission Products (v3.1)
+
+Mission Products allows users to attach documents and files to scenarios for mission briefs, orders, and reference materials.
+
+#### Accessing Mission Products
+1. Press **ESC** to open the pause menu
+2. Click the **"MISSION PRODUCTS"** button
+3. The Mission Products dialog opens showing all attached files
+
+#### Adding Files
+1. Click the **"+ ADD FILE"** button
+2. Browse and select a file from your computer
+3. File is uploaded and appears in the list
+
+#### Supported File Types
+- **PDF** (.pdf) - Mission briefs, orders, charts
+- **Word** (.doc, .docx) - Documents, reports
+- **Excel** (.xls, .xlsx) - Data tables, schedules
+- **PowerPoint** (.ppt, .pptx) - Briefing slides
+
+#### File Size Limit
+- Maximum **10 MB** per file
+- Files larger than 10 MB will be rejected with an error message
+
+#### Viewing/Downloading Files
+1. Click the **"VIEW"** button next to any file
+2. File downloads to your computer
+3. Open with appropriate application (PDF reader, Word, etc.)
+
+#### Deleting Files
+1. Click the **"DELETE"** button next to any file
+2. Confirm deletion when prompted
+3. File is removed from the scenario
+
+#### File Storage
+- Files are embedded directly in the scenario JSON as base64 data
+- Files persist when saving and loading scenarios
+- No external file dependencies - everything is contained in the .json file
+
+#### Use Cases
+- Attach mission briefing documents
+- Include reference charts and diagrams
+- Store exercise orders and instructions
+- Provide supplementary training materials
+
+---
+
 ## Document Metadata
 
 **Document Version**: 3.1

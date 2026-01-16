@@ -1104,6 +1104,8 @@ function AICSimulator() {
     const [showSaveDialog, setShowSaveDialog] = useState(false);
     const [showLoadDialog, setShowLoadDialog] = useState(false);
     const [showControlsDialog, setShowControlsDialog] = useState(false);
+    const [showMissionProductsDialog, setShowMissionProductsDialog] = useState(false);
+    const [missionProducts, setMissionProducts] = useState([]); // Array of {id, name, type, size, dateAdded, data}
     const [nextAssetId, setNextAssetId] = useState(1);
     const [nextTrackNumber, setNextTrackNumber] = useState(6000);
     const [isDragging, setIsDragging] = useState(false);
@@ -3482,7 +3484,7 @@ function AICSimulator() {
 
     const saveToLocalStorage = useCallback((name) => {
         const saveData = {
-            version: '1.1', // Increment version for student/instructor mode
+            version: '1.2', // Increment version for mission products
             timestamp: new Date().toISOString(),
             assets,
             bullseye: bullseyePosition,
@@ -3510,16 +3512,17 @@ function AICSimulator() {
             radarDetectionCounts,
             detectionThresholds,
             trackAgingTimers,
-            nextStudentTrackId
+            nextStudentTrackId,
+            missionProducts
         };
 
         localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
         alert(`Scenario saved to application: ${name}`);
-    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType, simulatorMode, studentTracks, radarDetectionCounts, detectionThresholds, trackAgingTimers, nextStudentTrackId]);
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType, simulatorMode, studentTracks, radarDetectionCounts, detectionThresholds, trackAgingTimers, nextStudentTrackId, missionProducts]);
 
     const saveToFile = useCallback((name) => {
         const saveData = {
-            version: '1.1', // Increment version for student/instructor mode
+            version: '1.2', // Increment version for mission products
             timestamp: new Date().toISOString(),
             assets,
             bullseye: bullseyePosition,
@@ -3547,17 +3550,26 @@ function AICSimulator() {
             radarDetectionCounts,
             detectionThresholds,
             trackAgingTimers,
-            nextStudentTrackId
+            nextStudentTrackId,
+            missionProducts
         };
 
-        const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${name}-${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType, simulatorMode, studentTracks, radarDetectionCounts, detectionThresholds, trackAgingTimers, nextStudentTrackId]);
+        try {
+            const jsonString = JSON.stringify(saveData, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${name}-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Save error:', error);
+            alert('Failed to save scenario: ' + error.message);
+        }
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType, simulatorMode, studentTracks, radarDetectionCounts, detectionThresholds, trackAgingTimers, nextStudentTrackId, missionProducts]);
 
     const loadFromLocalStorage = useCallback((name) => {
         const data = localStorage.getItem(`aic-scenario-${name}`);
@@ -3674,6 +3686,9 @@ function AICSimulator() {
             setTrackAgingTimers(saveData.trackAgingTimers || {});
             setNextStudentTrackId(saveData.nextStudentTrackId || 1);
             setSelectedTrackId(null);
+
+            // Load mission products (with backward compatibility)
+            setMissionProducts(saveData.missionProducts || []);
 
             // Find max asset ID
             const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
@@ -3816,6 +3831,9 @@ function AICSimulator() {
                     setTrackAgingTimers(saveData.trackAgingTimers || {});
                     setNextStudentTrackId(saveData.nextStudentTrackId || 1);
                     setSelectedTrackId(null);
+
+                    // Load mission products (with backward compatibility)
+                    setMissionProducts(saveData.missionProducts || []);
 
                     const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
                     setNextAssetId(maxId + 1);
@@ -7309,11 +7327,23 @@ function AICSimulator() {
                         setShowPauseMenu(false);
                         setShowControlsDialog(true);
                     }}
+                    onMissionProducts={() => {
+                        setShowPauseMenu(false);
+                        setShowMissionProductsDialog(true);
+                    }}
                 />
             )}
 
             {showControlsDialog && (
                 <ControlsDialog onClose={() => setShowControlsDialog(false)} />
+            )}
+
+            {showMissionProductsDialog && (
+                <MissionProductsDialog
+                    missionProducts={missionProducts}
+                    setMissionProducts={setMissionProducts}
+                    onClose={() => setShowMissionProductsDialog(false)}
+                />
             )}
 
             {/* Platform Selection Dialog */}
@@ -12873,7 +12903,196 @@ function PlatformSelectionDialog({ domain, platforms, onClose, onSelect }) {
     );
 }
 
-function PauseMenu({ onResume, onSave, onLoad, onControls }) {
+function MissionProductsDialog({ missionProducts, setMissionProducts, onClose }) {
+    const fileInputRef = React.useRef(null);
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+    const ALLOWED_TYPES = {
+        'application/pdf': 'PDF',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word',
+        'application/msword': 'Word',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',
+        'application/vnd.ms-excel': 'Excel',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint',
+        'application/vnd.ms-powerpoint': 'PowerPoint'
+    };
+    const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt'];
+
+    const handleAddFile = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileSelect = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Check file extension
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        if (!ALLOWED_EXTENSIONS.includes(ext)) {
+            alert(`Invalid file type. Allowed types: ${ALLOWED_EXTENSIONS.join(', ')}`);
+            return;
+        }
+
+        // Check file size
+        if (file.size > MAX_FILE_SIZE) {
+            alert(`File too large. Maximum size is 10 MB. This file is ${(file.size / (1024 * 1024)).toFixed(2)} MB.`);
+            return;
+        }
+
+        // Read file as base64
+        const reader = new FileReader();
+        reader.onload = () => {
+            const base64Data = reader.result;
+            const newProduct = {
+                id: Date.now(),
+                name: file.name,
+                type: ALLOWED_TYPES[file.type] || ext.substring(1).toUpperCase(),
+                size: file.size,
+                dateAdded: new Date().toISOString(),
+                data: base64Data
+            };
+            setMissionProducts(prev => [...prev, newProduct]);
+        };
+        reader.onerror = () => {
+            alert('Error reading file. Please try again.');
+        };
+        reader.readAsDataURL(file);
+
+        // Reset input so same file can be selected again
+        e.target.value = '';
+    };
+
+    const handleDownload = (product) => {
+        const link = document.createElement('a');
+        link.href = product.data;
+        link.download = product.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleDelete = (productId) => {
+        if (confirm('Delete this file?')) {
+            setMissionProducts(prev => prev.filter(p => p.id !== productId));
+        }
+    };
+
+    const formatFileSize = (bytes) => {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    };
+
+    const formatDate = (isoString) => {
+        const date = new Date(isoString);
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', minWidth: '500px' }}>
+                <h2>MISSION PRODUCTS</h2>
+                <p style={{ color: '#888', fontSize: '10px', marginBottom: '15px' }}>
+                    Attach mission briefs, orders, and reference documents (PDF, Word, Excel, PowerPoint - max 10 MB each)
+                </p>
+
+                {/* Hidden file input */}
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    style={{ display: 'none' }}
+                    accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt"
+                    onChange={handleFileSelect}
+                />
+
+                {/* File list */}
+                <div style={{
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    border: '1px solid #333',
+                    borderRadius: '4px',
+                    marginBottom: '15px',
+                    backgroundColor: '#1a1a1a'
+                }}>
+                    {missionProducts.length === 0 ? (
+                        <div style={{
+                            padding: '40px',
+                            textAlign: 'center',
+                            color: '#666',
+                            fontSize: '11px'
+                        }}>
+                            No files attached. Click "ADD FILE" to attach mission products.
+                        </div>
+                    ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                            <thead>
+                                <tr style={{ backgroundColor: '#252525', borderBottom: '1px solid #333' }}>
+                                    <th style={{ padding: '8px 10px', textAlign: 'left', color: '#00FF00' }}>Name</th>
+                                    <th style={{ padding: '8px 10px', textAlign: 'left', color: '#00FF00', width: '70px' }}>Type</th>
+                                    <th style={{ padding: '8px 10px', textAlign: 'right', color: '#00FF00', width: '70px' }}>Size</th>
+                                    <th style={{ padding: '8px 10px', textAlign: 'left', color: '#00FF00', width: '130px' }}>Added</th>
+                                    <th style={{ padding: '8px 10px', textAlign: 'center', color: '#00FF00', width: '130px' }}>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {missionProducts.map((product) => (
+                                    <tr key={product.id} style={{ borderBottom: '1px solid #2a2a2a' }}>
+                                        <td style={{ padding: '8px 10px', color: '#FFF' }}>{product.name}</td>
+                                        <td style={{ padding: '8px 10px', color: '#888' }}>{product.type}</td>
+                                        <td style={{ padding: '8px 10px', color: '#888', textAlign: 'right' }}>{formatFileSize(product.size)}</td>
+                                        <td style={{ padding: '8px 10px', color: '#888' }}>{formatDate(product.dateAdded)}</td>
+                                        <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                            <button
+                                                onClick={() => handleDownload(product)}
+                                                style={{
+                                                    background: '#333',
+                                                    border: '1px solid #00FF00',
+                                                    color: '#00FF00',
+                                                    padding: '3px 8px',
+                                                    marginRight: '10px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '9px',
+                                                    borderRadius: '3px'
+                                                }}
+                                            >
+                                                VIEW
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(product.id)}
+                                                style={{
+                                                    background: '#333',
+                                                    border: '1px solid #FF4444',
+                                                    color: '#FF4444',
+                                                    padding: '3px 8px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '9px',
+                                                    borderRadius: '3px'
+                                                }}
+                                            >
+                                                DELETE
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+
+                {/* Buttons */}
+                <div className="modal-buttons" style={{ display: 'flex', gap: '10px' }}>
+                    <button className="control-btn" onClick={handleAddFile} style={{ flex: 1 }}>
+                        + ADD FILE
+                    </button>
+                    <button className="control-btn primary" onClick={onClose} style={{ flex: 1 }}>
+                        CLOSE
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function PauseMenu({ onResume, onSave, onLoad, onControls, onMissionProducts }) {
     return (
         <div className="modal-overlay">
             <div className="pause-menu">
@@ -12882,6 +13101,7 @@ function PauseMenu({ onResume, onSave, onLoad, onControls }) {
                     <button className="control-btn primary" onClick={onResume}>RESUME</button>
                     <button className="control-btn" onClick={onSave}>SAVE FILE</button>
                     <button className="control-btn" onClick={onLoad}>LOAD FILE</button>
+                    <button className="control-btn" onClick={onMissionProducts}>MISSION PRODUCTS</button>
                     <button className="control-btn" onClick={onControls}>
                         CONTROLS
                     </button>
