@@ -2033,6 +2033,9 @@ function AICSimulator() {
                 // Skip operator tracks - they have their own movement logic and don't age
                 if (track.isOperatorTrack) return;
 
+                // Skip datalink-active tracks - they don't age and get real-time updates
+                if (track.datalinkActive) return;
+
                 const asset = assets.find(a => a.id === track.assetId);
 
                 // Asset deleted → track will age after 20 seconds without radar returns
@@ -2371,6 +2374,149 @@ function AICSimulator() {
             return prevAssets;
         });
     }, [assets, datalinkEnabled, datalinkNet]);
+
+    // ========================================================================
+    // STUDENT MODE DATALINK DETECTION - Auto-create friendly tracks for datalink assets
+    // ========================================================================
+
+    useEffect(() => {
+        // Only run in student mode with datalink enabled
+        if (simulatorMode !== 'student' || !datalinkEnabled || !datalinkNet) return;
+
+        const userNet = String(datalinkNet);
+
+        // Find all assets that are active in the datalink on the same NET
+        const datalinkAssets = assets.filter(asset => {
+            // Skip ownship
+            if (asset.type === 'ownship') return false;
+
+            // Skip hidden assets
+            if (asset.hidden) return false;
+
+            // Convert to string for comparison
+            const assetNet = String(asset.datalinkNet || '');
+
+            // Check if asset is participating in datalink on same NET
+            return (assetNet === userNet &&
+                    assetNet !== '' &&
+                    !!asset.datalinkJU &&
+                    asset.datalinkJU.length === 5 &&
+                    !!asset.datalinkTrackBlockStart &&
+                    !!asset.datalinkTrackBlockEnd);
+        });
+
+        if (datalinkAssets.length === 0) return;
+
+        // Use functional update to ensure we're working with current state
+        setStudentTracks(prevTracks => {
+            const newTracks = [];
+            const updatedTracks = [...prevTracks];
+            let needsUpdate = false;
+
+            // Find max ID from existing tracks to ensure unique IDs
+            let maxId = prevTracks.reduce((max, t) => Math.max(max, t.id), 0);
+
+            datalinkAssets.forEach(asset => {
+                // Check if a student track already exists for this asset
+                const existingTrackIndex = updatedTracks.findIndex(t => t.assetId === asset.id);
+
+                if (existingTrackIndex === -1) {
+                    // Create a new student track immediately (no radar detection required)
+                    maxId++;
+                    const newTrack = {
+                        id: maxId,
+                        assetId: asset.id,
+                        lat: asset.lat,
+                        lon: asset.lon,
+                        domain: asset.domain,
+                        identity: 'friendly', // Datalink assets are automatically friendly
+                        label: asset.studentLabel || '',
+                        trackNumber: asset.datalinkJU, // Use JU as track number
+                        isAged: false,
+                        lastDetectionTime: missionTime,
+                        creationTime: missionTime,
+                        estimatedHeading: asset.heading || 0,
+                        estimatedSpeed: asset.speed || 0,
+                        lastKnownLat: asset.lat,
+                        lastKnownLon: asset.lon,
+                        iffModeI: asset.iffSquawking ? asset.iffModeI : '',
+                        iffModeII: asset.iffSquawking ? asset.iffModeII : '',
+                        iffModeIII: asset.iffSquawking ? asset.iffModeIII : '',
+                        datalinkJU: asset.datalinkJU,
+                        datalinkActive: true // Mark as datalink-created track
+                    };
+                    newTracks.push(newTrack);
+                    needsUpdate = true;
+                } else if (!updatedTracks[existingTrackIndex].datalinkActive) {
+                    // Track exists but wasn't marked as datalink - update it
+                    updatedTracks[existingTrackIndex] = {
+                        ...updatedTracks[existingTrackIndex],
+                        identity: 'friendly',
+                        trackNumber: asset.datalinkJU,
+                        datalinkJU: asset.datalinkJU,
+                        datalinkActive: true
+                    };
+                    needsUpdate = true;
+                }
+            });
+
+            if (!needsUpdate && newTracks.length === 0) {
+                return prevTracks; // No changes
+            }
+
+            // Update nextStudentTrackId if we added tracks
+            if (newTracks.length > 0) {
+                setNextStudentTrackId(maxId + 1);
+                setTrackAgingTimers(prev => {
+                    const newTimers = { ...prev };
+                    newTracks.forEach(track => {
+                        newTimers[track.id] = 0;
+                    });
+                    return newTimers;
+                });
+            }
+
+            return [...updatedTracks, ...newTracks];
+        });
+    }, [simulatorMode, datalinkEnabled, datalinkNet, assets, missionTime]);
+
+    // STUDENT MODE: Update datalink-active tracks with real-time asset position
+    useEffect(() => {
+        if (simulatorMode !== 'student' || !isRunning) return;
+
+        // Update all datalink-active tracks with actual asset positions
+        const datalinkTracks = studentTracks.filter(t => t.datalinkActive);
+        if (datalinkTracks.length === 0) return;
+
+        let hasUpdates = false;
+        const updatedTracks = studentTracks.map(track => {
+            if (!track.datalinkActive) return track;
+
+            const asset = assets.find(a => a.id === track.assetId);
+            if (!asset) return track;
+
+            // Check if position has changed
+            if (Math.abs(asset.lat - track.lat) > 0.0001 ||
+                Math.abs(asset.lon - track.lon) > 0.0001 ||
+                Math.abs((asset.heading || 0) - track.estimatedHeading) > 0.1 ||
+                Math.abs((asset.speed || 0) - track.estimatedSpeed) > 0.1) {
+                hasUpdates = true;
+                return {
+                    ...track,
+                    lat: asset.lat,
+                    lon: asset.lon,
+                    estimatedHeading: asset.heading || 0,
+                    estimatedSpeed: asset.speed || 0,
+                    lastDetectionTime: missionTime
+                };
+            }
+            return track;
+        });
+
+        if (hasUpdates) {
+            setStudentTracks(updatedTracks);
+        }
+    }, [simulatorMode, isRunning, assets, studentTracks, missionTime]);
 
     // ========================================================================
     // ESM SYSTEM - Detect active emitters
@@ -3713,6 +3859,14 @@ function AICSimulator() {
             // Load mission products (with backward compatibility)
             setMissionProducts(saveData.missionProducts || []);
 
+            // Reset datalink settings (not saved in scenario)
+            setDatalinkEnabled(false);
+            setDatalinkNet('');
+            setDatalinkJU('');
+            setDatalinkTrackBlockStart('');
+            setDatalinkTrackBlockEnd('');
+            setNextDatalinkTrackNumber(null);
+
             // Find max asset ID
             const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
             setNextAssetId(maxId + 1);
@@ -3863,6 +4017,14 @@ function AICSimulator() {
                     // Load mission products (with backward compatibility)
                     setMissionProducts(saveData.missionProducts || []);
 
+                    // Reset datalink settings (not saved in scenario)
+                    setDatalinkEnabled(false);
+                    setDatalinkNet('');
+                    setDatalinkJU('');
+                    setDatalinkTrackBlockStart('');
+                    setDatalinkTrackBlockEnd('');
+                    setNextDatalinkTrackNumber(null);
+
                     const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
                     setNextAssetId(maxId + 1);
 
@@ -3929,6 +4091,15 @@ function AICSimulator() {
                 setMissionTime(0);
                 setRadarReturns([]);
                 setRadarSweepAngle(0);
+
+                // Reset datalink settings
+                setDatalinkEnabled(false);
+                setDatalinkNet('');
+                setDatalinkJU('');
+                setDatalinkTrackBlockStart('');
+                setDatalinkTrackBlockEnd('');
+                setNextDatalinkTrackNumber(null);
+
                 setIsLoading(false);
             }, 50);
         } else {
@@ -7503,11 +7674,15 @@ function ControlPanel({
     const [activelyEditingFields, setActivelyEditingFields] = useState({}); // Track which fields user is currently editing
     const selectedAssetIdRef = useRef(null);
     const selectedGeoPointIdRef = useRef(null);
+    const selectedTrackIdRef = useRef(null);
 
     // Only update edit values when asset is first selected or when switching assets
     useEffect(() => {
         if (selectedAsset && selectedAsset.id !== selectedAssetIdRef.current) {
             selectedAssetIdRef.current = selectedAsset.id;
+            selectedTrackIdRef.current = null; // Clear track ref when selecting an asset
+            // Clear actively editing flags when switching assets
+            setActivelyEditingFields({});
             setEditValues({
                 name: selectedAsset.name,
                 heading: Math.round(selectedAsset.heading),
@@ -7520,9 +7695,40 @@ function ControlPanel({
         }
     }, [selectedAsset?.id]); // Only depend on ID, not the whole asset object
 
-    // Update asset LAT/LONG display when asset position changes (e.g., during dragging)
+    // Clear editValues when switching to a track (and away from an asset)
     useEffect(() => {
-        if (selectedAsset) {
+        if (selectedTrackId && selectedTrackId !== selectedTrackIdRef.current) {
+            selectedTrackIdRef.current = selectedTrackId;
+            selectedAssetIdRef.current = null; // Clear asset ref when selecting a track
+            // Clear actively editing flags and editValues when switching to a track
+            setActivelyEditingFields({});
+
+            // For friendly tracks, populate editValues from the underlying asset
+            const selectedTrack = studentTracks.find(t => t.id === selectedTrackId);
+            if (selectedTrack && isFriendlyTrack(selectedTrack)) {
+                const asset = assets.find(a => a.id === selectedTrack.assetId);
+                if (asset) {
+                    setEditValues({
+                        heading: Math.round(asset.heading),
+                        speed: Math.round(asset.speed),
+                        altitude: Math.round(asset.altitude),
+                        depth: Math.round(asset.depth || 0),
+                        lat: decimalToDMM(asset.lat, true),
+                        lon: decimalToDMM(asset.lon, false)
+                    });
+                } else {
+                    setEditValues({});
+                }
+            } else {
+                setEditValues({});
+            }
+        }
+    }, [selectedTrackId, studentTracks, assets, isFriendlyTrack]);
+
+    // Update asset LAT/LONG display when asset position changes (e.g., during dragging)
+    // Skip if we just switched assets (first useEffect handles that)
+    useEffect(() => {
+        if (selectedAsset && selectedAsset.id === selectedAssetIdRef.current) {
             setEditValues(prev => ({
                 ...prev,
                 lat: decimalToDMM(selectedAsset.lat, true),
@@ -7533,8 +7739,9 @@ function ControlPanel({
 
     // Update asset heading, speed, altitude, depth display when those values change
     // BUT skip fields that are currently being edited by the user
+    // Skip if we just switched assets (first useEffect handles that)
     useEffect(() => {
-        if (selectedAsset) {
+        if (selectedAsset && selectedAsset.id === selectedAssetIdRef.current) {
             setEditValues(prev => {
                 const updates = { ...prev };
 
@@ -7624,15 +7831,18 @@ function ControlPanel({
 
         // Determine which asset to update
         // If a track is selected (student mode), use the track's underlying asset
+        // Note: ownship has id=0, so we must check for undefined/null, not falsy
         let assetId = selectedAsset?.id;
-        if (!assetId && selectedTrackId) {
-            const selectedTrack = studentTracks.find(t => t.id === selectedTrackId);
-            if (selectedTrack && selectedTrack.assetId) {
-                assetId = selectedTrack.assetId;
+        if (assetId === undefined || assetId === null) {
+            if (selectedTrackId) {
+                const selectedTrack = studentTracks.find(t => t.id === selectedTrackId);
+                if (selectedTrack && selectedTrack.assetId !== undefined && selectedTrack.assetId !== null) {
+                    assetId = selectedTrack.assetId;
+                }
             }
         }
 
-        if (!assetId) {
+        if (assetId === undefined || assetId === null) {
             console.warn('No asset ID found for applyTarget');
             return;
         }
