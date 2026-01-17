@@ -1076,7 +1076,7 @@ function AICSimulator() {
             lat: 26.5 - (50 / 60), // 50 NM south of bullseye (initial position)
             lon: 54.0,
             heading: 0,
-            speed: 150,
+            speed: 0,
             altitude: 15000,
             depth: null,
             targetHeading: null,
@@ -1104,12 +1104,19 @@ function AICSimulator() {
     const [showSaveDialog, setShowSaveDialog] = useState(false);
     const [showLoadDialog, setShowLoadDialog] = useState(false);
     const [showControlsDialog, setShowControlsDialog] = useState(false);
+    const [showMissionProductsDialog, setShowMissionProductsDialog] = useState(false);
+    const [missionProducts, setMissionProducts] = useState([]); // Array of {id, name, type, size, dateAdded, data}
+    const [isLoading, setIsLoading] = useState(true); // Start true for initial load
+    const [loadingMessage, setLoadingMessage] = useState('Initializing...');
+    const [platformsLoaded, setPlatformsLoaded] = useState(false);
+    const [weaponsLoaded, setWeaponsLoaded] = useState(false);
     const [nextAssetId, setNextAssetId] = useState(1);
     const [nextTrackNumber, setNextTrackNumber] = useState(6000);
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState(null);
     const [draggedWaypoint, setDraggedWaypoint] = useState(null);
     const [draggedAssetId, setDraggedAssetId] = useState(null);
+    const [draggedOperatorTrackId, setDraggedOperatorTrackId] = useState(null); // For dragging operator tracks
     const [initialScenario, setInitialScenario] = useState(null);
     const [hasStarted, setHasStarted] = useState(false);
     const [missionTime, setMissionTime] = useState(0);
@@ -1202,6 +1209,8 @@ function AICSimulator() {
     const [trackAgingTimers, setTrackAgingTimers] = useState({}); // { trackId: missedSweeps }
     const [nextStudentTrackId, setNextStudentTrackId] = useState(1);
     const [selectedTrackId, setSelectedTrackId] = useState(null); // Separate from selectedAssetId
+    const [showCreateOperatorTrackDialog, setShowCreateOperatorTrackDialog] = useState(null); // { lat, lon }
+    const [alertMessage, setAlertMessage] = useState(null); // Styled alert popup message
 
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
@@ -1273,7 +1282,8 @@ function AICSimulator() {
                 console.error('Error loading platforms:', error);
                 // Set empty arrays if loading fails
                 setPlatforms({ air: [], surface: [], subSurface: [] });
-            });
+            })
+            .finally(() => setPlatformsLoaded(true));
     }, []);
 
     // Load weapon configurations from weapons.json
@@ -1287,8 +1297,21 @@ function AICSimulator() {
             .catch(error => {
                 console.error('Error loading weapons:', error);
                 setWeaponConfigs({});
-            });
+            })
+            .finally(() => setWeaponsLoaded(true));
     }, []);
+
+    // Clear loading screen when both platforms and weapons are loaded
+    // Add minimum display time so users can see the loading screen
+    useEffect(() => {
+        if (platformsLoaded && weaponsLoaded) {
+            // Ensure loading screen shows for at least 500ms
+            const timer = setTimeout(() => {
+                setIsLoading(false);
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [platformsLoaded, weaponsLoaded]);
 
     // Assign "Ownship" platform to ownship asset when platforms are loaded
     useEffect(() => {
@@ -1752,6 +1775,41 @@ function AICSimulator() {
             const turnRate = asset.platform ? asset.platform.maxTurn : domainConfig.turnRate;
             const climbRate = asset.platform && asset.platform.maxClimb ? (asset.platform.maxClimb / 60) : CLIMB_RATE; // Convert ft/min to ft/sec
 
+            // HIDDEN ASSETS: Apply target values immediately (no gradual transitions)
+            // This allows instructors to set up threat presentations before revealing assets
+            if (asset.hidden) {
+                if (asset.targetHeading !== null) {
+                    updated.heading = asset.targetHeading;
+                    updated.targetHeading = null;
+                }
+                if (asset.targetSpeed !== null) {
+                    updated.speed = asset.targetSpeed;
+                    updated.targetSpeed = null;
+                }
+                if (domainConfig.hasAltitude && asset.targetAltitude !== null) {
+                    updated.altitude = asset.targetAltitude;
+                    updated.targetAltitude = null;
+                }
+                if (domainConfig.hasDepth && asset.targetDepth !== null) {
+                    updated.depth = asset.targetDepth;
+                    updated.targetDepth = null;
+                }
+                // Enforce platform limits for hidden assets
+                if (asset.platform) {
+                    if (asset.platform.maxSpeed !== undefined) {
+                        updated.speed = Math.min(updated.speed, asset.platform.maxSpeed);
+                    }
+                    if (asset.platform.maxAltitude !== undefined && domainConfig.hasAltitude) {
+                        updated.altitude = Math.min(updated.altitude, asset.platform.maxAltitude);
+                    }
+                    if (asset.platform.maxDepth !== undefined && domainConfig.hasDepth) {
+                        updated.depth = Math.min(updated.depth, asset.platform.maxDepth);
+                    }
+                }
+                // Skip position updates for hidden assets - they stay in place
+                return updated;
+            }
+
             // Update heading
             if (asset.targetHeading !== null) {
                 const turnAmount = shortestTurn(asset.heading, asset.targetHeading);
@@ -1859,26 +1917,77 @@ function AICSimulator() {
                     const distToWP = calculateDistance(updated.lat, updated.lon, wp.lat, wp.lon);
 
                     if (distToWP < WAYPOINT_ARRIVAL_THRESHOLD) {
-                        // Mark waypoint as reached instead of removing it
+                        // Mark waypoint as reached
                         console.log(`Asset ${asset.name || asset.id} reached waypoint ${currentWpIndex} (id: ${wp.id})`);
-                        updated.waypoints = (updated.waypoints || asset.waypoints).map((w, idx) =>
-                            idx === currentWpIndex ? { ...w, reached: true } : w
-                        );
+                        const waypoints = updated.waypoints || asset.waypoints;
+                        const nextWpIndex = currentWpIndex + 1;
+                        const nextWp = waypoints[nextWpIndex];
+                        const prevWpIndex = currentWpIndex - 1;
+                        const prevWp = prevWpIndex >= 0 ? waypoints[prevWpIndex] : null;
 
-                        // Find next unreached waypoint
-                        const nextWpIndex = updated.waypoints.findIndex((w, idx) => idx > currentWpIndex && !w.reached);
-                        if (nextWpIndex !== -1) {
-                            const nextWP = updated.waypoints[nextWpIndex];
-                            updated.targetHeading = calculateBearing(updated.lat, updated.lon, nextWP.lat, nextWP.lon);
-                        } else {
-                            // No more waypoints, clear targets
-                            updated.targetHeading = null;
+                        // Check if NEXT waypoint is wrapped with current (go to wrapped waypoint)
+                        if (nextWp && nextWp.wrappedWithPrevious) {
+                            // Don't mark current as reached - keep both waypoints active for wrap loop
+                            // Just navigate to the wrapped waypoint
+                            updated.waypoints = waypoints.map((w, idx) => {
+                                if (idx === currentWpIndex) return { ...w, reached: true };
+                                if (idx === nextWpIndex) return { ...w, reached: false }; // Ensure next is unreached
+                                return w;
+                            });
+                            updated.targetHeading = calculateBearing(updated.lat, updated.lon, nextWp.lat, nextWp.lon);
+                        }
+                        // Check if THIS waypoint is wrapped with previous (go back to previous)
+                        else if (wp.wrappedWithPrevious && prevWp) {
+                            // Toggle: mark current as reached, un-reach the previous to go back
+                            updated.waypoints = waypoints.map((w, idx) => {
+                                if (idx === prevWpIndex) return { ...w, reached: false };
+                                if (idx === currentWpIndex) return { ...w, reached: true };
+                                return w;
+                            });
+                            updated.targetHeading = calculateBearing(updated.lat, updated.lon, prevWp.lat, prevWp.lon);
+                        }
+                        else if (wp.isOrbitPoint) {
+                            // Orbit point - mark reached and start orbiting
+                            updated.waypoints = waypoints.map((w, idx) =>
+                                idx === currentWpIndex ? { ...w, reached: true } : w
+                            );
+                            updated.isOrbiting = true;
+                            // Don't clear targetHeading - orbit logic below will handle continuous turning
+                        }
+                        else {
+                            // Normal behavior - mark reached and go to next
+                            updated.waypoints = waypoints.map((w, idx) =>
+                                idx === currentWpIndex ? { ...w, reached: true } : w
+                            );
+
+                            // Find next unreached waypoint
+                            const foundNextWpIndex = updated.waypoints.findIndex((w, idx) => idx > currentWpIndex && !w.reached);
+                            if (foundNextWpIndex !== -1) {
+                                const foundNextWP = updated.waypoints[foundNextWpIndex];
+                                updated.targetHeading = calculateBearing(updated.lat, updated.lon, foundNextWP.lat, foundNextWP.lon);
+                            } else {
+                                // No more waypoints, clear targets
+                                updated.targetHeading = null;
+                            }
                         }
                     } else {
                         // Not at waypoint yet - continuously update heading toward it
                         // This ensures asset tracks waypoint even if it moves or after behaviors change heading
                         updated.targetHeading = calculateBearing(updated.lat, updated.lon, wp.lat, wp.lon);
                     }
+                }
+            }
+
+            // Orbit logic - continuous turning when orbiting
+            if (updated.isOrbiting || asset.isOrbiting) {
+                const orbitWp = (updated.waypoints || asset.waypoints).find(wp => wp.isOrbitPoint && wp.reached);
+                if (orbitWp) {
+                    // Continuously turn right at standard rate to create orbit
+                    const turnRate = asset.platform ? asset.platform.maxTurn : domainConfig.turnRate;
+                    // Apply turn rate - heading increments create continuous circle
+                    const currentHeading = updated.heading !== undefined ? updated.heading : asset.heading;
+                    updated.targetHeading = (currentHeading + turnRate * 2) % 360;
+                    updated.isOrbiting = true;
                 }
             }
 
@@ -2164,6 +2273,39 @@ function AICSimulator() {
     }, [isRunning]);
 
     // ============================================================================
+    // Operator Track Dead Reckoning Movement
+    // ============================================================================
+    // Move operator tracks based on their user-entered speed and heading
+    // NOTE: We use a ref to avoid re-running when studentTracks changes (which would cause feedback loop)
+    const studentTracksRef = useRef(studentTracks);
+    studentTracksRef.current = studentTracks;
+
+    useEffect(() => {
+        if (!isRunning || simulatorMode !== 'student') return;
+
+        // Use ref to get current tracks without triggering on every track update
+        const tracks = studentTracksRef.current;
+        tracks.forEach(track => {
+            if (track.isOperatorTrack && track.estimatedSpeed > 0) {
+                const speedNMPerSec = track.estimatedSpeed / 3600;
+                const deltaTime = 1; // 1 second (mission time updates once per second)
+                const distance = speedNMPerSec * deltaTime;
+
+                const headingRad = track.estimatedHeading * Math.PI / 180;
+                const latRad = track.lat * Math.PI / 180;
+
+                const deltaLat = (distance * Math.cos(headingRad)) / 60;
+                const deltaLon = (distance * Math.sin(headingRad)) / (60 * Math.cos(latRad));
+
+                updateStudentTrack(track.id, {
+                    lat: track.lat + deltaLat,
+                    lon: track.lon + deltaLon
+                });
+            }
+        });
+    }, [isRunning, missionTime, simulatorMode, updateStudentTrack]);
+
+    // ============================================================================
     // ISAR Wings Level Duration Tracking
     // ============================================================================
     // Track continuous wings-level time for ISAR acquisition (15 second minimum requirement)
@@ -2316,6 +2458,12 @@ function AICSimulator() {
             if (!ownship) return;
 
             studentTracks.forEach(track => {
+                // Skip operator tracks - they have their own movement logic and don't age
+                if (track.isOperatorTrack) return;
+
+                // Skip datalink-active tracks - they don't age and get real-time updates
+                if (track.datalinkActive) return;
+
                 const asset = assets.find(a => a.id === track.assetId);
 
                 // Asset deleted → track will age after 20 seconds without radar returns
@@ -2656,6 +2804,189 @@ function AICSimulator() {
     }, [assets, datalinkEnabled, datalinkNet]);
 
     // ========================================================================
+    // STUDENT MODE DATALINK DETECTION - Auto-create friendly tracks for datalink assets
+    // ========================================================================
+
+    useEffect(() => {
+        // Only run in student mode with datalink enabled
+        if (simulatorMode !== 'student' || !datalinkEnabled || !datalinkNet) return;
+
+        const userNet = String(datalinkNet);
+
+        // Find all assets that are active in the datalink on the same NET
+        const datalinkAssets = assets.filter(asset => {
+            // Skip ownship
+            if (asset.type === 'ownship') return false;
+
+            // Skip hidden assets
+            if (asset.hidden) return false;
+
+            // Convert to string for comparison
+            const assetNet = String(asset.datalinkNet || '');
+
+            // Check if asset is participating in datalink on same NET
+            return (assetNet === userNet &&
+                    assetNet !== '' &&
+                    !!asset.datalinkJU &&
+                    asset.datalinkJU.length === 5 &&
+                    !!asset.datalinkTrackBlockStart &&
+                    !!asset.datalinkTrackBlockEnd);
+        });
+
+        if (datalinkAssets.length === 0) return;
+
+        // Use functional update to ensure we're working with current state
+        setStudentTracks(prevTracks => {
+            const newTracks = [];
+            const updatedTracks = [...prevTracks];
+            let needsUpdate = false;
+
+            // Find max ID from existing tracks to ensure unique IDs
+            let maxId = prevTracks.reduce((max, t) => Math.max(max, t.id), 0);
+
+            datalinkAssets.forEach(asset => {
+                // Check if a student track already exists for this asset
+                const existingTrackIndex = updatedTracks.findIndex(t => t.assetId === asset.id);
+
+                if (existingTrackIndex === -1) {
+                    // Create a new student track immediately (no radar detection required)
+                    maxId++;
+                    const newTrack = {
+                        id: maxId,
+                        assetId: asset.id,
+                        lat: asset.lat,
+                        lon: asset.lon,
+                        domain: asset.domain,
+                        identity: 'friendly', // Datalink assets are automatically friendly
+                        label: asset.studentLabel || '',
+                        trackNumber: asset.datalinkJU, // Use JU as track number
+                        isAged: false,
+                        lastDetectionTime: missionTime,
+                        creationTime: missionTime,
+                        estimatedHeading: asset.heading || 0,
+                        estimatedSpeed: asset.speed || 0,
+                        lastKnownLat: asset.lat,
+                        lastKnownLon: asset.lon,
+                        iffModeI: asset.iffSquawking ? asset.iffModeI : '',
+                        iffModeII: asset.iffSquawking ? asset.iffModeII : '',
+                        iffModeIII: asset.iffSquawking ? asset.iffModeIII : '',
+                        datalinkJU: asset.datalinkJU,
+                        datalinkActive: true // Mark as datalink-created track
+                    };
+                    newTracks.push(newTrack);
+                    needsUpdate = true;
+                } else if (!updatedTracks[existingTrackIndex].datalinkActive) {
+                    // Track exists but wasn't marked as datalink - update it
+                    updatedTracks[existingTrackIndex] = {
+                        ...updatedTracks[existingTrackIndex],
+                        identity: 'friendly',
+                        trackNumber: asset.datalinkJU,
+                        datalinkJU: asset.datalinkJU,
+                        datalinkActive: true
+                    };
+                    needsUpdate = true;
+                }
+            });
+
+            if (!needsUpdate && newTracks.length === 0) {
+                return prevTracks; // No changes
+            }
+
+            // Update nextStudentTrackId if we added tracks
+            if (newTracks.length > 0) {
+                setNextStudentTrackId(maxId + 1);
+                setTrackAgingTimers(prev => {
+                    const newTimers = { ...prev };
+                    newTracks.forEach(track => {
+                        newTimers[track.id] = 0;
+                    });
+                    return newTimers;
+                });
+            }
+
+            return [...updatedTracks, ...newTracks];
+        });
+    }, [simulatorMode, datalinkEnabled, datalinkNet, assets, missionTime]);
+
+    // STUDENT MODE: Update datalink-active tracks with real-time asset position
+    useEffect(() => {
+        if (simulatorMode !== 'student' || !isRunning) return;
+
+        // Update all datalink-active tracks with actual asset positions
+        const datalinkTracks = studentTracks.filter(t => t.datalinkActive);
+        if (datalinkTracks.length === 0) return;
+
+        let hasUpdates = false;
+        const updatedTracks = studentTracks.map(track => {
+            if (!track.datalinkActive) return track;
+
+            const asset = assets.find(a => a.id === track.assetId);
+            if (!asset) return track;
+
+            // Check if position has changed
+            if (Math.abs(asset.lat - track.lat) > 0.0001 ||
+                Math.abs(asset.lon - track.lon) > 0.0001 ||
+                Math.abs((asset.heading || 0) - track.estimatedHeading) > 0.1 ||
+                Math.abs((asset.speed || 0) - track.estimatedSpeed) > 0.1) {
+                hasUpdates = true;
+                return {
+                    ...track,
+                    lat: asset.lat,
+                    lon: asset.lon,
+                    estimatedHeading: asset.heading || 0,
+                    estimatedSpeed: asset.speed || 0,
+                    lastDetectionTime: missionTime
+                };
+            }
+            return track;
+        });
+
+        if (hasUpdates) {
+            setStudentTracks(updatedTracks);
+        }
+    }, [simulatorMode, isRunning, assets, studentTracks, missionTime]);
+
+    // STUDENT MODE: Immediate position sync when assets are moved (dragged)
+    // This ensures tracks update immediately when instructor drags assets, even when paused
+    useEffect(() => {
+        if (simulatorMode !== 'student') return;
+
+        // Update all non-operator tracks to match their underlying asset positions
+        setStudentTracks(prevTracks => {
+            let hasChanges = false;
+            const updatedTracks = prevTracks.map(track => {
+                // Skip operator tracks - they don't have underlying assets
+                if (track.isOperatorTrack) return track;
+
+                const asset = assets.find(a => a.id === track.assetId);
+                if (!asset) return track;
+
+                // Check if position has significantly changed
+                const positionChanged = (
+                    Math.abs(asset.lat - track.lat) > 0.0001 ||
+                    Math.abs(asset.lon - track.lon) > 0.0001
+                );
+
+                if (positionChanged) {
+                    hasChanges = true;
+                    return {
+                        ...track,
+                        lat: asset.lat,
+                        lon: asset.lon,
+                        estimatedHeading: asset.heading || track.estimatedHeading,
+                        estimatedSpeed: asset.speed || track.estimatedSpeed,
+                        lastKnownLat: asset.lat,
+                        lastKnownLon: asset.lon
+                    };
+                }
+                return track;
+            });
+
+            return hasChanges ? updatedTracks : prevTracks;
+        });
+    }, [simulatorMode, assets]);
+
+    // ========================================================================
     // ESM SYSTEM - Detect active emitters
     // ========================================================================
 
@@ -2802,7 +3133,8 @@ function AICSimulator() {
         const platform = assetData.platform || null;
 
         // Set default values based on domain and platform
-        let speed = assetData.speed !== undefined ? assetData.speed : (domain === 'air' ? 350 : 15);
+        // Default speed to 0 for all assets to support realistic threat presentations (e.g., aircraft launching from airfields)
+        let speed = assetData.speed !== undefined ? assetData.speed : 0;
         let altitude = assetData.altitude !== undefined ? assetData.altitude : (domain === 'air' ? 25000 : 0);
         let depth = assetData.depth !== undefined ? assetData.depth : (domain === 'subSurface' ? 50 : null);
 
@@ -2963,6 +3295,63 @@ function AICSimulator() {
         setStudentTracks(prev => prev.map(t => t.id === trackId ? { ...t, ...updates } : t));
     }, []);
 
+    // Create an operator track (manually created by user, not from radar)
+    const createOperatorTrack = useCallback((data) => {
+        const newTrack = {
+            id: nextStudentTrackId,
+            assetId: null,                    // NO underlying asset - this is operator-created
+            isOperatorTrack: true,            // Flag to identify operator tracks
+            lat: data.lat,
+            lon: data.lon,
+            domain: data.domain,
+            identity: 'unknownUnevaluated',   // Default orange
+            label: '',
+            trackNumber: null,
+            isAged: false,
+            lastDetectionTime: missionTime,
+            creationTime: missionTime,
+            estimatedHeading: 360,            // Default heading (north)
+            estimatedSpeed: 0,                // Default speed (stationary)
+            altitude: 0,                      // Default altitude (for air)
+            depth: 0,                         // Default depth (for subsurface)
+            lastKnownLat: data.lat,
+            lastKnownLon: data.lon,
+            iffModeI: '',
+            iffModeII: '',
+            iffModeIII: '',
+            datalinkJU: ''
+        };
+
+        setStudentTracks(prev => [...prev, newTrack]);
+        setNextStudentTrackId(prev => prev + 1);
+        // Don't set aging timer for operator tracks - they don't age from lack of radar
+    }, [nextStudentTrackId, missionTime]);
+
+    // Fuse an operator track with a radar-generated track
+    const fuseTrack = useCallback((operatorTrackId, radarTrackId) => {
+        const operatorTrack = studentTracks.find(t => t.id === operatorTrackId);
+        const radarTrack = studentTracks.find(t => t.id === radarTrackId);
+
+        if (!operatorTrack || !radarTrack) return;
+
+        // Update radar track with operator track's label and identity
+        // Keep radar track's position, heading, speed, altitude (from radar/asset)
+        setStudentTracks(prev => prev.map(t => {
+            if (t.id === radarTrackId) {
+                return {
+                    ...t,
+                    label: operatorTrack.label,
+                    identity: operatorTrack.identity,
+                    fusedFromOperatorTrack: operatorTrackId
+                };
+            }
+            return t;
+        }).filter(t => t.id !== operatorTrackId)); // Also delete the operator track
+
+        // Select the fused track
+        setSelectedTrackId(radarTrackId);
+    }, [studentTracks]);
+
     const deleteStudentTrack = useCallback((trackId) => {
         setStudentTracks(prev => prev.filter(t => t.id !== trackId));
         setTrackAgingTimers(prev => {
@@ -2988,19 +3377,19 @@ function AICSimulator() {
         const datalinkActive = datalinkEnabled && datalinkNet && datalinkJU.length === 5 &&
                                datalinkTrackBlockStart && datalinkTrackBlockEnd;
         if (!datalinkActive) {
-            alert('Datalink must be powered on with NET, JU, and Track Block configured');
+            setAlertMessage('Datalink must be powered on with NET, JU, and Track Block configured');
             return;
         }
 
         // Check track block availability
         if (nextDatalinkTrackNumber === null) {
-            alert('Track block start must be configured');
+            setAlertMessage('Track block start must be configured');
             return;
         }
 
         const trackBlockEnd = parseInt(datalinkTrackBlockEnd);
         if (nextDatalinkTrackNumber > trackBlockEnd) {
-            alert('Track block exhausted. No more tracks available.');
+            setAlertMessage('Track block exhausted. No more tracks available.');
             return;
         }
 
@@ -3319,7 +3708,7 @@ function AICSimulator() {
                                datalinkTrackBlockEnd;
 
         if (!datalinkActive) {
-            alert('Datalink must be powered on with NET, JU, and Track Block configured');
+            setAlertMessage('Datalink must be powered on with NET, JU, and Track Block configured');
             return;
         }
 
@@ -3334,13 +3723,13 @@ function AICSimulator() {
 
         // Check if we have tracks available in the block
         if (nextDatalinkTrackNumber === null) {
-            alert('Track block start must be configured');
+            setAlertMessage('Track block start must be configured');
             return;
         }
 
         const trackBlockEnd = parseInt(datalinkTrackBlockEnd);
         if (nextDatalinkTrackNumber > trackBlockEnd) {
-            alert('Track block exhausted. No more tracks available.');
+            setAlertMessage('Track block exhausted. No more tracks available.');
             return;
         }
 
@@ -3371,6 +3760,11 @@ function AICSimulator() {
             let updates = { waypoints: newWaypoints, nextWaypointId };
             if (newWaypoints.length === 1 || isFirst) {
                 updates.targetHeading = calculateBearing(asset.lat, asset.lon, lat, lon);
+            }
+
+            // Exit orbit mode when new waypoint is added
+            if (asset.isOrbiting) {
+                updates.isOrbiting = false;
             }
 
             return { ...asset, ...updates };
@@ -3425,10 +3819,67 @@ function AICSimulator() {
                     ...asset,
                     waypoints: [],
                     nextWaypointId: 0, // Reset waypoint ID counter for fresh start
-                    targetHeading: null // Reset heading to manual control
+                    targetHeading: null, // Reset heading to manual control
+                    isOrbiting: false // Exit orbit mode
                 };
             }
             return asset;
+        }));
+    }, []);
+
+    const wrapWaypoint = useCallback((assetId, waypointIndex) => {
+        setAssets(prev => prev.map(asset => {
+            if (asset.id !== assetId) return asset;
+            if (waypointIndex < 1) return asset; // Can't wrap first waypoint
+
+            const newWaypoints = asset.waypoints.map((wp, idx) =>
+                idx === waypointIndex ? { ...wp, wrappedWithPrevious: true } : wp
+            );
+
+            return { ...asset, waypoints: newWaypoints };
+        }));
+    }, []);
+
+    const unwrapWaypoint = useCallback((assetId, waypointIndex) => {
+        setAssets(prev => prev.map(asset => {
+            if (asset.id !== assetId) return asset;
+
+            const newWaypoints = asset.waypoints.map((wp, idx) =>
+                idx === waypointIndex ? { ...wp, wrappedWithPrevious: false } : wp
+            );
+
+            return { ...asset, waypoints: newWaypoints };
+        }));
+    }, []);
+
+    const addOrbitPoint = useCallback((assetId, lat, lon) => {
+        setAssets(prev => prev.map(asset => {
+            if (asset.id !== assetId) return asset;
+
+            // Only air domain can orbit
+            if (asset.domain !== 'air') {
+                return asset;
+            }
+
+            // Generate unique ID for orbit point
+            const nextWaypointId = (asset.nextWaypointId || 0) + 1;
+
+            const orbitPoint = {
+                id: nextWaypointId,
+                lat: lat,
+                lon: lon,
+                reached: false,
+                isOrbitPoint: true
+            };
+
+            // Replace all waypoints with single orbit point (like "Go To")
+            return {
+                ...asset,
+                waypoints: [orbitPoint],
+                nextWaypointId: nextWaypointId,
+                targetHeading: calculateBearing(asset.lat, asset.lon, lat, lon),
+                isOrbiting: false  // Will be set true when orbit point reached
+            };
         }));
     }, []);
 
@@ -3702,8 +4153,11 @@ function AICSimulator() {
     // ========================================================================
 
     const saveToLocalStorage = useCallback((name) => {
+        // NOTE: Mission products are excluded from localStorage saves due to size limits
+        // localStorage typically has a 5-10MB limit per domain
+        // Use "Save to File" to include mission products in the scenario
         const saveData = {
-            version: '1.1', // Increment version for student/instructor mode
+            version: '1.2', // Increment version for mission products
             timestamp: new Date().toISOString(),
             assets,
             bullseye: bullseyePosition,
@@ -3732,15 +4186,28 @@ function AICSimulator() {
             detectionThresholds,
             trackAgingTimers,
             nextStudentTrackId
+            // missionProducts excluded - too large for localStorage
         };
 
-        localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
-        alert(`Scenario saved to application: ${name}`);
-    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType, simulatorMode, studentTracks, radarDetectionCounts, detectionThresholds, trackAgingTimers, nextStudentTrackId]);
+        try {
+            localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
+            if (missionProducts && missionProducts.length > 0) {
+                alert(`Scenario saved to application: ${name}\n\nNote: Mission products are not included in application saves due to browser storage limits. Use "Save to File" to include mission products.`);
+            } else {
+                alert(`Scenario saved to application: ${name}`);
+            }
+        } catch (e) {
+            if (e.name === 'QuotaExceededError') {
+                alert('Failed to save: Browser storage quota exceeded.\n\nTry:\n1. Deleting old saved scenarios\n2. Using "Save to File" instead');
+            } else {
+                alert(`Failed to save scenario: ${e.message}`);
+            }
+        }
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType, simulatorMode, studentTracks, radarDetectionCounts, detectionThresholds, trackAgingTimers, nextStudentTrackId, missionProducts]);
 
     const saveToFile = useCallback((name) => {
         const saveData = {
-            version: '1.1', // Increment version for student/instructor mode
+            version: '1.2', // Increment version for mission products
             timestamp: new Date().toISOString(),
             assets,
             bullseye: bullseyePosition,
@@ -3768,22 +4235,36 @@ function AICSimulator() {
             radarDetectionCounts,
             detectionThresholds,
             trackAgingTimers,
-            nextStudentTrackId
+            nextStudentTrackId,
+            missionProducts
         };
 
-        const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${name}-${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType, simulatorMode, studentTracks, radarDetectionCounts, detectionThresholds, trackAgingTimers, nextStudentTrackId]);
+        try {
+            const jsonString = JSON.stringify(saveData, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${name}-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Save error:', error);
+            alert('Failed to save scenario: ' + error.message);
+        }
+    }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType, simulatorMode, studentTracks, radarDetectionCounts, detectionThresholds, trackAgingTimers, nextStudentTrackId, missionProducts]);
 
     const loadFromLocalStorage = useCallback((name) => {
-        const data = localStorage.getItem(`aic-scenario-${name}`);
-        if (data) {
-            const saveData = JSON.parse(data);
+        setIsLoading(true);
+        setLoadingMessage('Loading scenario...');
+
+        // Use setTimeout to allow loading screen to render before processing
+        setTimeout(() => {
+            const data = localStorage.getItem(`aic-scenario-${name}`);
+            if (data) {
+                const saveData = JSON.parse(data);
 
             // Ensure ownship is always present
             let loadedAssets = saveData.assets || [];
@@ -3844,7 +4325,7 @@ function AICSimulator() {
                     lat: loadedBullseye.lat - (50 / 60),
                     lon: loadedBullseye.lon,
                     heading: 0,
-                    speed: 150,
+                    speed: 0,
                     altitude: 15000,
                     depth: null,
                     targetHeading: null,
@@ -3896,6 +4377,17 @@ function AICSimulator() {
             setNextStudentTrackId(saveData.nextStudentTrackId || 1);
             setSelectedTrackId(null);
 
+            // Load mission products (with backward compatibility)
+            setMissionProducts(saveData.missionProducts || []);
+
+            // Reset datalink settings (not saved in scenario)
+            setDatalinkEnabled(false);
+            setDatalinkNet('');
+            setDatalinkJU('');
+            setDatalinkTrackBlockStart('');
+            setDatalinkTrackBlockEnd('');
+            setNextDatalinkTrackNumber(null);
+
             // Find max asset ID
             const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
             setNextAssetId(maxId + 1);
@@ -3916,12 +4408,17 @@ function AICSimulator() {
                 sonobuoyCount: saveData.sonobuoyCount !== undefined ? saveData.sonobuoyCount : 30,
                 nextSonobuoyId: saveData.nextSonobuoyId || 1
             });
-        }
+            }
+            setIsLoading(false);
+        }, 50);
     }, []);
 
     const loadFromFile = useCallback((event) => {
         const file = event.target.files[0];
         if (file) {
+            setIsLoading(true);
+            setLoadingMessage('Loading scenario...');
+
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
@@ -3986,7 +4483,7 @@ function AICSimulator() {
                             lat: loadedBullseye.lat - (50 / 60),
                             lon: loadedBullseye.lon,
                             heading: 0,
-                            speed: 150,
+                            speed: 0,
                             altitude: 15000,
                             depth: null,
                             targetHeading: null,
@@ -4038,6 +4535,17 @@ function AICSimulator() {
                     setNextStudentTrackId(saveData.nextStudentTrackId || 1);
                     setSelectedTrackId(null);
 
+                    // Load mission products (with backward compatibility)
+                    setMissionProducts(saveData.missionProducts || []);
+
+                    // Reset datalink settings (not saved in scenario)
+                    setDatalinkEnabled(false);
+                    setDatalinkNet('');
+                    setDatalinkJU('');
+                    setDatalinkTrackBlockStart('');
+                    setDatalinkTrackBlockEnd('');
+                    setNextDatalinkTrackNumber(null);
+
                     const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
                     setNextAssetId(maxId + 1);
 
@@ -4058,10 +4566,16 @@ function AICSimulator() {
                         nextSonobuoyId: saveData.nextSonobuoyId || 1
                     });
 
+                    setIsLoading(false);
                     alert('Scenario loaded successfully!');
                 } catch (error) {
+                    setIsLoading(false);
                     alert('Failed to load scenario: Invalid file format');
                 }
+            };
+            reader.onerror = () => {
+                setIsLoading(false);
+                alert('Failed to read file');
             };
             reader.readAsText(file);
         }
@@ -4073,27 +4587,42 @@ function AICSimulator() {
 
     const restartSimulation = useCallback(() => {
         if (initialScenario) {
-            // Restart to loaded scenario
-            setAssets(JSON.parse(JSON.stringify(initialScenario.assets)));
-            setScale(initialScenario.scale);
-            setMapCenter(initialScenario.mapCenter);
-            setTempMark(initialScenario.tempMark);
-            setNextTrackNumber(initialScenario.nextTrackNumber);
-            setNextAssetId(initialScenario.nextAssetId);
-            setGeoPoints(JSON.parse(JSON.stringify(initialScenario.geoPoints || [])));
-            setNextGeoPointId(initialScenario.nextGeoPointId || 1);
-            setShapes(JSON.parse(JSON.stringify(initialScenario.shapes || [])));
-            setNextShapeId(initialScenario.nextShapeId || 1);
-            setSonobuoys(JSON.parse(JSON.stringify(initialScenario.sonobuoys || [])));
-            setSonobuoyCount(initialScenario.sonobuoyCount !== undefined ? initialScenario.sonobuoyCount : 30);
-            setNextSonobuoyId(initialScenario.nextSonobuoyId || 1);
-            setSelectedAssetId(null);
-            setSelectedGeoPointId(null);
-            setSelectedShapeId(null);
-            setIsRunning(false);
-            setMissionTime(0);
-            setRadarReturns([]);
-            setRadarSweepAngle(0);
+            setIsLoading(true);
+            setLoadingMessage('Restarting scenario...');
+
+            setTimeout(() => {
+                // Restart to loaded scenario
+                setAssets(JSON.parse(JSON.stringify(initialScenario.assets)));
+                setScale(initialScenario.scale);
+                setMapCenter(initialScenario.mapCenter);
+                setTempMark(initialScenario.tempMark);
+                setNextTrackNumber(initialScenario.nextTrackNumber);
+                setNextAssetId(initialScenario.nextAssetId);
+                setGeoPoints(JSON.parse(JSON.stringify(initialScenario.geoPoints || [])));
+                setNextGeoPointId(initialScenario.nextGeoPointId || 1);
+                setShapes(JSON.parse(JSON.stringify(initialScenario.shapes || [])));
+                setNextShapeId(initialScenario.nextShapeId || 1);
+                setSonobuoys(JSON.parse(JSON.stringify(initialScenario.sonobuoys || [])));
+                setSonobuoyCount(initialScenario.sonobuoyCount !== undefined ? initialScenario.sonobuoyCount : 30);
+                setNextSonobuoyId(initialScenario.nextSonobuoyId || 1);
+                setSelectedAssetId(null);
+                setSelectedGeoPointId(null);
+                setSelectedShapeId(null);
+                setIsRunning(false);
+                setMissionTime(0);
+                setRadarReturns([]);
+                setRadarSweepAngle(0);
+
+                // Reset datalink settings
+                setDatalinkEnabled(false);
+                setDatalinkNet('');
+                setDatalinkJU('');
+                setDatalinkTrackBlockStart('');
+                setDatalinkTrackBlockEnd('');
+                setNextDatalinkTrackNumber(null);
+
+                setIsLoading(false);
+            }, 50);
         } else {
             // No scenario loaded, do a full page reload
             window.location.reload();
@@ -4325,7 +4854,8 @@ function AICSimulator() {
                         y: e.clientY,
                         type: 'waypoint',
                         assetId: asset.id,
-                        waypointIndex: i
+                        waypointIndex: i,
+                        isWrapped: wp.wrappedWithPrevious || false
                     });
                     return;
                 }
@@ -4390,9 +4920,36 @@ function AICSimulator() {
         }
 
         // Context menu for asset, track (student mode), or empty space
-        // In student mode, check if a track is selected
+        // In student mode, check if an operator track is selected and user is clicking on a radar track
         if (simulatorMode === 'student' && selectedTrackId) {
             const selectedTrack = studentTracks.find(t => t.id === selectedTrackId);
+
+            // If operator track is selected, check if clicking on a radar track for fusion
+            if (selectedTrack && selectedTrack.isOperatorTrack) {
+                // Find clicked track (not the selected one)
+                for (const track of studentTracks) {
+                    if (track.id === selectedTrackId) continue; // Skip selected track
+                    if (track.isOperatorTrack) continue; // Can only fuse with radar tracks
+
+                    const pos = latLonToScreen(track.lat, track.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                    const dist = Math.sqrt((x - pos.x) ** 2 + (y - pos.y) ** 2);
+                    if (dist < 15) {
+                        // Show fuse track context menu
+                        setContextMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            type: 'fuseTrack',
+                            operatorTrackId: selectedTrackId,
+                            radarTrackId: track.id,
+                            lat: latLon.lat,
+                            lon: latLon.lon
+                        });
+                        return;
+                    }
+                }
+            }
+
+            // Regular track context menu (for non-operator tracks or when not clicking on another track)
             if (selectedTrack) {
                 setContextMenu({
                     x: e.clientX,
@@ -4501,6 +5058,17 @@ function AICSimulator() {
             return;
         }
 
+        // Handle operator track dragging (student mode)
+        if (draggedOperatorTrackId !== null) {
+            updateStudentTrack(draggedOperatorTrackId, {
+                lat: latLon.lat,
+                lon: latLon.lon,
+                lastKnownLat: latLon.lat,
+                lastKnownLon: latLon.lon
+            });
+            return;
+        }
+
         // Handle map dragging
         if (isDragging && dragStart) {
             const dx = e.clientX - dragStart.x;
@@ -4526,7 +5094,7 @@ function AICSimulator() {
         if (draggedWaypoint !== null) {
             moveWaypoint(draggedWaypoint.assetId, draggedWaypoint.wpIndex, latLon.lat, latLon.lon);
         }
-    }, [mapCenter, scale, isDragging, dragStart, draggedWaypoint, draggedAssetId, draggedGeoPointId, draggedShapeId, draggedShapePointIndex, draggedBullseye, assets, shapes, moveWaypoint, updateAsset, updateGeoPoint, updateShape, setBullseyePosition, setBullseyeLatInput, setBullseyeLonInput]);
+    }, [mapCenter, scale, isDragging, dragStart, draggedWaypoint, draggedAssetId, draggedGeoPointId, draggedShapeId, draggedShapePointIndex, draggedBullseye, draggedOperatorTrackId, assets, shapes, moveWaypoint, updateAsset, updateGeoPoint, updateShape, updateStudentTrack, setBullseyePosition, setBullseyeLatInput, setBullseyeLonInput]);
 
     const handleMouseDown = useCallback((e) => {
         if (e.button !== 0) return; // Only left click
@@ -4632,6 +5200,11 @@ function AICSimulator() {
                 const trackPos = latLonToScreen(track.lat, track.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
                 const dist = Math.sqrt((x - trackPos.x) ** 2 + (y - trackPos.y) ** 2);
                 if (dist < 15) {
+                    // Check if this is an already-selected operator track (enable dragging)
+                    if (selectedTrackId === track.id && track.isOperatorTrack) {
+                        setDraggedOperatorTrackId(track.id);
+                        return;
+                    }
                     setSelectedTrackId(track.id);
                     setSelectedAssetId(null);
                     setSelectedGeoPointId(null);
@@ -4705,7 +5278,7 @@ function AICSimulator() {
                 centerLon: mapCenter.lon
             });
         }
-    }, [assets, geoPoints, shapes, selectedAsset, selectedGeoPointId, selectedShapeId, bullseyeSelected, bullseyePosition, mapCenter, scale, simulatorMode, studentTracks, setBullseyeSelected, setSelectedAssetId, setSelectedGeoPointId, setSelectedShapeId, setRadarControlsSelected, setEsmControlsSelected, setIffControlsSelected, setTempMark, setDraggedBullseye, setDraggedShapeId, setDraggedShapePointIndex, setDraggedGeoPointId, setDraggedWaypoint, setDraggedAssetId, setIsDragging, setDragStart, setSelectedTrackId, setSelectedAssetTab]);
+    }, [assets, geoPoints, shapes, selectedAsset, selectedGeoPointId, selectedShapeId, bullseyeSelected, bullseyePosition, mapCenter, scale, simulatorMode, studentTracks, selectedTrackId, setBullseyeSelected, setSelectedAssetId, setSelectedGeoPointId, setSelectedShapeId, setRadarControlsSelected, setEsmControlsSelected, setIffControlsSelected, setTempMark, setDraggedBullseye, setDraggedShapeId, setDraggedShapePointIndex, setDraggedGeoPointId, setDraggedWaypoint, setDraggedAssetId, setIsDragging, setDragStart, setSelectedTrackId, setSelectedAssetTab, setDraggedOperatorTrackId]);
 
     const handleMouseUp = useCallback(() => {
         setIsDragging(false);
@@ -4716,6 +5289,7 @@ function AICSimulator() {
         setDraggedShapeId(null);
         setDraggedShapePointIndex(null);
         setDraggedBullseye(false);
+        setDraggedOperatorTrackId(null);
     }, []);
 
     const handleWheel = useCallback((e) => {
@@ -5600,6 +6174,11 @@ function AICSimulator() {
         const size = 12; // Consistent size for all assets
         const strokeWidth = 2;
 
+        // INSTRUCTOR MODE: Use grey color for hidden assets to indicate they're not visible to students
+        const assetColor = (simulatorMode === 'instructor' && asset.hidden && asset.type !== 'ownship')
+            ? '#808080' // Grey for hidden assets
+            : config.color;
+
         // Heading line
         const headingLength = 30;
         const headingRad = asset.heading * Math.PI / 180;
@@ -5617,7 +6196,7 @@ function AICSimulator() {
                             cy={pos.y}
                             r={22}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth="1.5"
                             opacity="0.4"
                         />
@@ -5627,7 +6206,7 @@ function AICSimulator() {
                             cy={pos.y}
                             r={20}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth="2.5"
                             strokeDasharray="4,3"
                             opacity="0.9"
@@ -5648,7 +6227,7 @@ function AICSimulator() {
                             cy={pos.y}
                             r={18}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth="1"
                             opacity="0.3"
                         />
@@ -5658,7 +6237,7 @@ function AICSimulator() {
                 {/* Heading line - hide for land domain (stationary) */}
                 {asset.domain !== 'land' && (
                     <line x1={pos.x} y1={pos.y} x2={headingX} y2={headingY}
-                          stroke={config.color} strokeWidth="2" />
+                          stroke={assetColor} strokeWidth="2" />
                 )}
 
                 {/* Asset symbol - MIL-STD-2525 symbology based on domain */}
@@ -5669,7 +6248,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x - size} ${pos.y} A ${size} ${size} 0 0 1 ${pos.x + size} ${pos.y}`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     ) : config.shape === 'diamond' ? (
@@ -5677,7 +6256,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x - size} ${pos.y} L ${pos.x} ${pos.y - size} L ${pos.x + size} ${pos.y}`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     ) : config.shape === 'ownship' ? (
@@ -5688,7 +6267,7 @@ function AICSimulator() {
                                 cy={pos.y}
                                 r={size}
                                 fill="none"
-                                stroke={config.color}
+                                stroke={assetColor}
                                 strokeWidth={strokeWidth}
                             />
                             <line
@@ -5696,7 +6275,7 @@ function AICSimulator() {
                                 y1={pos.y}
                                 x2={pos.x + size}
                                 y2={pos.y}
-                                stroke={config.color}
+                                stroke={assetColor}
                                 strokeWidth={strokeWidth}
                             />
                             <line
@@ -5704,7 +6283,7 @@ function AICSimulator() {
                                 y1={pos.y - size}
                                 x2={pos.x}
                                 y2={pos.y + size}
-                                stroke={config.color}
+                                stroke={assetColor}
                                 strokeWidth={strokeWidth}
                             />
                         </g>
@@ -5713,7 +6292,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x - size} ${pos.y} L ${pos.x - size} ${pos.y - size} L ${pos.x + size} ${pos.y - size} L ${pos.x + size} ${pos.y}`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     )
@@ -5726,7 +6305,7 @@ function AICSimulator() {
                             cy={pos.y}
                             r={size}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     ) : config.shape === 'diamond' ? (
@@ -5734,7 +6313,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x} ${pos.y - size} L ${pos.x + size} ${pos.y} L ${pos.x} ${pos.y + size} L ${pos.x - size} ${pos.y} Z`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     ) : (
@@ -5745,7 +6324,7 @@ function AICSimulator() {
                             width={size * 2}
                             height={size * 2}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     )
@@ -5756,7 +6335,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x + size} ${pos.y} A ${size} ${size} 0 0 1 ${pos.x - size} ${pos.y}`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     ) : config.shape === 'diamond' ? (
@@ -5764,7 +6343,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x - size} ${pos.y} L ${pos.x} ${pos.y + size} L ${pos.x + size} ${pos.y}`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     ) : (
@@ -5772,7 +6351,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x - size} ${pos.y} L ${pos.x - size} ${pos.y + size} L ${pos.x + size} ${pos.y + size} L ${pos.x + size} ${pos.y}`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     )
@@ -5782,13 +6361,13 @@ function AICSimulator() {
                     <path
                         d={`M ${pos.x - size} ${pos.y - size * 0.3} L ${pos.x - size * 0.3} ${pos.y - size} L ${pos.x + size * 0.3} ${pos.y - size} L ${pos.x + size} ${pos.y - size * 0.3} L ${pos.x + size} ${pos.y + size} L ${pos.x - size} ${pos.y + size} Z`}
                         fill="none"
-                        stroke={config.color}
+                        stroke={assetColor}
                         strokeWidth={strokeWidth}
                     />
                 ) : null}
 
                 {/* Name label above */}
-                <text x={pos.x} y={pos.y-size-5} fill={config.color} fontSize="10"
+                <text x={pos.x} y={pos.y-size-5} fill={assetColor} fontSize="10"
                       textAnchor="middle" fontWeight="700">
                     {asset.name}
                 </text>
@@ -5802,7 +6381,7 @@ function AICSimulator() {
                     // Track number
                     if (asset.trackNumber) {
                         labels.push(
-                            <text key="tn" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                            <text key="tn" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
                                   textAnchor="middle" fontWeight="700">
                                 TN#{asset.trackNumber}
                             </text>
@@ -5814,7 +6393,7 @@ function AICSimulator() {
                     if (asset.iffSquawking) {
                         if (asset.iffModeI) {
                             labels.push(
-                                <text key="m1" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                <text key="m1" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
                                       textAnchor="middle" fontWeight="700">
                                     M1: {asset.iffModeI}
                                 </text>
@@ -5823,7 +6402,7 @@ function AICSimulator() {
                         }
                         if (asset.iffModeII) {
                             labels.push(
-                                <text key="m2" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                <text key="m2" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
                                       textAnchor="middle" fontWeight="700">
                                     M2: {asset.iffModeII}
                                 </text>
@@ -5832,7 +6411,7 @@ function AICSimulator() {
                         }
                         if (asset.iffModeIII) {
                             labels.push(
-                                <text key="m3" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                <text key="m3" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
                                       textAnchor="middle" fontWeight="700">
                                     M3: {asset.iffModeIII}
                                 </text>
@@ -5844,14 +6423,14 @@ function AICSimulator() {
                     // Altitude / Depth - always shown
                     if (asset.domain === 'air') {
                         labels.push(
-                            <text key="alt" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                            <text key="alt" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
                                   textAnchor="middle" fontWeight="700">
                                 ALT: FL{Math.round(asset.altitude/100)}
                             </text>
                         );
                     } else if (asset.domain === 'subSurface' && asset.depth !== null) {
                         labels.push(
-                            <text key="depth" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                            <text key="depth" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
                                   textAnchor="middle" fontWeight="700">
                                 DEPTH: {Math.round(asset.depth)}ft
                             </text>
@@ -5861,37 +6440,62 @@ function AICSimulator() {
                     return <g>{labels}</g>;
                 })()}
 
-                {/* Waypoints - filter out reached waypoints */}
-                {asset.waypoints
-                    .filter(wp => !wp.reached) // Only render unreached waypoints
-                    .map((wp, i) => {
+                {/* Waypoints - filter out reached waypoints, but keep wrapped waypoint pairs visible */}
+                {(() => {
+                    // Determine which waypoints to show:
+                    // - Unreached waypoints
+                    // - Waypoints that are part of a wrap pair (either has wrappedWithPrevious or next has it)
+                    const visibleWaypoints = asset.waypoints.filter((wp, idx) => {
+                        if (!wp.reached) return true; // Always show unreached
+                        if (wp.wrappedWithPrevious) return true; // Show wrapped waypoint even if reached
+                        // Check if next waypoint is wrapped with this one
+                        const nextWp = asset.waypoints[idx + 1];
+                        if (nextWp && nextWp.wrappedWithPrevious) return true;
+                        return false;
+                    });
+
+                    return visibleWaypoints.map((wp, i) => {
                         const wpPos = latLonToScreen(wp.lat, wp.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
 
                         // Calculate previous position for line drawing
-                        const unreachedWaypoints = asset.waypoints.filter(w => !w.reached);
                         const prevPos = i === 0 ? pos : latLonToScreen(
-                            unreachedWaypoints[i-1].lat,
-                            unreachedWaypoints[i-1].lon,
+                            visibleWaypoints[i-1].lat,
+                            visibleWaypoints[i-1].lon,
                             mapCenter.lat, mapCenter.lon, scale, width, height
                         );
 
                         return (
                             <g key={wp.id}> {/* Use waypoint ID as key */}
                                 <line x1={prevPos.x} y1={prevPos.y} x2={wpPos.x} y2={wpPos.y}
-                                      stroke={config.color} strokeWidth="1" strokeDasharray="5,5" />
-                                <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
-                                    <line x1={-6} y1={0} x2={6} y2={0} stroke={config.color} strokeWidth="2" />
-                                    <line x1={0} y1={-6} x2={0} y2={6} stroke={config.color} strokeWidth="2" />
-                                </g>
-                                {/* Waypoint label using ID to preserve numbering */}
-                                <text x={wpPos.x} y={wpPos.y-10} fill={config.color} fontSize="8"
+                                      stroke={assetColor} strokeWidth={wp.wrappedWithPrevious ? "2" : "1"}
+                                      strokeDasharray={wp.wrappedWithPrevious ? "none" : "5,5"} />
+                                {wp.isOrbitPoint ? (
+                                    /* Orbit point: Circle symbol */
+                                    <circle
+                                        cx={wpPos.x}
+                                        cy={wpPos.y}
+                                        r={8}
+                                        fill="none"
+                                        stroke={assetColor}
+                                        strokeWidth="2"
+                                        strokeDasharray={asset.isOrbiting ? "none" : "3,3"}
+                                    />
+                                ) : (
+                                    /* Regular waypoint: X symbol */
+                                    <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
+                                        <line x1={-6} y1={0} x2={6} y2={0} stroke={assetColor} strokeWidth="2" />
+                                        <line x1={0} y1={-6} x2={0} y2={6} stroke={assetColor} strokeWidth="2" />
+                                    </g>
+                                )}
+                                {/* Waypoint label - ORBIT for orbit points, WP# for regular */}
+                                <text x={wpPos.x} y={wpPos.y-10} fill={assetColor} fontSize="8"
                                       textAnchor="middle" fontWeight="700">
-                                    WP{wp.id}
+                                    {wp.isOrbitPoint ? 'ORBIT' : `WP${wp.id}`}
                                 </text>
                             </g>
                         );
-                    })
-                }
+                    });
+                })()}
             </g>
         );
     };
@@ -6142,36 +6746,61 @@ function AICSimulator() {
                 })()}
 
                 {/* Waypoints - only show for friendly tracks and get from underlying asset */}
-                {track.identity === 'friendly' && asset && asset.waypoints && asset.waypoints
-                    .filter(wp => !wp.reached) // Only render unreached waypoints
-                    .map((wp, i) => {
+                {track.identity === 'friendly' && asset && asset.waypoints && (() => {
+                    // Determine which waypoints to show:
+                    // - Unreached waypoints
+                    // - Waypoints that are part of a wrap pair (either has wrappedWithPrevious or next has it)
+                    const visibleWaypoints = asset.waypoints.filter((wp, idx) => {
+                        if (!wp.reached) return true; // Always show unreached
+                        if (wp.wrappedWithPrevious) return true; // Show wrapped waypoint even if reached
+                        // Check if next waypoint is wrapped with this one
+                        const nextWp = asset.waypoints[idx + 1];
+                        if (nextWp && nextWp.wrappedWithPrevious) return true;
+                        return false;
+                    });
+
+                    return visibleWaypoints.map((wp, i) => {
                         const wpPos = latLonToScreen(wp.lat, wp.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
 
                         // Calculate previous position for line drawing
-                        const unreachedWaypoints = asset.waypoints.filter(w => !w.reached);
                         const prevPos = i === 0 ? pos : latLonToScreen(
-                            unreachedWaypoints[i-1].lat,
-                            unreachedWaypoints[i-1].lon,
+                            visibleWaypoints[i-1].lat,
+                            visibleWaypoints[i-1].lon,
                             mapCenter.lat, mapCenter.lon, scale, width, height
                         );
 
                         return (
                             <g key={wp.id}> {/* Use waypoint ID as key */}
                                 <line x1={prevPos.x} y1={prevPos.y} x2={wpPos.x} y2={wpPos.y}
-                                      stroke={config.color} strokeWidth="1" strokeDasharray="5,5" />
-                                <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
-                                    <line x1={-6} y1={0} x2={6} y2={0} stroke={config.color} strokeWidth="2" />
-                                    <line x1={0} y1={-6} x2={0} y2={6} stroke={config.color} strokeWidth="2" />
-                                </g>
-                                {/* Waypoint label using ID to preserve numbering */}
+                                      stroke={config.color} strokeWidth={wp.wrappedWithPrevious ? "2" : "1"}
+                                      strokeDasharray={wp.wrappedWithPrevious ? "none" : "5,5"} />
+                                {wp.isOrbitPoint ? (
+                                    /* Orbit point: Circle symbol */
+                                    <circle
+                                        cx={wpPos.x}
+                                        cy={wpPos.y}
+                                        r={8}
+                                        fill="none"
+                                        stroke={config.color}
+                                        strokeWidth="2"
+                                        strokeDasharray={asset.isOrbiting ? "none" : "3,3"}
+                                    />
+                                ) : (
+                                    /* Regular waypoint: X symbol */
+                                    <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
+                                        <line x1={-6} y1={0} x2={6} y2={0} stroke={config.color} strokeWidth="2" />
+                                        <line x1={0} y1={-6} x2={0} y2={6} stroke={config.color} strokeWidth="2" />
+                                    </g>
+                                )}
+                                {/* Waypoint label - ORBIT for orbit points, WP# for regular */}
                                 <text x={wpPos.x} y={wpPos.y-10} fill={config.color} fontSize="8"
                                       textAnchor="middle" fontWeight="700">
-                                    WP{wp.id}
+                                    {wp.isOrbitPoint ? 'ORBIT' : `WP${wp.id}`}
                                 </text>
                             </g>
                         );
-                    })
-                }
+                    });
+                })()}
             </g>
         );
     };
@@ -6669,6 +7298,9 @@ function AICSimulator() {
 
     return (
         <div className="app-container">
+            {/* Loading Screen */}
+            {isLoading && <LoadingScreen message={loadingMessage} />}
+
             {/* Radar Display */}
             <div className="radar-container">
                 {/* Top HUD */}
@@ -6905,24 +7537,37 @@ function AICSimulator() {
                             </div>
                         </div>
 
-                        {(tempMark || selectedAsset || selectedGeoPointId) && (() => {
+                        {(tempMark || selectedAsset || selectedGeoPointId || selectedTrackId) && (() => {
                             const selectedGeoPoint = geoPoints.find(gp => gp.id === selectedGeoPointId);
+                            const selectedTrack = selectedTrackId ? studentTracks.find(t => t.id === selectedTrackId) : null;
+
+                            // Determine reference point and label
+                            let refLat, refLon, refLabel;
+                            if (selectedGeoPoint) {
+                                refLat = selectedGeoPoint.lat;
+                                refLon = selectedGeoPoint.lon;
+                                refLabel = selectedGeoPoint.name && selectedGeoPoint.name.trim() ? `FROM ${selectedGeoPoint.name.toUpperCase()}` : 'FROM GEO-POINT';
+                            } else if (selectedAsset) {
+                                refLat = selectedAsset.lat;
+                                refLon = selectedAsset.lon;
+                                refLabel = selectedAsset.name && selectedAsset.name.trim() ? `FROM ${selectedAsset.name.toUpperCase()}` : 'FROM SELECTION';
+                            } else if (selectedTrack) {
+                                refLat = selectedTrack.lat;
+                                refLon = selectedTrack.lon;
+                                refLabel = selectedTrack.label && selectedTrack.label.trim() ? `FROM ${selectedTrack.label.toUpperCase()}` : 'FROM TRACK';
+                            } else if (tempMark) {
+                                refLat = tempMark.lat;
+                                refLon = tempMark.lon;
+                                refLabel = 'FROM MARK';
+                            }
+
+                            if (refLat === undefined) return null;
+
                             return (
                                 <div className="position-box secondary">
-                                    <div className="position-label">
-                                        {selectedGeoPoint ?
-                                            (selectedGeoPoint.name && selectedGeoPoint.name.trim() ? `FROM ${selectedGeoPoint.name.toUpperCase()}` : 'FROM GEO-POINT')
-                                            : selectedAsset ?
-                                                (selectedAsset.name && selectedAsset.name.trim() ? `FROM ${selectedAsset.name.toUpperCase()}` : 'FROM SELECTION')
-                                                : 'FROM MARK'}
-                                    </div>
+                                    <div className="position-label">{refLabel}</div>
                                     <div className="position-value">
-                                        {selectedGeoPoint ?
-                                            `${Math.round(calculateBearing(selectedGeoPoint.lat, selectedGeoPoint.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${formatDistance(calculateDistance(selectedGeoPoint.lat, selectedGeoPoint.lon, cursorPos.lat, cursorPos.lon), scale)}${getDistanceUnit(scale)}` :
-                                            selectedAsset ?
-                                                `${Math.round(calculateBearing(selectedAsset.lat, selectedAsset.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${formatDistance(calculateDistance(selectedAsset.lat, selectedAsset.lon, cursorPos.lat, cursorPos.lon), scale)}${getDistanceUnit(scale)}` :
-                                                `${Math.round(calculateBearing(tempMark.lat, tempMark.lon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${formatDistance(calculateDistance(tempMark.lat, tempMark.lon, cursorPos.lat, cursorPos.lon), scale)}${getDistanceUnit(scale)}`
-                                        }
+                                        {`${Math.round(calculateBearing(refLat, refLon, cursorPos.lat, cursorPos.lon)).toString().padStart(3, '0')}/${formatDistance(calculateDistance(refLat, refLon, cursorPos.lat, cursorPos.lon), scale)}${getDistanceUnit(scale)}`}
                                     </div>
                                 </div>
                             );
@@ -7089,6 +7734,8 @@ function AICSimulator() {
                     addWaypoint={addWaypoint}
                     clearWaypoints={clearWaypoints}
                     deleteWaypoint={deleteWaypoint}
+                    wrapWaypoint={wrapWaypoint}
+                    unwrapWaypoint={unwrapWaypoint}
                     addGeoPoint={addGeoPoint}
                     deleteGeoPoint={deleteGeoPoint}
                     startCreatingShape={startCreatingShape}
@@ -7104,6 +7751,9 @@ function AICSimulator() {
                     setSelectedWeaponType={setSelectedWeaponType}
                     simulatorMode={simulatorMode}
                     studentTracks={studentTracks}
+                    setShowCreateOperatorTrackDialog={setShowCreateOperatorTrackDialog}
+                    fuseTrack={fuseTrack}
+                    addOrbitPoint={addOrbitPoint}
                 />
             )}
 
@@ -7533,6 +8183,26 @@ function AICSimulator() {
                 />
             )}
 
+            {/* Create Operator Track Dialog - Student mode only */}
+            {showCreateOperatorTrackDialog && (
+                <CreateOperatorTrackDialog
+                    initialData={showCreateOperatorTrackDialog}
+                    onClose={() => setShowCreateOperatorTrackDialog(null)}
+                    onCreate={(data) => {
+                        createOperatorTrack(data);
+                        setShowCreateOperatorTrackDialog(null);
+                    }}
+                />
+            )}
+
+            {/* Alert Dialog - Styled popup for alerts */}
+            {alertMessage && (
+                <AlertDialog
+                    message={alertMessage}
+                    onClose={() => setAlertMessage(null)}
+                />
+            )}
+
             {/* Save Dialog */}
             {showSaveDialog && (
                 <SaveDialog
@@ -7572,11 +8242,23 @@ function AICSimulator() {
                         setShowPauseMenu(false);
                         setShowControlsDialog(true);
                     }}
+                    onMissionProducts={() => {
+                        setShowPauseMenu(false);
+                        setShowMissionProductsDialog(true);
+                    }}
                 />
             )}
 
             {showControlsDialog && (
                 <ControlsDialog onClose={() => setShowControlsDialog(false)} />
+            )}
+
+            {showMissionProductsDialog && (
+                <MissionProductsDialog
+                    missionProducts={missionProducts}
+                    setMissionProducts={setMissionProducts}
+                    onClose={() => setShowMissionProductsDialog(false)}
+                />
             )}
 
             {/* Platform Selection Dialog */}
@@ -7696,11 +8378,15 @@ function ControlPanel({
     const [activelyEditingFields, setActivelyEditingFields] = useState({}); // Track which fields user is currently editing
     const selectedAssetIdRef = useRef(null);
     const selectedGeoPointIdRef = useRef(null);
+    const selectedTrackIdRef = useRef(null);
 
     // Only update edit values when asset is first selected or when switching assets
     useEffect(() => {
         if (selectedAsset && selectedAsset.id !== selectedAssetIdRef.current) {
             selectedAssetIdRef.current = selectedAsset.id;
+            selectedTrackIdRef.current = null; // Clear track ref when selecting an asset
+            // Clear actively editing flags when switching assets
+            setActivelyEditingFields({});
             setEditValues({
                 name: selectedAsset.name,
                 heading: Math.round(selectedAsset.heading),
@@ -7713,9 +8399,40 @@ function ControlPanel({
         }
     }, [selectedAsset?.id]); // Only depend on ID, not the whole asset object
 
-    // Update asset LAT/LONG display when asset position changes (e.g., during dragging)
+    // Clear editValues when switching to a track (and away from an asset)
     useEffect(() => {
-        if (selectedAsset) {
+        if (selectedTrackId && selectedTrackId !== selectedTrackIdRef.current) {
+            selectedTrackIdRef.current = selectedTrackId;
+            selectedAssetIdRef.current = null; // Clear asset ref when selecting a track
+            // Clear actively editing flags and editValues when switching to a track
+            setActivelyEditingFields({});
+
+            // For friendly tracks, populate editValues from the underlying asset
+            const selectedTrack = studentTracks.find(t => t.id === selectedTrackId);
+            if (selectedTrack && isFriendlyTrack(selectedTrack)) {
+                const asset = assets.find(a => a.id === selectedTrack.assetId);
+                if (asset) {
+                    setEditValues({
+                        heading: Math.round(asset.heading),
+                        speed: Math.round(asset.speed),
+                        altitude: Math.round(asset.altitude),
+                        depth: Math.round(asset.depth || 0),
+                        lat: decimalToDMM(asset.lat, true),
+                        lon: decimalToDMM(asset.lon, false)
+                    });
+                } else {
+                    setEditValues({});
+                }
+            } else {
+                setEditValues({});
+            }
+        }
+    }, [selectedTrackId, studentTracks, assets, isFriendlyTrack]);
+
+    // Update asset LAT/LONG display when asset position changes (e.g., during dragging)
+    // Skip if we just switched assets (first useEffect handles that)
+    useEffect(() => {
+        if (selectedAsset && selectedAsset.id === selectedAssetIdRef.current) {
             setEditValues(prev => ({
                 ...prev,
                 lat: decimalToDMM(selectedAsset.lat, true),
@@ -7726,8 +8443,9 @@ function ControlPanel({
 
     // Update asset heading, speed, altitude, depth display when those values change
     // BUT skip fields that are currently being edited by the user
+    // Skip if we just switched assets (first useEffect handles that)
     useEffect(() => {
-        if (selectedAsset) {
+        if (selectedAsset && selectedAsset.id === selectedAssetIdRef.current) {
             setEditValues(prev => {
                 const updates = { ...prev };
 
@@ -7811,14 +8529,54 @@ function ControlPanel({
 
         // Validate the value
         if (isNaN(value)) {
-            alert(`Invalid ${field} value`);
+            setAlertMessage(`Invalid ${field} value`);
             return;
         }
 
-        // Apply the target value
-        updateAsset(selectedAsset.id, { [targetField]: value });
+        // Determine which asset to update
+        // If a track is selected (student mode), use the track's underlying asset
+        // Note: ownship has id=0, so we must check for undefined/null, not falsy
+        let assetId = selectedAsset?.id;
+        let asset = selectedAsset;
+        if (assetId === undefined || assetId === null) {
+            if (selectedTrackId) {
+                const selectedTrack = studentTracks.find(t => t.id === selectedTrackId);
+                if (selectedTrack && selectedTrack.assetId !== undefined && selectedTrack.assetId !== null) {
+                    assetId = selectedTrack.assetId;
+                    asset = assets.find(a => a.id === assetId);
+                }
+            }
+        }
 
-        console.log(`Setting ${targetField} to ${value} for asset ${selectedAsset.id}`);
+        if (assetId === undefined || assetId === null) {
+            console.warn('No asset ID found for applyTarget');
+            return;
+        }
+
+        // For HIDDEN assets, apply value immediately to both actual and target fields
+        // This provides immediate visual feedback and the physics engine will apply it instantly
+        if (asset && asset.hidden) {
+            const updates = { [field]: value, [targetField]: null };
+            // Exit orbit mode when heading is manually set
+            if (field === 'heading' && asset.isOrbiting) {
+                updates.isOrbiting = false;
+            }
+            updateAsset(assetId, updates);
+            // Keep the entered value displayed in the field
+            setEditValues(prev => ({ ...prev, [field]: Math.round(value) }));
+            console.log(`Setting ${field} directly to ${value} for hidden asset ${assetId}`);
+        } else {
+            // For visible assets, apply as target value (gradual transition)
+            const updates = { [targetField]: value };
+            // Exit orbit mode when heading is manually set
+            if (field === 'heading' && asset && asset.isOrbiting) {
+                updates.isOrbiting = false;
+            }
+            updateAsset(assetId, updates);
+            // Reset the edit field to show current value
+            setEditValues(prev => ({ ...prev, [field]: undefined }));
+            console.log(`Setting ${targetField} to ${value} for asset ${assetId}`);
+        }
     };
 
     const applyAssetCoordinate = (field) => {
@@ -11279,8 +12037,224 @@ function ControlPanel({
                                                 </div>
                                             </div>
 
-                                            {/* Editable Heading, Speed, Altitude, Lat/Lon - only for friendly tracks */}
-                                            {isFriendlyTrack(selectedTrack) && (() => {
+                                            {/* Editable Heading, Speed, Altitude, Lat/Lon for OPERATOR TRACKS (no underlying asset) */}
+                                            {selectedTrack.isOperatorTrack && (
+                                                <>
+                                                    {/* Heading control - hide for land domain */}
+                                                    {selectedTrack.domain !== 'land' && (
+                                                        <div className="input-group">
+                                                            <label className="input-label">
+                                                                Heading (degrees)
+                                                                <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                                                    Current: {Math.round(selectedTrack.estimatedHeading || 360)}°
+                                                                </span>
+                                                            </label>
+                                                            <div style={{ display: 'flex', gap: '5px' }}>
+                                                                <input
+                                                                    className="input-field"
+                                                                    type="number"
+                                                                    min="0"
+                                                                    max="359"
+                                                                    value={editValues.heading !== undefined ? editValues.heading : (selectedTrack.estimatedHeading || 360)}
+                                                                    onChange={(e) => {
+                                                                        setEditValues(prev => ({ ...prev, heading: parseFloat(e.target.value) }));
+                                                                        e.target.style.color = '#00BFFF';
+                                                                    }}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            const val = editValues.heading !== undefined ? editValues.heading : selectedTrack.estimatedHeading;
+                                                                            updateStudentTrack(selectedTrack.id, { estimatedHeading: parseFloat(val) || 360 });
+                                                                            e.target.style.color = '#00FF00';
+                                                                        }
+                                                                    }}
+                                                                    style={{ flex: 1, color: '#00FF00' }}
+                                                                />
+                                                                <button
+                                                                    className="control-btn"
+                                                                    onClick={() => {
+                                                                        const val = editValues.heading !== undefined ? editValues.heading : selectedTrack.estimatedHeading;
+                                                                        updateStudentTrack(selectedTrack.id, { estimatedHeading: parseFloat(val) || 360 });
+                                                                    }}
+                                                                    style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                                                >
+                                                                    SET
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Speed control - hide for land domain */}
+                                                    {selectedTrack.domain !== 'land' && (
+                                                        <div className="input-group">
+                                                            <label className="input-label">
+                                                                Speed (knots)
+                                                                <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                                                    Current: {Math.round(selectedTrack.estimatedSpeed || 0)} kts
+                                                                </span>
+                                                            </label>
+                                                            <div style={{ display: 'flex', gap: '5px' }}>
+                                                                <input
+                                                                    className="input-field"
+                                                                    type="number"
+                                                                    min="0"
+                                                                    value={editValues.speed !== undefined ? editValues.speed : (selectedTrack.estimatedSpeed || 0)}
+                                                                    onChange={(e) => {
+                                                                        setEditValues(prev => ({ ...prev, speed: parseFloat(e.target.value) }));
+                                                                        e.target.style.color = '#00BFFF';
+                                                                    }}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            const val = editValues.speed !== undefined ? editValues.speed : selectedTrack.estimatedSpeed;
+                                                                            updateStudentTrack(selectedTrack.id, { estimatedSpeed: parseFloat(val) || 0 });
+                                                                            e.target.style.color = '#00FF00';
+                                                                        }
+                                                                    }}
+                                                                    style={{ flex: 1, color: '#00FF00' }}
+                                                                />
+                                                                <button
+                                                                    className="control-btn"
+                                                                    onClick={() => {
+                                                                        const val = editValues.speed !== undefined ? editValues.speed : selectedTrack.estimatedSpeed;
+                                                                        updateStudentTrack(selectedTrack.id, { estimatedSpeed: parseFloat(val) || 0 });
+                                                                    }}
+                                                                    style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                                                >
+                                                                    SET
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Altitude - only for air domain */}
+                                                    {selectedTrack.domain === 'air' && (
+                                                        <div className="input-group">
+                                                            <label className="input-label">
+                                                                Altitude (feet)
+                                                                <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                                                    Current: {Math.round(selectedTrack.altitude || 0)} ft
+                                                                </span>
+                                                            </label>
+                                                            <div style={{ display: 'flex', gap: '5px' }}>
+                                                                <input
+                                                                    className="input-field"
+                                                                    type="number"
+                                                                    min="0"
+                                                                    value={editValues.altitude !== undefined ? editValues.altitude : (selectedTrack.altitude || 0)}
+                                                                    onChange={(e) => {
+                                                                        setEditValues(prev => ({ ...prev, altitude: parseFloat(e.target.value) }));
+                                                                        e.target.style.color = '#00BFFF';
+                                                                    }}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            const val = editValues.altitude !== undefined ? editValues.altitude : selectedTrack.altitude;
+                                                                            updateStudentTrack(selectedTrack.id, { altitude: parseFloat(val) || 0 });
+                                                                            e.target.style.color = '#00FF00';
+                                                                        }
+                                                                    }}
+                                                                    style={{ flex: 1, color: '#00FF00' }}
+                                                                />
+                                                                <button
+                                                                    className="control-btn"
+                                                                    onClick={() => {
+                                                                        const val = editValues.altitude !== undefined ? editValues.altitude : selectedTrack.altitude;
+                                                                        updateStudentTrack(selectedTrack.id, { altitude: parseFloat(val) || 0 });
+                                                                    }}
+                                                                    style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                                                >
+                                                                    SET
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Depth - only for subsurface domain */}
+                                                    {selectedTrack.domain === 'subSurface' && (
+                                                        <div className="input-group">
+                                                            <label className="input-label">
+                                                                Depth (feet)
+                                                                <span style={{ float: 'right', opacity: 0.7, fontSize: '8px' }}>
+                                                                    Current: {Math.round(selectedTrack.depth || 0)} ft
+                                                                </span>
+                                                            </label>
+                                                            <div style={{ display: 'flex', gap: '5px' }}>
+                                                                <input
+                                                                    className="input-field"
+                                                                    type="number"
+                                                                    min="0"
+                                                                    value={editValues.depth !== undefined ? editValues.depth : (selectedTrack.depth || 0)}
+                                                                    onChange={(e) => {
+                                                                        setEditValues(prev => ({ ...prev, depth: parseFloat(e.target.value) }));
+                                                                        e.target.style.color = '#00BFFF';
+                                                                    }}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            const val = editValues.depth !== undefined ? editValues.depth : selectedTrack.depth;
+                                                                            updateStudentTrack(selectedTrack.id, { depth: parseFloat(val) || 0 });
+                                                                            e.target.style.color = '#00FF00';
+                                                                        }
+                                                                    }}
+                                                                    style={{ flex: 1, color: '#00FF00' }}
+                                                                />
+                                                                <button
+                                                                    className="control-btn"
+                                                                    onClick={() => {
+                                                                        const val = editValues.depth !== undefined ? editValues.depth : selectedTrack.depth;
+                                                                        updateStudentTrack(selectedTrack.id, { depth: parseFloat(val) || 0 });
+                                                                    }}
+                                                                    style={{ flex: '0 0 auto', padding: '10px 15px', fontSize: '9px' }}
+                                                                >
+                                                                    SET
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Latitude */}
+                                                    <div className="input-group">
+                                                        <label className="input-label">Latitude</label>
+                                                        <input
+                                                            type="text"
+                                                            className="input-field"
+                                                            value={editValues.lat || decimalToDMM(selectedTrack.lat, true)}
+                                                            onChange={(e) => setEditValues(prev => ({ ...prev, lat: e.target.value.toUpperCase() }))}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    const val = editValues.lat || decimalToDMM(selectedTrack.lat, true);
+                                                                    const decimal = dmmToDecimal(val);
+                                                                    if (decimal !== null) {
+                                                                        updateStudentTrack(selectedTrack.id, { lat: decimal, lastKnownLat: decimal });
+                                                                    }
+                                                                }
+                                                            }}
+                                                            placeholder="N26 30.0"
+                                                        />
+                                                    </div>
+
+                                                    {/* Longitude */}
+                                                    <div className="input-group">
+                                                        <label className="input-label">Longitude</label>
+                                                        <input
+                                                            type="text"
+                                                            className="input-field"
+                                                            value={editValues.lon || decimalToDMM(selectedTrack.lon, false)}
+                                                            onChange={(e) => setEditValues(prev => ({ ...prev, lon: e.target.value.toUpperCase() }))}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    const val = editValues.lon || decimalToDMM(selectedTrack.lon, false);
+                                                                    const decimal = dmmToDecimal(val);
+                                                                    if (decimal !== null) {
+                                                                        updateStudentTrack(selectedTrack.id, { lon: decimal, lastKnownLon: decimal });
+                                                                    }
+                                                                }
+                                                            }}
+                                                            placeholder="E054 00.0"
+                                                        />
+                                                    </div>
+                                                </>
+                                            )}
+
+                                            {/* Editable Heading, Speed, Altitude, Lat/Lon - only for friendly tracks (non-operator) */}
+                                            {!selectedTrack.isOperatorTrack && isFriendlyTrack(selectedTrack) && (() => {
                                                 const asset = assets.find(a => a.id === selectedTrack.assetId);
                                                 if (!asset) return null;
 
@@ -11302,7 +12276,7 @@ function ControlPanel({
                                                                         type="number"
                                                                         min="0"
                                                                         max="359"
-                                                                        value={editValues.heading || asset.heading || 0}
+                                                                        value={editValues.heading !== undefined ? editValues.heading : Math.round(asset.heading || 0)}
                                                                         onFocus={() => setActivelyEditingFields(prev => ({ ...prev, heading: true }))}
                                                                         onBlur={() => setActivelyEditingFields(prev => ({ ...prev, heading: false }))}
                                                                         onChange={(e) => {
@@ -11349,7 +12323,7 @@ function ControlPanel({
                                                                         type="number"
                                                                         min="0"
                                                                         max={asset.platform && asset.platform.maxSpeed ? asset.platform.maxSpeed : undefined}
-                                                                        value={editValues.speed || asset.speed || 0}
+                                                                        value={editValues.speed !== undefined ? editValues.speed : Math.round(asset.speed || 0)}
                                                                         onFocus={() => setActivelyEditingFields(prev => ({ ...prev, speed: true }))}
                                                                         onBlur={() => setActivelyEditingFields(prev => ({ ...prev, speed: false }))}
                                                                         onChange={(e) => {
@@ -11396,7 +12370,7 @@ function ControlPanel({
                                                                         type="number"
                                                                         min="0"
                                                                         max={asset.platform && asset.platform.maxAltitude ? asset.platform.maxAltitude : undefined}
-                                                                        value={editValues.altitude || asset.altitude || 0}
+                                                                        value={editValues.altitude !== undefined ? editValues.altitude : Math.round(asset.altitude || 0)}
                                                                         onFocus={() => setActivelyEditingFields(prev => ({ ...prev, altitude: true }))}
                                                                         onBlur={() => setActivelyEditingFields(prev => ({ ...prev, altitude: false }))}
                                                                         onChange={(e) => {
@@ -11437,7 +12411,7 @@ function ControlPanel({
                                                                         className="input-field"
                                                                         type="number"
                                                                         min="0"
-                                                                        value={editValues.depth || asset.depth || 0}
+                                                                        value={editValues.depth !== undefined ? editValues.depth : Math.round(asset.depth || 0)}
                                                                         onFocus={() => setActivelyEditingFields(prev => ({ ...prev, depth: true }))}
                                                                         onBlur={() => setActivelyEditingFields(prev => ({ ...prev, depth: false }))}
                                                                         onChange={(e) => {
@@ -11499,8 +12473,8 @@ function ControlPanel({
                                                 );
                                             })()}
 
-                                            {/* Read-only Course, Speed, Altitude, Lat/Lon for non-friendly tracks */}
-                                            {!isFriendlyTrack(selectedTrack) && (() => {
+                                            {/* Read-only Course, Speed, Altitude, Lat/Lon for non-friendly tracks (excluding operator tracks) */}
+                                            {!selectedTrack.isOperatorTrack && !isFriendlyTrack(selectedTrack) && (() => {
                                                 const asset = assets.find(a => a.id === selectedTrack.assetId);
                                                 if (!asset) return null;
 
@@ -12071,7 +13045,7 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, clearWaypoints, deleteWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType, simulatorMode, studentTracks }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, clearWaypoints, deleteWaypoint, wrapWaypoint, unwrapWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType, simulatorMode, studentTracks, setShowCreateOperatorTrackDialog, fuseTrack, addOrbitPoint }) {
     const [showDomainSubmenu, setShowDomainSubmenu] = useState(false);
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
     const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
@@ -12130,6 +13104,14 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                     addWaypoint(selectedAsset.id, contextMenu.lat, contextMenu.lon, true);
                 }
                 break;
+            case 'orbit':
+                // Orbit command - air assets only, replaces waypoints with orbit point
+                if (contextMenu.assetId !== undefined) {
+                    addOrbitPoint(contextMenu.assetId, contextMenu.lat, contextMenu.lon);
+                } else if (selectedAsset) {
+                    addOrbitPoint(selectedAsset.id, contextMenu.lat, contextMenu.lon);
+                }
+                break;
             case 'addWaypoint':
                 // Use assetId from context menu (works for both asset and track types)
                 if (contextMenu.assetId !== undefined) {
@@ -12149,6 +13131,12 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             case 'deleteWaypoint':
                 deleteWaypoint(contextMenu.assetId, contextMenu.waypointIndex);
                 break;
+            case 'wrapWaypoint':
+                wrapWaypoint(contextMenu.assetId, contextMenu.waypointIndex);
+                break;
+            case 'unwrapWaypoint':
+                unwrapWaypoint(contextMenu.assetId, contextMenu.waypointIndex);
+                break;
             case 'createGeoPoint':
                 addGeoPoint(contextMenu.lat, contextMenu.lon, param);
                 break;
@@ -12163,6 +13151,15 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                 break;
             case 'deleteManualBearingLine':
                 deleteManualBearingLine(contextMenu.id);
+                break;
+            case 'createOperatorTrack':
+                setShowCreateOperatorTrackDialog({
+                    lat: contextMenu.lat,
+                    lon: contextMenu.lon
+                });
+                break;
+            case 'fuseTrack':
+                fuseTrack(param.operatorTrackId, param.radarTrackId);
                 break;
         }
         setContextMenu(null);
@@ -12200,6 +13197,15 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                                     ))}
                                 </div>
                             )}
+                        </div>
+                    )}
+                    {/* Create Operator Track - Student only */}
+                    {simulatorMode === 'student' && (
+                        <div
+                            className="context-menu-item"
+                            onClick={() => handleClick('createOperatorTrack')}
+                        >
+                            Create Operator Track
                         </div>
                     )}
                     <div
@@ -12248,9 +13254,16 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             {/* Waypoint options - Instructor OR Friendly in Student */}
             {/* For 'asset' type - use selectedAsset */}
             {contextMenu.type === 'asset' && !selectedAsset?.waypoints.length && isFriendlyAssetOrTrack() && (
-                <div className="context-menu-item" onClick={() => handleClick('goTo')}>
-                    Go To
-                </div>
+                <>
+                    <div className="context-menu-item" onClick={() => handleClick('goTo')}>
+                        Go To
+                    </div>
+                    {selectedAsset?.domain === 'air' && (
+                        <div className="context-menu-item" onClick={() => handleClick('orbit')}>
+                            Orbit
+                        </div>
+                    )}
+                </>
             )}
 
             {contextMenu.type === 'asset' && selectedAsset?.waypoints.length > 0 && isFriendlyAssetOrTrack() && (
@@ -12258,6 +13271,11 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                     <div className="context-menu-item" onClick={() => handleClick('addWaypoint')}>
                         Add Waypoint
                     </div>
+                    {selectedAsset?.domain === 'air' && (
+                        <div className="context-menu-item" onClick={() => handleClick('orbit')}>
+                            Orbit
+                        </div>
+                    )}
                     <div
                         className="context-menu-item"
                         style={{
@@ -12280,9 +13298,16 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
 
                 if (!trackAsset.waypoints || trackAsset.waypoints.length === 0) {
                     return (
-                        <div className="context-menu-item" onClick={() => handleClick('goTo')}>
-                            Go To
-                        </div>
+                        <>
+                            <div className="context-menu-item" onClick={() => handleClick('goTo')}>
+                                Go To
+                            </div>
+                            {trackAsset.domain === 'air' && (
+                                <div className="context-menu-item" onClick={() => handleClick('orbit')}>
+                                    Orbit
+                                </div>
+                            )}
+                        </>
                     );
                 } else {
                     return (
@@ -12290,6 +13315,11 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                             <div className="context-menu-item" onClick={() => handleClick('addWaypoint')}>
                                 Add Waypoint
                             </div>
+                            {trackAsset.domain === 'air' && (
+                                <div className="context-menu-item" onClick={() => handleClick('orbit')}>
+                                    Orbit
+                                </div>
+                            )}
                             <div
                                 className="context-menu-item"
                                 style={{
@@ -12307,10 +13337,33 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                 }
             })()}
 
-            {contextMenu.type === 'waypoint' && (
-                <div className="context-menu-item" onClick={() => handleClick('deleteWaypoint')}>
-                    Delete Waypoint
+            {/* Fuse Track context menu - when operator track is selected and clicking on radar track */}
+            {contextMenu.type === 'fuseTrack' && (
+                <div className="context-menu-item" onClick={() => handleClick('fuseTrack', {
+                    operatorTrackId: contextMenu.operatorTrackId,
+                    radarTrackId: contextMenu.radarTrackId
+                })}>
+                    Fuse Track
                 </div>
+            )}
+
+            {contextMenu.type === 'waypoint' && (
+                <>
+                    <div className="context-menu-item" onClick={() => handleClick('deleteWaypoint')}>
+                        Delete Waypoint
+                    </div>
+                    {/* Wrap/Unwrap - only show for waypoints that are not the first (index > 0) */}
+                    {contextMenu.waypointIndex > 0 && !contextMenu.isWrapped && (
+                        <div className="context-menu-item" onClick={() => handleClick('wrapWaypoint')}>
+                            Wrap Waypoint
+                        </div>
+                    )}
+                    {contextMenu.isWrapped && (
+                        <div className="context-menu-item" onClick={() => handleClick('unwrapWaypoint')}>
+                            Unwrap Waypoint
+                        </div>
+                    )}
+                </>
             )}
 
             {contextMenu.type === 'geopoint' && (
@@ -12565,6 +13618,59 @@ function AddAssetDialog({ initialData, platforms, onClose, onAdd }) {
     );
 }
 
+function CreateOperatorTrackDialog({ initialData, onClose, onCreate }) {
+    const [domain, setDomain] = useState('air');
+
+    const handleCreate = () => {
+        onCreate({
+            domain,
+            lat: initialData.lat,
+            lon: initialData.lon
+        });
+        onClose();
+    };
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <h2>CREATE OPERATOR TRACK</h2>
+                <div className="input-group">
+                    <label className="input-label">DOMAIN</label>
+                    <select
+                        className="input-field"
+                        value={domain}
+                        onChange={(e) => setDomain(e.target.value)}
+                    >
+                        <option value="air">Air</option>
+                        <option value="surface">Surface</option>
+                        <option value="subSurface">Subsurface</option>
+                    </select>
+                </div>
+                <div className="modal-buttons">
+                    <button className="control-btn" onClick={onClose}>CANCEL</button>
+                    <button className="control-btn primary" onClick={handleCreate}>CREATE</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function AlertDialog({ message, onClose }) {
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal alert-modal" onClick={(e) => e.stopPropagation()}>
+                <h2>NOTICE</h2>
+                <div className="alert-message">
+                    {message}
+                </div>
+                <div className="modal-buttons">
+                    <button className="control-btn primary" onClick={onClose}>OK</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function SaveDialog({ onClose, saveToLocalStorage, saveToFile }) {
     const [saveName, setSaveName] = useState(`Scenario-${new Date().toISOString().split('T')[0]}`);
     const [saveType, setSaveType] = useState('app');
@@ -12600,9 +13706,14 @@ function SaveDialog({ onClose, saveToLocalStorage, saveToFile }) {
                         value={saveType}
                         onChange={(e) => setSaveType(e.target.value)}
                     >
-                        <option value="app">Save to Application (localStorage)</option>
-                        <option value="file">Download to Computer (JSON file)</option>
+                        <option value="app">Save to Application (excludes mission products)</option>
+                        <option value="file">Download to Computer (includes mission products)</option>
                     </select>
+                    <p style={{ fontSize: '9px', color: '#888', marginTop: '5px' }}>
+                        {saveType === 'app'
+                            ? 'Application saves have limited storage. Mission products are excluded.'
+                            : 'File saves include all data including mission products.'}
+                    </p>
                 </div>
 
                 <div className="modal-buttons">
@@ -12842,7 +13953,207 @@ function PlatformSelectionDialog({ domain, platforms, onClose, onSelect }) {
     );
 }
 
-function PauseMenu({ onResume, onSave, onLoad, onControls }) {
+function LoadingScreen({ message = 'Loading' }) {
+    return (
+        <div className="loading-overlay">
+            <div className="loading-container">
+                <div className="loading-spinner"></div>
+                <div className="loading-text">{message}</div>
+            </div>
+        </div>
+    );
+}
+
+function MissionProductsDialog({ missionProducts, setMissionProducts, onClose }) {
+    const fileInputRef = React.useRef(null);
+    const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30 MB
+    const ALLOWED_TYPES = {
+        'application/pdf': 'PDF',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word',
+        'application/msword': 'Word',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',
+        'application/vnd.ms-excel': 'Excel',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint',
+        'application/vnd.ms-powerpoint': 'PowerPoint'
+    };
+    const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt'];
+
+    const handleAddFile = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileSelect = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Check file extension
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        if (!ALLOWED_EXTENSIONS.includes(ext)) {
+            alert(`Invalid file type. Allowed types: ${ALLOWED_EXTENSIONS.join(', ')}`);
+            return;
+        }
+
+        // Check file size
+        if (file.size > MAX_FILE_SIZE) {
+            alert(`File too large. Maximum size is 30 MB. This file is ${(file.size / (1024 * 1024)).toFixed(2)} MB.`);
+            return;
+        }
+
+        // Read file as base64
+        const reader = new FileReader();
+        reader.onload = () => {
+            const base64Data = reader.result;
+            const newProduct = {
+                id: Date.now(),
+                name: file.name,
+                type: ALLOWED_TYPES[file.type] || ext.substring(1).toUpperCase(),
+                size: file.size,
+                dateAdded: new Date().toISOString(),
+                data: base64Data
+            };
+            setMissionProducts(prev => [...prev, newProduct]);
+        };
+        reader.onerror = () => {
+            alert('Error reading file. Please try again.');
+        };
+        reader.readAsDataURL(file);
+
+        // Reset input so same file can be selected again
+        e.target.value = '';
+    };
+
+    const handleDownload = (product) => {
+        const link = document.createElement('a');
+        link.href = product.data;
+        link.download = product.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleDelete = (productId) => {
+        if (confirm('Delete this file?')) {
+            setMissionProducts(prev => prev.filter(p => p.id !== productId));
+        }
+    };
+
+    const formatFileSize = (bytes) => {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    };
+
+    const formatDate = (isoString) => {
+        const date = new Date(isoString);
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', minWidth: '500px' }}>
+                <h2>MISSION PRODUCTS</h2>
+                <p style={{ color: '#888', fontSize: '10px', marginBottom: '15px' }}>
+                    Attach mission briefs, orders, and reference documents (PDF, Word, Excel, PowerPoint - max 30 MB each)
+                </p>
+
+                {/* Hidden file input */}
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    style={{ display: 'none' }}
+                    accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt"
+                    onChange={handleFileSelect}
+                />
+
+                {/* File list */}
+                <div style={{
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    border: '1px solid #333',
+                    borderRadius: '4px',
+                    marginBottom: '15px',
+                    backgroundColor: '#1a1a1a'
+                }}>
+                    {missionProducts.length === 0 ? (
+                        <div style={{
+                            padding: '40px',
+                            textAlign: 'center',
+                            color: '#666',
+                            fontSize: '11px'
+                        }}>
+                            No files attached. Click "ADD FILE" to attach mission products.
+                        </div>
+                    ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                            <thead>
+                                <tr style={{ backgroundColor: '#252525', borderBottom: '1px solid #333' }}>
+                                    <th style={{ padding: '8px 10px', textAlign: 'left', color: '#00FF00' }}>Name</th>
+                                    <th style={{ padding: '8px 10px', textAlign: 'left', color: '#00FF00', width: '70px' }}>Type</th>
+                                    <th style={{ padding: '8px 10px', textAlign: 'right', color: '#00FF00', width: '70px' }}>Size</th>
+                                    <th style={{ padding: '8px 10px', textAlign: 'left', color: '#00FF00', width: '130px' }}>Added</th>
+                                    <th style={{ padding: '8px 10px', textAlign: 'center', color: '#00FF00', width: '130px' }}>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {missionProducts.map((product) => (
+                                    <tr key={product.id} style={{ borderBottom: '1px solid #2a2a2a' }}>
+                                        <td style={{ padding: '8px 10px', color: '#FFF' }}>{product.name}</td>
+                                        <td style={{ padding: '8px 10px', color: '#888' }}>{product.type}</td>
+                                        <td style={{ padding: '8px 10px', color: '#888', textAlign: 'right' }}>{formatFileSize(product.size)}</td>
+                                        <td style={{ padding: '8px 10px', color: '#888' }}>{formatDate(product.dateAdded)}</td>
+                                        <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                            <button
+                                                onClick={() => handleDownload(product)}
+                                                style={{
+                                                    background: '#333',
+                                                    border: '1px solid #00FF00',
+                                                    color: '#00FF00',
+                                                    padding: '3px 8px',
+                                                    marginRight: '10px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '9px',
+                                                    borderRadius: '3px'
+                                                }}
+                                            >
+                                                VIEW
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(product.id)}
+                                                style={{
+                                                    background: '#333',
+                                                    border: '1px solid #FF4444',
+                                                    color: '#FF4444',
+                                                    padding: '3px 8px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '9px',
+                                                    borderRadius: '3px'
+                                                }}
+                                            >
+                                                DELETE
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+
+                {/* Buttons */}
+                <div className="modal-buttons" style={{ display: 'flex', gap: '10px' }}>
+                    <button className="control-btn" onClick={handleAddFile} style={{ flex: 1 }}>
+                        + ADD FILE
+                    </button>
+                    <button className="control-btn primary" onClick={onClose} style={{ flex: 1 }}>
+                        CLOSE
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function PauseMenu({ onResume, onSave, onLoad, onControls, onMissionProducts }) {
     return (
         <div className="modal-overlay">
             <div className="pause-menu">
@@ -12851,6 +14162,7 @@ function PauseMenu({ onResume, onSave, onLoad, onControls }) {
                     <button className="control-btn primary" onClick={onResume}>RESUME</button>
                     <button className="control-btn" onClick={onSave}>SAVE FILE</button>
                     <button className="control-btn" onClick={onLoad}>LOAD FILE</button>
+                    <button className="control-btn" onClick={onMissionProducts}>MISSION PRODUCTS</button>
                     <button className="control-btn" onClick={onControls}>
                         CONTROLS
                     </button>
