@@ -1,8 +1,8 @@
 # AIC Simulator - Requirements & Features Documentation
 
 **Air Intercept Control Simulator**
-Version 3.1
-Last Updated: January 16, 2026
+Version 3.2
+Last Updated: January 17, 2026
 
 ---
 
@@ -685,6 +685,7 @@ All parameter values maintain fractional precision internally:
 |-----|--------|
 | ESC | Opens pause menu |
 | Enter | Apply value in input field (heading/speed/altitude) |
+| SPACEBAR (hold) | Push-to-talk radio transmission (student mode only) |
 
 ### Button Controls
 
@@ -711,6 +712,54 @@ All parameter values maintain fractional precision internally:
 ### Recording Controls
 - **RECORD**: Start screen/audio recording
 - **STOP**: Stop recording and download file
+
+### Voice Control System (Student Mode Only)
+
+The voice control system allows students to issue verbal commands to friendly assets using push-to-talk radio communication.
+
+#### Push-to-Talk Operation
+- **Activate**: Hold SPACEBAR to transmit
+- **TX Indicator**: Shows red when transmitting, green when receiving
+- **Radio Log**: Displays all communications with timestamps (draggable, resizable, minimizable)
+
+#### Voice Commands
+
+| Command Type | Example Phrase | Action |
+|-------------|----------------|--------|
+| Heading | "Heat one one turn right heading one eight zero" | Sets heading to 180° |
+| Heading (Flow) | "Heat one one flow two seven zero" | Sets heading to 270° |
+| Speed | "Heat one one speed three five zero" | Sets speed to 350 knots |
+| Altitude (Angels) | "Heat one one climb to angels two four" | Sets altitude to 24,000 ft |
+| Altitude (FL) | "Heat one one flight level two four zero" | Sets altitude to 24,000 ft |
+| SET (Orbit) | "Heat one one set Chargers" | Sends asset to orbit at CAP station "Chargers" |
+| RESET | "Heat one one reset Chargers" | Same as SET |
+| Say State | "Heat one one set Chargers say state" | SET with fuel state response |
+
+#### Radio Terminology
+- **Callsigns**: Spoken as individual digits ("Heat one one" not "Heat eleven")
+- **Headings**: Three digits with leading zeros ("zero niner zero" for 090)
+- **Niner**: Used for 9 (standard radio phonetics to avoid confusion with "five")
+
+#### Asset Responses
+Assets read back commands using text-to-speech with proper radio format:
+- "Heat one one, turning heading one eight zero"
+- "Heat one one, setting Chargers, state green"
+
+#### Speech Recognition Features
+- **Mishearing Correction**: Handles "won" → "one", "too" → "two", "ate" → "eight"
+- **Fuzzy Callsign Matching**: Matches truncated names ("eat" → "Heat")
+- **Military Pronunciations**: Supports "niner", "tree", "fife"
+
+#### Orbit System
+- **Create Orbit**: Right-click on map → "Orbit" (air assets only)
+- **Orbit Behavior**: Asset continuously turns right at standard rate
+- **Exit Orbit**: Issue heading command or set new waypoint
+- **Visual**: Circle symbol with "ORBIT" label at orbit point
+
+#### Requirements
+- Chrome or Edge browser required
+- Microphone permission must be granted
+- Only available in Student mode
 
 ---
 
@@ -753,8 +802,8 @@ All parameter values maintain fractional precision internally:
 
 #### Advanced Navigation
 - [ ] Holding patterns
-- [ ] Orbit points
-- [ ] Combat Air Patrol (CAP) routes
+- [x] Orbit points (v3.2)
+- [x] Combat Air Patrol (CAP) routes via SET/RESET voice commands (v3.2)
 - [ ] Speed/altitude restrictions at waypoints
 - [ ] Time-on-target calculations
 

@@ -440,6 +440,7 @@ Shapes use the same color coding as assets and geo-points:
 |-----|--------|
 | ESC | Pause menu |
 | Enter | Apply input value |
+| SPACEBAR (hold) | Push-to-talk radio transmission (student mode) |
 | Mouse Wheel | Zoom in/out |
 
 ## Browser Compatibility
@@ -484,11 +485,54 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 3.1
-**Last Updated**: January 16, 2026
+**Version**: 3.2
+**Last Updated**: January 17, 2026
 **Status**: Production Ready
 
 ## Recent Updates
+
+### Version 3.2 (January 2026)
+
+#### Voice Recognition & Radio Communication System
+- **Push-to-Talk Radio**: Hold SPACEBAR to transmit voice commands to friendly assets
+  - Visual TX/RX indicator shows transmission status (red when transmitting, green when receiving)
+  - Radio log window displays all communications with timestamps
+  - Draggable, resizable, and minimizable radio log window
+
+- **Voice Commands for Asset Control**:
+  - **Heading**: "Heat one one turn right heading one eight zero" or "Heat one one flow two seven zero"
+  - **Speed**: "Heat one one speed three five zero"
+  - **Altitude (Angels)**: "Heat one one climb to angels two four" (24,000 ft)
+  - **Altitude (Flight Level)**: "Heat one one climb to flight level two four zero" (24,000 ft)
+  - **SET (Orbit at CAP)**: "Heat one one set Chargers" - sends asset to orbit at named CAP station
+  - **RESET (Re-orbit)**: "Heat one one reset Chargers" - same as SET
+  - **Say State**: Add "say state" to SET/RESET for fuel status response (e.g., "state green")
+
+- **Proper Radio Terminology**:
+  - Callsigns spoken as individual digits ("Heat one one" not "Heat eleven")
+  - Headings with leading zeros ("zero niner zero" for 090)
+  - Uses "niner" for 9 (standard radio phonetics)
+
+- **Asset Voice Responses**:
+  - Assets read back commands using text-to-speech
+  - Proper radio format: "Heat one one, turning heading one eight zero"
+  - SET/RESET responses: "Heat one one, setting Chargers, state green"
+
+- **Smart Speech Recognition**:
+  - Handles common mishearings ("won" → "one", "too" → "two", "ate" → "eight")
+  - Fuzzy callsign matching (handles truncated names like "eat" → "Heat")
+  - Military pronunciations supported ("niner", "tree", "fife")
+
+- **Orbit System** (merged from orbit branch):
+  - Right-click on map → "Orbit" to send asset to orbit at location
+  - Assets continuously turn right in standard rate orbit when at orbit point
+  - Orbit point shown as circle with "ORBIT" label
+  - New waypoints or heading commands exit orbit mode
+
+- **Browser Requirements**:
+  - Voice recognition requires Chrome or Edge browser
+  - Microphone permission required for voice commands
+  - Student mode only (voice commands disabled in instructor mode)
 
 ### Version 3.1 (January 2026)
 
