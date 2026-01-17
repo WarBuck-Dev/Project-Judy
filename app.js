@@ -1847,6 +1847,7 @@ function AICSimulator() {
 
             // HIDDEN ASSETS: Apply target values immediately (no gradual transitions)
             // This allows instructors to set up threat presentations before revealing assets
+            // Hidden assets still move based on their speed/heading, they're just not visible to students
             if (asset.hidden) {
                 if (asset.targetHeading !== null) {
                     updated.heading = asset.targetHeading;
@@ -1876,8 +1877,7 @@ function AICSimulator() {
                         updated.depth = Math.min(updated.depth, asset.platform.maxDepth);
                     }
                 }
-                // Skip position updates for hidden assets - they stay in place
-                return updated;
+                // Continue to position updates - hidden assets move, they're just not visible
             }
 
             // Update heading
@@ -3602,7 +3602,8 @@ function AICSimulator() {
             if (updatedAsset.platform) {
                 // Speed limits
                 if (updatedAsset.platform.maxSpeed !== undefined) {
-                    if (updates.targetSpeed !== undefined) {
+                    // Only apply limit if targetSpeed is a number (not null/undefined)
+                    if (updates.targetSpeed !== undefined && updates.targetSpeed !== null) {
                         updatedAsset.targetSpeed = Math.min(updatedAsset.platform.maxSpeed, updates.targetSpeed);
                     }
                     if (updatedAsset.speed > updatedAsset.platform.maxSpeed) {
@@ -3612,7 +3613,8 @@ function AICSimulator() {
 
                 // Altitude limits
                 if (updatedAsset.platform.maxAltitude !== undefined) {
-                    if (updates.targetAltitude !== undefined) {
+                    // Only apply limit if targetAltitude is a number (not null/undefined)
+                    if (updates.targetAltitude !== undefined && updates.targetAltitude !== null) {
                         updatedAsset.targetAltitude = Math.min(updatedAsset.platform.maxAltitude, updates.targetAltitude);
                     }
                     if (updatedAsset.altitude > updatedAsset.platform.maxAltitude) {
@@ -3622,7 +3624,8 @@ function AICSimulator() {
 
                 // Depth limits
                 if (updatedAsset.platform.maxDepth !== undefined) {
-                    if (updates.targetDepth !== undefined) {
+                    // Only apply limit if targetDepth is a number (not null/undefined)
+                    if (updates.targetDepth !== undefined && updates.targetDepth !== null) {
                         updatedAsset.targetDepth = Math.min(updatedAsset.platform.maxDepth, updates.targetDepth);
                     }
                     if (updatedAsset.depth > updatedAsset.platform.maxDepth) {
@@ -8514,6 +8517,7 @@ function ControlPanel({
     // Update asset heading, speed, altitude, depth display when those values change
     // BUT skip fields that are currently being edited by the user
     // Skip if we just switched assets (first useEffect handles that)
+    // Also refresh when hidden changes to ensure display values stay in sync
     useEffect(() => {
         if (selectedAsset && selectedAsset.id === selectedAssetIdRef.current) {
             setEditValues(prev => {
@@ -8536,7 +8540,7 @@ function ControlPanel({
                 return updates;
             });
         }
-    }, [selectedAsset?.heading, selectedAsset?.speed, selectedAsset?.altitude, selectedAsset?.depth, activelyEditingFields]);
+    }, [selectedAsset?.heading, selectedAsset?.speed, selectedAsset?.altitude, selectedAsset?.depth, selectedAsset?.hidden, activelyEditingFields]);
 
     // Update geo-point edit values when geo-point is first selected, when switching geo-points, or when position changes
     useEffect(() => {
