@@ -1216,11 +1216,33 @@ function AICSimulator() {
     const [platforms, setPlatforms] = useState({ air: [], surface: [], subSurface: [] }); // Platform configurations
     const [showPlatformDialog, setShowPlatformDialog] = useState(null); // { domain: string, lat: number, lon: number }
 
+    // Voice/Radio state (Student mode only)
+    const [isTransmitting, setIsTransmitting] = useState(false);
+    const [lastTranscript, setLastTranscript] = useState('');
+    const [radioEnabled, setRadioEnabled] = useState(true);
+    const [radioLog, setRadioLog] = useState([]); // Communication history
+
+    // Radio log window position and size (draggable/resizable)
+    // Default position: top of screen, to the right of the TX indicator box
+    const [radioLogPosition, setRadioLogPosition] = useState({ x: 370, y: 10 });
+    const [radioLogSize, setRadioLogSize] = useState({ width: 400, height: 200 });
+    const [isDraggingRadioLog, setIsDraggingRadioLog] = useState(false);
+    const [isResizingRadioLog, setIsResizingRadioLog] = useState(false);
+    const [isRadioLogMinimized, setIsRadioLogMinimized] = useState(true);
+    const radioLogDragOffset = useRef({ x: 0, y: 0 });
+
+    // Ownship callsign configuration
+    const [ownshipTacticalCallsign, setOwnshipTacticalCallsign] = useState('Closeout');
+    const [ownshipAirDefenseCallsign, setOwnshipAirDefenseCallsign] = useState('Tango'); // Tango, Uniform, or Victor
+    const [ownshipSideNumber, setOwnshipSideNumber] = useState(''); // 3-digit code
+
     // Refs
     const svgRef = useRef(null);
     const physicsIntervalRef = useRef(null);
     const recordingStartTimeRef = useRef(null);
     const mediaRecorderRef = useRef(null);
+    const speechRecognitionRef = useRef(null); // Web Speech API recognition instance
+    const lastTranscriptRef = useRef(''); // Store latest transcript for processing on PTT release
     const recordedChunksRef = useRef([]);
     const missionTimeIntervalRef = useRef(null);
 
@@ -1282,6 +1304,356 @@ function AICSimulator() {
             }
         }
     }, [platforms]);
+
+    // ========================================================================
+    // VOICE COMMAND SYSTEM (Student Mode Only)
+    // ========================================================================
+
+    // Normalize transcript to handle common speech recognition errors
+    const normalizeTranscript = (transcript) => {
+        let normalized = transcript.toLowerCase();
+
+        // Common homophones and mishearings for numbers
+        const numberCorrections = {
+            'won': 'one',
+            'wun': 'one',
+            'too': 'two',
+            'tu': 'two',
+            'fore': 'four',
+            'ate': 'eight',
+        };
+
+        // Apply number corrections with word boundaries
+        Object.entries(numberCorrections).forEach(([wrong, correct]) => {
+            normalized = normalized.replace(new RegExp('\\b' + wrong + '\\b', 'g'), correct);
+        });
+
+        return normalized;
+    };
+
+    // Parse spoken numbers: "one eight zero" or "1-8-0" or "180" → 180
+    const parseSpokenNumber = (spoken) => {
+        const wordToDigit = {
+            // Standard numbers
+            'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+            'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
+            // Military pronunciations
+            'niner': '9', 'tree': '3', 'fife': '5',
+            // Common homophones/mishearings
+            'won': '1', 'wun': '1',
+            'too': '2', 'tu': '2',
+            'fore': '4',
+            'ate': '8',
+            // Compound numbers (for angels)
+            'ten': '10', 'eleven': '11', 'twelve': '12', 'thirteen': '13', 'fourteen': '14',
+            'fifteen': '15', 'sixteen': '16', 'seventeen': '17', 'eighteen': '18', 'nineteen': '19',
+            'twenty': '20', 'thirty': '30', 'forty': '40', 'fifty': '50'
+        };
+
+        let result = spoken.toLowerCase();
+        // Replace word numbers with digits
+        Object.entries(wordToDigit).forEach(([word, digit]) => {
+            result = result.replace(new RegExp('\\b' + word + '\\b', 'g'), digit);
+        });
+        // Extract only digits
+        const digits = result.replace(/[^0-9]/g, '');
+        return parseInt(digits, 10) || 0;
+    };
+
+    // Find asset by callsign in transcript
+    const findAssetByCallsign = useCallback((transcript, assetList) => {
+        const text = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+
+        // First pass: exact matching
+        for (const asset of assetList) {
+            if (!asset.name) continue;
+
+            // Normalize asset name (e.g., "Heat 11" → "heat11" and "heat 1 1")
+            const name = asset.name.toLowerCase();
+            const nameNoSpaces = name.replace(/\s+/g, '');
+            const nameDigitsSplit = name.replace(/(\d)/g, ' $1 ').replace(/\s+/g, ' ').trim(); // "heat11" → "heat 1 1"
+
+            if (text.includes(nameNoSpaces) || text.includes(nameDigitsSplit) || text.includes(name)) {
+                return asset;
+            }
+        }
+
+        // Second pass: try matching with first letter dropped (handles "Heat" → "eat")
+        for (const asset of assetList) {
+            if (!asset.name) continue;
+            const name = asset.name.toLowerCase();
+
+            // Extract the word part of the callsign (before any numbers)
+            const wordPart = name.match(/^([a-z]+)/)?.[1];
+            if (wordPart && wordPart.length > 2) {
+                // Try matching without the first letter
+                const truncatedName = wordPart.slice(1);
+                const numberPart = name.replace(wordPart, '').trim();
+
+                // Check if transcript contains truncated callsign + numbers
+                const truncatedPatterns = [
+                    truncatedName + numberPart.replace(/\s+/g, ''),  // "eat11"
+                    truncatedName + ' ' + numberPart.replace(/(\d)/g, ' $1 ').trim(),  // "eat 1 1"
+                    truncatedName + numberPart  // "eat 11"
+                ];
+
+                for (const pattern of truncatedPatterns) {
+                    if (pattern && text.includes(pattern)) {
+                        return asset;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }, []);
+
+    // Generate readback message with proper radio terminology
+    const generateReadback = (assetName, commandType, value) => {
+        const words = ['zero', 'one', 'two', 'three', 'four',
+                      'five', 'six', 'seven', 'eight', 'niner'];
+
+        // Spell out callsign with numbers as individual digits
+        // "Heat 11" → "Heat one one"
+        const spellOutCallsign = (callsign) => {
+            return callsign.replace(/(\d)/g, (d) => ' ' + words[parseInt(d)]).trim();
+        };
+
+        // Spell out heading with leading zeros (90 → "zero niner zero")
+        const spellOutHeading = (num) => {
+            const padded = num.toString().padStart(3, '0');
+            return padded.split('').map(d => words[parseInt(d)]).join(' ');
+        };
+
+        // Spell out numbers as individual digits (for speed, flight level)
+        const spellOutNumber = (num) => {
+            return num.toString().split('').map(d => words[parseInt(d)]).join(' ');
+        };
+
+        const callsign = spellOutCallsign(assetName);
+
+        switch (commandType) {
+            case 'heading':
+                return `${callsign}, turning heading ${spellOutHeading(value)}`;
+            case 'flightLevel':
+                return `${callsign}, climbing flight level ${spellOutNumber(value)}`;
+            case 'angels':
+                return `${callsign}, angels ${value}`;
+            case 'speed':
+                return `${callsign}, speed ${spellOutNumber(value)}`;
+            default:
+                return `${callsign}, copy`;
+        }
+    };
+
+    // Speak response using SpeechSynthesis
+    const speakResponse = useCallback((text) => {
+        if (!window.speechSynthesis) return;
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        const voices = speechSynthesis.getVoices();
+
+        // Prefer a male voice for military feel
+        const preferredVoice = voices.find(v =>
+            v.name.includes('Male') || v.name.includes('David') || v.name.includes('Mark')
+        );
+        if (preferredVoice) utterance.voice = preferredVoice;
+
+        utterance.rate = 1.1; // Slightly faster for radio feel
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+
+        speechSynthesis.speak(utterance);
+    }, []);
+
+    // Add entry to radio log
+    const addToRadioLog = useCallback((callsign, message, type) => {
+        const entry = {
+            time: formatMissionTime(missionTime),
+            callsign,
+            message,
+            type // 'outgoing', 'incoming', 'error'
+        };
+        setRadioLog(prev => [...prev.slice(-49), entry]); // Keep last 50 entries
+    }, [missionTime]);
+
+    // Main voice command processor
+    const processVoiceCommand = useCallback((transcript) => {
+        // Normalize transcript to fix common mishearings (e.g., "won" → "one", "ate" → "eight")
+        const normalizedTranscript = normalizeTranscript(transcript);
+        const text = normalizedTranscript.toLowerCase();
+
+        // Find the friendly asset being addressed (exclude ownship)
+        const friendlyAssets = assets.filter(a => a.identity === 'friendly' && a.type !== 'ownship');
+        const targetAsset = findAssetByCallsign(text, friendlyAssets);
+
+        if (!targetAsset) {
+            // Log unrecognized command
+            addToRadioLog(ownshipTacticalCallsign, transcript, 'outgoing');
+            addToRadioLog('SYSTEM', 'No matching callsign found', 'error');
+            return;
+        }
+
+        // Log the transmission
+        addToRadioLog(ownshipTacticalCallsign, transcript, 'outgoing');
+
+        // Parse command type
+        let commandExecuted = false;
+
+        // HEADING: "turn right head 1-8-0", "flow 1-8-0", "turn left heading 2-7-0"
+        const headingMatch = text.match(/(?:turn|head(?:ing)?|flow)\s*(?:right|left)?\s*(?:to|head(?:ing)?)?\s*(\d[\d\s\-a-z]*)/i);
+        if (headingMatch) {
+            const heading = parseSpokenNumber(headingMatch[1]);
+            if (heading >= 0 && heading <= 360) {
+                updateAsset(targetAsset.id, { targetHeading: heading % 360 });
+                const readback = generateReadback(targetAsset.name, 'heading', heading);
+                speakResponse(readback);
+                addToRadioLog(targetAsset.name, readback, 'incoming');
+                commandExecuted = true;
+            }
+        }
+
+        // ALTITUDE (Flight Level): "climb to flight level 2-4-0"
+        const flMatch = text.match(/flight\s*level\s*(\d[\d\s\-a-z]*)/i);
+        if (!commandExecuted && flMatch) {
+            const fl = parseSpokenNumber(flMatch[1]);
+            const altitude = fl * 100; // FL240 = 24,000ft
+            updateAsset(targetAsset.id, { targetAltitude: altitude });
+            const readback = generateReadback(targetAsset.name, 'flightLevel', fl);
+            speakResponse(readback);
+            addToRadioLog(targetAsset.name, readback, 'incoming');
+            commandExecuted = true;
+        }
+
+        // ALTITUDE (Angels): "climb to angels 24" or "angels 2-4"
+        const angelsMatch = text.match(/angels?\s*(\d[\d\s\-a-z]*)/i);
+        if (!commandExecuted && angelsMatch) {
+            const angels = parseSpokenNumber(angelsMatch[1]);
+            const altitude = angels * 1000; // Angels 24 = 24,000ft
+            updateAsset(targetAsset.id, { targetAltitude: altitude });
+            const readback = generateReadback(targetAsset.name, 'angels', angels);
+            speakResponse(readback);
+            addToRadioLog(targetAsset.name, readback, 'incoming');
+            commandExecuted = true;
+        }
+
+        // SPEED: "speed 3-5-0"
+        const speedMatch = text.match(/speed\s*(\d[\d\s\-a-z]*)/i);
+        if (!commandExecuted && speedMatch) {
+            const speed = parseSpokenNumber(speedMatch[1]);
+            updateAsset(targetAsset.id, { targetSpeed: speed });
+            const readback = generateReadback(targetAsset.name, 'speed', speed);
+            speakResponse(readback);
+            addToRadioLog(targetAsset.name, readback, 'incoming');
+            commandExecuted = true;
+        }
+
+        // Unrecognized command
+        if (!commandExecuted) {
+            const readback = `${targetAsset.name}, say again`;
+            speakResponse(readback);
+            addToRadioLog(targetAsset.name, readback, 'incoming');
+        }
+    }, [assets, findAssetByCallsign, addToRadioLog, ownshipTacticalCallsign, speakResponse, updateAsset]);
+
+    // Keep a ref to the latest processVoiceCommand to avoid recreating speech recognition
+    const processVoiceCommandRef = useRef(processVoiceCommand);
+    useEffect(() => {
+        processVoiceCommandRef.current = processVoiceCommand;
+    }, [processVoiceCommand]);
+
+    // Initialize Web Speech API (student mode only)
+    useEffect(() => {
+        if (simulatorMode !== 'student') {
+            // Clean up if switching away from student mode
+            if (speechRecognitionRef.current) {
+                speechRecognitionRef.current.abort();
+                speechRecognitionRef.current = null;
+            }
+            return;
+        }
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            console.warn('Speech recognition not supported in this browser');
+            setRadioEnabled(false);
+            return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true; // Keep listening until spacebar is released
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+
+        recognition.onresult = (event) => {
+            // Combine all results (both interim and final) into one transcript
+            const transcript = Array.from(event.results)
+                .map(result => result[0].transcript)
+                .join('');
+            setLastTranscript(transcript);
+            lastTranscriptRef.current = transcript; // Store for processing on PTT release
+            // Don't process here - wait for spacebar release
+        };
+
+        recognition.onerror = (event) => {
+            // Only log non-aborted errors (aborted is expected when stopping recognition)
+            if (event.error !== 'aborted') {
+                console.error('Speech recognition error:', event.error);
+            }
+            setIsTransmitting(false);
+        };
+
+        recognition.onend = () => {
+            setIsTransmitting(false);
+        };
+
+        speechRecognitionRef.current = recognition;
+
+        return () => {
+            if (speechRecognitionRef.current) {
+                speechRecognitionRef.current.abort();
+            }
+        };
+    }, [simulatorMode]); // Only recreate when simulatorMode changes
+
+    // Handle radio log dragging and resizing
+    useEffect(() => {
+        const handleMouseMove = (e) => {
+            if (isDraggingRadioLog) {
+                const newX = e.clientX - radioLogDragOffset.current.x;
+                const newY = e.clientY - radioLogDragOffset.current.y;
+                // Keep within viewport bounds
+                const maxX = window.innerWidth - radioLogSize.width;
+                const maxY = window.innerHeight - radioLogSize.height;
+                setRadioLogPosition({
+                    x: Math.max(0, Math.min(newX, maxX)),
+                    y: Math.max(0, Math.min(newY, maxY))
+                });
+            }
+            if (isResizingRadioLog) {
+                const deltaX = e.clientX - radioLogDragOffset.current.x;
+                const deltaY = e.clientY - radioLogDragOffset.current.y;
+                const newWidth = Math.max(250, radioLogDragOffset.current.startWidth + deltaX);
+                const newHeight = Math.max(100, radioLogDragOffset.current.startHeight + deltaY);
+                setRadioLogSize({ width: newWidth, height: newHeight });
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsDraggingRadioLog(false);
+            setIsResizingRadioLog(false);
+        };
+
+        if (isDraggingRadioLog || isResizingRadioLog) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDraggingRadioLog, isResizingRadioLog, radioLogSize.width, radioLogSize.height]);
 
     // Initialize ownship weapon inventory when ownship platform is assigned
     useEffect(() => {
@@ -4362,11 +4734,62 @@ function AICSimulator() {
                 setShowPauseMenu(true);
                 setIsRunning(false);
             }
+
+            // Push-to-talk: Spacebar (student mode only)
+            if (e.code === 'Space' && simulatorMode === 'student' && radioEnabled && !e.repeat) {
+                // Prevent default only if not typing in an input field
+                if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // Blur any focused button to prevent spacebar from activating it
+                    if (document.activeElement.tagName === 'BUTTON') {
+                        document.activeElement.blur();
+                    }
+                    if (!isTransmitting && speechRecognitionRef.current) {
+                        setIsTransmitting(true);
+                        setLastTranscript('');
+                        try {
+                            speechRecognitionRef.current.start();
+                        } catch (err) {
+                            console.error('Failed to start recognition:', err);
+                            setIsTransmitting(false);
+                        }
+                    }
+                }
+            }
         };
 
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, []);
+        const handleKeyUp = (e) => {
+            // Release PTT (student mode only)
+            if (e.code === 'Space' && simulatorMode === 'student' && radioEnabled) {
+                // Always prevent default in student mode to avoid button clicks
+                if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                if (isTransmitting && speechRecognitionRef.current) {
+                    // Process the accumulated transcript before stopping
+                    if (lastTranscriptRef.current.trim()) {
+                        processVoiceCommandRef.current(lastTranscriptRef.current);
+                    }
+                    lastTranscriptRef.current = ''; // Clear for next transmission
+                    try {
+                        speechRecognitionRef.current.stop();
+                    } catch (err) {
+                        console.error('Failed to stop recognition:', err);
+                    }
+                    // isTransmitting will be set to false by onend handler
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown, true); // Use capture phase
+        window.addEventListener('keyup', handleKeyUp, true); // Use capture phase
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown, true);
+            window.removeEventListener('keyup', handleKeyUp, true);
+        };
+    }, [simulatorMode, radioEnabled, isTransmitting]);
 
     // ========================================================================
     // RENDER FUNCTIONS
@@ -6270,6 +6693,95 @@ function AICSimulator() {
                     </div>
                 </div>
 
+                {/* Radio/PTT Indicator - Student mode only */}
+                {simulatorMode === 'student' && radioEnabled && (
+                    <div className={`radio-indicator ${isTransmitting ? 'transmitting' : ''}`}>
+                        <div className="radio-status">
+                            {isTransmitting ? '● TX' : '○ RX'}
+                        </div>
+                        <div className="radio-hint">Hold SPACE to transmit</div>
+                    </div>
+                )}
+
+                {/* Live transcript display */}
+                {simulatorMode === 'student' && isTransmitting && lastTranscript && (
+                    <div className="transcript-display">
+                        "{lastTranscript}"
+                    </div>
+                )}
+
+                {/* Radio Communication Log - Student mode only (Draggable/Resizable) */}
+                {simulatorMode === 'student' && (
+                    <div
+                        className={`radio-log ${isRadioLogMinimized ? 'minimized' : ''}`}
+                        style={{
+                            left: radioLogPosition.x,
+                            top: radioLogPosition.y,
+                            width: isRadioLogMinimized ? 'auto' : radioLogSize.width,
+                            height: isRadioLogMinimized ? 'auto' : radioLogSize.height,
+                            cursor: isDraggingRadioLog ? 'grabbing' : 'default'
+                        }}
+                    >
+                        <div
+                            className="radio-log-header"
+                            style={{ cursor: 'grab' }}
+                            onMouseDown={(e) => {
+                                // Don't start drag if clicking the minimize button
+                                if (e.target.classList.contains('radio-log-minimize-btn')) return;
+                                e.preventDefault();
+                                setIsDraggingRadioLog(true);
+                                radioLogDragOffset.current = {
+                                    x: e.clientX - radioLogPosition.x,
+                                    y: e.clientY - radioLogPosition.y
+                                };
+                            }}
+                        >
+                            RADIO LOG
+                            <span style={{ float: 'right', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button
+                                    className="radio-log-minimize-btn"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsRadioLogMinimized(!isRadioLogMinimized);
+                                    }}
+                                    title={isRadioLogMinimized ? 'Expand' : 'Minimize'}
+                                >
+                                    {isRadioLogMinimized ? '□' : '−'}
+                                </button>
+                                {!isRadioLogMinimized && <span style={{ fontSize: '9px', opacity: 0.6 }}>⋮⋮ drag</span>}
+                            </span>
+                        </div>
+                        {!isRadioLogMinimized && (
+                            <>
+                                <div className="radio-log-messages" style={{ height: radioLogSize.height - 30 }}>
+                                    {radioLog.map((entry, idx) => (
+                                        <div key={idx} className={`radio-entry ${entry.type}`}>
+                                            <span className="radio-time">{entry.time}</span>
+                                            <span className="radio-callsign">{entry.callsign}:</span>
+                                            <span className="radio-message">{entry.message}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                {/* Resize handle */}
+                                <div
+                                    className="radio-log-resize-handle"
+                                    onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setIsResizingRadioLog(true);
+                                        radioLogDragOffset.current = {
+                                            x: e.clientX,
+                                            y: e.clientY,
+                                            startWidth: radioLogSize.width,
+                                            startHeight: radioLogSize.height
+                                        };
+                                    }}
+                                />
+                            </>
+                        )}
+                    </div>
+                )}
+
                 {/* SVG Radar */}
                 <svg
                     ref={svgRef}
@@ -6559,6 +7071,12 @@ function AICSimulator() {
                 deleteStudentTrack={deleteStudentTrack}
                 reportStudentTrack={reportStudentTrack}
                 isFriendlyTrack={isFriendlyTrack}
+                ownshipTacticalCallsign={ownshipTacticalCallsign}
+                setOwnshipTacticalCallsign={setOwnshipTacticalCallsign}
+                ownshipAirDefenseCallsign={ownshipAirDefenseCallsign}
+                setOwnshipAirDefenseCallsign={setOwnshipAirDefenseCallsign}
+                ownshipSideNumber={ownshipSideNumber}
+                setOwnshipSideNumber={setOwnshipSideNumber}
             />
 
             {/* Context Menu */}
@@ -7167,7 +7685,10 @@ function ControlPanel({
     studentTracks, setStudentTracks,
     selectedTrackId, setSelectedTrackId,
     updateStudentTrack, deleteStudentTrack, reportStudentTrack,
-    isFriendlyTrack
+    isFriendlyTrack,
+    ownshipTacticalCallsign, setOwnshipTacticalCallsign,
+    ownshipAirDefenseCallsign, setOwnshipAirDefenseCallsign,
+    ownshipSideNumber, setOwnshipSideNumber
 }) {
     const [editValues, setEditValues] = useState({});
     const [geoPointEditValues, setGeoPointEditValues] = useState({});
@@ -10670,6 +11191,43 @@ function ControlPanel({
                                                         }}
                                                         placeholder="E054 00.0"
                                                     />
+                                                </div>
+
+                                                {/* Ownship Callsign Configuration */}
+                                                <div className="callsign-config">
+                                                    <div className="input-group">
+                                                        <label className="input-label">Tactical Callsign</label>
+                                                        <input
+                                                            className="input-field"
+                                                            type="text"
+                                                            value={ownshipTacticalCallsign}
+                                                            onChange={(e) => setOwnshipTacticalCallsign(e.target.value)}
+                                                            placeholder="e.g., Closeout"
+                                                        />
+                                                    </div>
+                                                    <div className="input-group">
+                                                        <label className="input-label">Air Defense Callsign</label>
+                                                        <select
+                                                            className="input-field"
+                                                            value={ownshipAirDefenseCallsign}
+                                                            onChange={(e) => setOwnshipAirDefenseCallsign(e.target.value)}
+                                                        >
+                                                            <option value="Tango">Tango</option>
+                                                            <option value="Uniform">Uniform</option>
+                                                            <option value="Victor">Victor</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="input-group">
+                                                        <label className="input-label">Side Number (3 digits)</label>
+                                                        <input
+                                                            className="input-field"
+                                                            type="text"
+                                                            maxLength="3"
+                                                            value={ownshipSideNumber}
+                                                            onChange={(e) => setOwnshipSideNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                                                            placeholder="e.g., 602"
+                                                        />
+                                                    </div>
                                                 </div>
                                             </>
                                         );

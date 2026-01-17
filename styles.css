@@ -709,3 +709,169 @@ select.input-field {
                 0 0 30px rgba(0, 255, 0, 0.7);
     transform: scale(1.1);
 }
+
+/* =============================================
+   Voice Command / Radio System Styles
+   ============================================= */
+
+/* Radio/PTT Indicator */
+.radio-indicator {
+    position: fixed;
+    top: 10px;
+    left: 180px;
+    background: rgba(0, 0, 0, 0.8);
+    border: 1px solid #00FF00;
+    padding: 8px 20px;
+    border-radius: 3px;
+    z-index: 1000;
+    text-align: center;
+    font-family: 'Orbitron', monospace;
+}
+
+.radio-indicator.transmitting {
+    border-color: #FF0000;
+    background: rgba(255, 0, 0, 0.2);
+}
+
+.radio-status {
+    color: #00FF00;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.radio-indicator.transmitting .radio-status {
+    color: #FF0000;
+    animation: pulse 0.5s infinite;
+}
+
+.radio-hint {
+    color: #888;
+    font-size: 10px;
+    margin-top: 4px;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Transcript Display */
+.transcript-display {
+    position: fixed;
+    bottom: 220px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.9);
+    border: 1px solid #FFFF00;
+    padding: 10px 20px;
+    color: #FFFF00;
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    max-width: 600px;
+    z-index: 1000;
+}
+
+/* Radio Log */
+.radio-log {
+    position: fixed;
+    background: rgba(0, 0, 0, 0.85);
+    border: 1px solid #00FF00;
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    z-index: 10000;
+    min-width: 250px;
+    min-height: 100px;
+}
+
+.radio-log-header {
+    background: #003300;
+    color: #00FF00;
+    padding: 5px 10px;
+    font-weight: bold;
+    border-bottom: 1px solid #00FF00;
+    user-select: none;
+}
+
+.radio-log-messages {
+    overflow-y: auto;
+    padding: 5px;
+}
+
+.radio-log-resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 15px;
+    height: 15px;
+    cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, #00FF00 50%);
+    opacity: 0.6;
+}
+
+.radio-log-resize-handle:hover {
+    opacity: 1;
+}
+
+/* Minimize button */
+.radio-log-minimize-btn {
+    background: transparent;
+    border: 1px solid #00FF00;
+    color: #00FF00;
+    width: 18px;
+    height: 18px;
+    font-size: 14px;
+    line-height: 14px;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.radio-log-minimize-btn:hover {
+    background: rgba(0, 255, 0, 0.2);
+}
+
+/* Minimized state */
+.radio-log.minimized {
+    min-width: auto;
+    min-height: auto;
+}
+
+.radio-log.minimized .radio-log-header {
+    border-bottom: none;
+}
+
+.radio-entry {
+    padding: 3px 5px;
+    border-bottom: 1px solid #003300;
+}
+
+.radio-entry.outgoing {
+    color: #00BFFF;
+}
+
+.radio-entry.incoming {
+    color: #00FF00;
+}
+
+.radio-entry.error {
+    color: #FF6600;
+}
+
+.radio-time {
+    color: #888;
+    margin-right: 8px;
+}
+
+.radio-callsign {
+    font-weight: bold;
+    margin-right: 5px;
+}
+
+/* Callsign Configuration */
+.callsign-config {
+    border-top: 1px solid #00FF00;
+    padding-top: 15px;
+    margin-top: 15px;
+}
