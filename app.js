@@ -7923,6 +7923,7 @@ function ControlPanel({
     // Update asset heading, speed, altitude, depth display when those values change
     // BUT skip fields that are currently being edited by the user
     // Skip if we just switched assets (first useEffect handles that)
+    // Also refresh when hidden changes to ensure display values stay in sync
     useEffect(() => {
         if (selectedAsset && selectedAsset.id === selectedAssetIdRef.current) {
             setEditValues(prev => {
@@ -7945,7 +7946,7 @@ function ControlPanel({
                 return updates;
             });
         }
-    }, [selectedAsset?.heading, selectedAsset?.speed, selectedAsset?.altitude, selectedAsset?.depth, activelyEditingFields]);
+    }, [selectedAsset?.heading, selectedAsset?.speed, selectedAsset?.altitude, selectedAsset?.depth, selectedAsset?.hidden, activelyEditingFields]);
 
     // Update geo-point edit values when geo-point is first selected, when switching geo-points, or when position changes
     useEffect(() => {
