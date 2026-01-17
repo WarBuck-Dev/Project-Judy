@@ -1431,8 +1431,23 @@ function AICSimulator() {
         return null;
     }, []);
 
+    // Find geo-point (CAP station) by name from voice transcript
+    const findGeoPointByName = useCallback((transcript, geoPointList) => {
+        const text = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+
+        for (const geoPoint of geoPointList) {
+            if (!geoPoint.name) continue;
+            const name = geoPoint.name.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+            if (name && text.includes(name)) {
+                return geoPoint;
+            }
+        }
+        return null;
+    }, []);
+
     // Generate readback message with proper radio terminology
-    const generateReadback = (assetName, commandType, value) => {
+    // extraParam is used for optional modifiers (e.g., sayState for SET/RESET)
+    const generateReadback = (assetName, commandType, value, extraParam = null) => {
         const words = ['zero', 'one', 'two', 'three', 'four',
                       'five', 'six', 'seven', 'eight', 'niner'];
 
@@ -1464,6 +1479,18 @@ function AICSimulator() {
                 return `${callsign}, angels ${value}`;
             case 'speed':
                 return `${callsign}, speed ${spellOutNumber(value)}`;
+            case 'set':
+                // value = station name, extraParam = sayState boolean
+                if (extraParam) {
+                    return `${callsign}, setting ${value}, state green`;
+                }
+                return `${callsign}, setting ${value}`;
+            case 'reset':
+                // value = station name, extraParam = sayState boolean
+                if (extraParam) {
+                    return `${callsign}, resetting ${value}, state green`;
+                }
+                return `${callsign}, resetting ${value}`;
             default:
                 return `${callsign}, copy`;
         }
@@ -1571,13 +1598,56 @@ function AICSimulator() {
             commandExecuted = true;
         }
 
+        // SET: "set Chargers" or "set Chargers say state" - orbit at CAP station
+        const setMatch = text.match(/\bset\s+([a-z]+)/i);
+        if (!commandExecuted && setMatch) {
+            const stationName = setMatch[1];
+            const capStation = findGeoPointByName(stationName, geoPoints);
+
+            if (capStation) {
+                addOrbitPoint(targetAsset.id, capStation.lat, capStation.lon);
+
+                // Check for "say state" request
+                const sayState = text.includes('say state') || text.includes('state');
+                const readback = generateReadback(targetAsset.name, 'set', capStation.name, sayState);
+
+                speakResponse(readback);
+                addToRadioLog(targetAsset.name, readback, 'incoming');
+                commandExecuted = true;
+            } else {
+                addToRadioLog('SYSTEM', `CAP station "${stationName}" not found`, 'error');
+                commandExecuted = true; // Don't fall through to "say again"
+            }
+        }
+
+        // RESET: "reset Chargers" or "reset Chargers say state" - re-orbit at CAP station
+        const resetMatch = text.match(/\breset\s+([a-z]+)/i);
+        if (!commandExecuted && resetMatch) {
+            const stationName = resetMatch[1];
+            const capStation = findGeoPointByName(stationName, geoPoints);
+
+            if (capStation) {
+                addOrbitPoint(targetAsset.id, capStation.lat, capStation.lon);
+
+                const sayState = text.includes('say state') || text.includes('state');
+                const readback = generateReadback(targetAsset.name, 'reset', capStation.name, sayState);
+
+                speakResponse(readback);
+                addToRadioLog(targetAsset.name, readback, 'incoming');
+                commandExecuted = true;
+            } else {
+                addToRadioLog('SYSTEM', `CAP station "${stationName}" not found`, 'error');
+                commandExecuted = true; // Don't fall through to "say again"
+            }
+        }
+
         // Unrecognized command
         if (!commandExecuted) {
             const readback = `${targetAsset.name}, say again`;
             speakResponse(readback);
             addToRadioLog(targetAsset.name, readback, 'incoming');
         }
-    }, [assets, findAssetByCallsign, addToRadioLog, ownshipTacticalCallsign, speakResponse, updateAsset]);
+    }, [assets, geoPoints, findAssetByCallsign, findGeoPointByName, addToRadioLog, ownshipTacticalCallsign, speakResponse, updateAsset, addOrbitPoint]);
 
     // Keep a ref to the latest processVoiceCommand to avoid recreating speech recognition
     const processVoiceCommandRef = useRef(processVoiceCommand);
