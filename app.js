@@ -3723,6 +3723,9 @@ function AICSimulator() {
     // ========================================================================
 
     const saveToLocalStorage = useCallback((name) => {
+        // NOTE: Mission products are excluded from localStorage saves due to size limits
+        // localStorage typically has a 5-10MB limit per domain
+        // Use "Save to File" to include mission products in the scenario
         const saveData = {
             version: '1.2', // Increment version for mission products
             timestamp: new Date().toISOString(),
@@ -3752,12 +3755,24 @@ function AICSimulator() {
             radarDetectionCounts,
             detectionThresholds,
             trackAgingTimers,
-            nextStudentTrackId,
-            missionProducts
+            nextStudentTrackId
+            // missionProducts excluded - too large for localStorage
         };
 
-        localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
-        alert(`Scenario saved to application: ${name}`);
+        try {
+            localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
+            if (missionProducts && missionProducts.length > 0) {
+                alert(`Scenario saved to application: ${name}\n\nNote: Mission products are not included in application saves due to browser storage limits. Use "Save to File" to include mission products.`);
+            } else {
+                alert(`Scenario saved to application: ${name}`);
+            }
+        } catch (e) {
+            if (e.name === 'QuotaExceededError') {
+                alert('Failed to save: Browser storage quota exceeded.\n\nTry:\n1. Deleting old saved scenarios\n2. Using "Save to File" instead');
+            } else {
+                alert(`Failed to save scenario: ${e.message}`);
+            }
+        }
     }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType, simulatorMode, studentTracks, radarDetectionCounts, detectionThresholds, trackAgingTimers, nextStudentTrackId, missionProducts]);
 
     const saveToFile = useCallback((name) => {
@@ -13004,9 +13019,14 @@ function SaveDialog({ onClose, saveToLocalStorage, saveToFile }) {
                         value={saveType}
                         onChange={(e) => setSaveType(e.target.value)}
                     >
-                        <option value="app">Save to Application (localStorage)</option>
-                        <option value="file">Download to Computer (JSON file)</option>
+                        <option value="app">Save to Application (excludes mission products)</option>
+                        <option value="file">Download to Computer (includes mission products)</option>
                     </select>
+                    <p style={{ fontSize: '9px', color: '#888', marginTop: '5px' }}>
+                        {saveType === 'app'
+                            ? 'Application saves have limited storage. Mission products are excluded.'
+                            : 'File saves include all data including mission products.'}
+                    </p>
                 </div>
 
                 <div className="modal-buttons">
@@ -13259,7 +13279,7 @@ function LoadingScreen({ message = 'Loading' }) {
 
 function MissionProductsDialog({ missionProducts, setMissionProducts, onClose }) {
     const fileInputRef = React.useRef(null);
-    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+    const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30 MB
     const ALLOWED_TYPES = {
         'application/pdf': 'PDF',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word',
@@ -13288,7 +13308,7 @@ function MissionProductsDialog({ missionProducts, setMissionProducts, onClose })
 
         // Check file size
         if (file.size > MAX_FILE_SIZE) {
-            alert(`File too large. Maximum size is 10 MB. This file is ${(file.size / (1024 * 1024)).toFixed(2)} MB.`);
+            alert(`File too large. Maximum size is 30 MB. This file is ${(file.size / (1024 * 1024)).toFixed(2)} MB.`);
             return;
         }
 
@@ -13346,7 +13366,7 @@ function MissionProductsDialog({ missionProducts, setMissionProducts, onClose })
             <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', minWidth: '500px' }}>
                 <h2>MISSION PRODUCTS</h2>
                 <p style={{ color: '#888', fontSize: '10px', marginBottom: '15px' }}>
-                    Attach mission briefs, orders, and reference documents (PDF, Word, Excel, PowerPoint - max 10 MB each)
+                    Attach mission briefs, orders, and reference documents (PDF, Word, Excel, PowerPoint - max 30 MB each)
                 </p>
 
                 {/* Hidden file input */}
