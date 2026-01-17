@@ -1076,7 +1076,7 @@ function AICSimulator() {
             lat: 26.5 - (50 / 60), // 50 NM south of bullseye (initial position)
             lon: 54.0,
             heading: 0,
-            speed: 150,
+            speed: 0,
             altitude: 15000,
             depth: null,
             targetHeading: null,
@@ -1402,6 +1402,41 @@ function AICSimulator() {
             // Get platform-specific values or use domain defaults
             const turnRate = asset.platform ? asset.platform.maxTurn : domainConfig.turnRate;
             const climbRate = asset.platform && asset.platform.maxClimb ? (asset.platform.maxClimb / 60) : CLIMB_RATE; // Convert ft/min to ft/sec
+
+            // HIDDEN ASSETS: Apply target values immediately (no gradual transitions)
+            // This allows instructors to set up threat presentations before revealing assets
+            if (asset.hidden) {
+                if (asset.targetHeading !== null) {
+                    updated.heading = asset.targetHeading;
+                    updated.targetHeading = null;
+                }
+                if (asset.targetSpeed !== null) {
+                    updated.speed = asset.targetSpeed;
+                    updated.targetSpeed = null;
+                }
+                if (domainConfig.hasAltitude && asset.targetAltitude !== null) {
+                    updated.altitude = asset.targetAltitude;
+                    updated.targetAltitude = null;
+                }
+                if (domainConfig.hasDepth && asset.targetDepth !== null) {
+                    updated.depth = asset.targetDepth;
+                    updated.targetDepth = null;
+                }
+                // Enforce platform limits for hidden assets
+                if (asset.platform) {
+                    if (asset.platform.maxSpeed !== undefined) {
+                        updated.speed = Math.min(updated.speed, asset.platform.maxSpeed);
+                    }
+                    if (asset.platform.maxAltitude !== undefined && domainConfig.hasAltitude) {
+                        updated.altitude = Math.min(updated.altitude, asset.platform.maxAltitude);
+                    }
+                    if (asset.platform.maxDepth !== undefined && domainConfig.hasDepth) {
+                        updated.depth = Math.min(updated.depth, asset.platform.maxDepth);
+                    }
+                }
+                // Skip position updates for hidden assets - they stay in place
+                return updated;
+            }
 
             // Update heading
             if (asset.targetHeading !== null) {
@@ -2518,6 +2553,46 @@ function AICSimulator() {
         }
     }, [simulatorMode, isRunning, assets, studentTracks, missionTime]);
 
+    // STUDENT MODE: Immediate position sync when assets are moved (dragged)
+    // This ensures tracks update immediately when instructor drags assets, even when paused
+    useEffect(() => {
+        if (simulatorMode !== 'student') return;
+
+        // Update all non-operator tracks to match their underlying asset positions
+        setStudentTracks(prevTracks => {
+            let hasChanges = false;
+            const updatedTracks = prevTracks.map(track => {
+                // Skip operator tracks - they don't have underlying assets
+                if (track.isOperatorTrack) return track;
+
+                const asset = assets.find(a => a.id === track.assetId);
+                if (!asset) return track;
+
+                // Check if position has significantly changed
+                const positionChanged = (
+                    Math.abs(asset.lat - track.lat) > 0.0001 ||
+                    Math.abs(asset.lon - track.lon) > 0.0001
+                );
+
+                if (positionChanged) {
+                    hasChanges = true;
+                    return {
+                        ...track,
+                        lat: asset.lat,
+                        lon: asset.lon,
+                        estimatedHeading: asset.heading || track.estimatedHeading,
+                        estimatedSpeed: asset.speed || track.estimatedSpeed,
+                        lastKnownLat: asset.lat,
+                        lastKnownLon: asset.lon
+                    };
+                }
+                return track;
+            });
+
+            return hasChanges ? updatedTracks : prevTracks;
+        });
+    }, [simulatorMode, assets]);
+
     // ========================================================================
     // ESM SYSTEM - Detect active emitters
     // ========================================================================
@@ -2665,7 +2740,8 @@ function AICSimulator() {
         const platform = assetData.platform || null;
 
         // Set default values based on domain and platform
-        let speed = assetData.speed !== undefined ? assetData.speed : (domain === 'air' ? 350 : 15);
+        // Default speed to 0 for all assets to support realistic threat presentations (e.g., aircraft launching from airfields)
+        let speed = assetData.speed !== undefined ? assetData.speed : 0;
         let altitude = assetData.altitude !== undefined ? assetData.altitude : (domain === 'air' ? 25000 : 0);
         let depth = assetData.depth !== undefined ? assetData.depth : (domain === 'subSurface' ? 50 : null);
 
@@ -3804,7 +3880,7 @@ function AICSimulator() {
                     lat: loadedBullseye.lat - (50 / 60),
                     lon: loadedBullseye.lon,
                     heading: 0,
-                    speed: 150,
+                    speed: 0,
                     altitude: 15000,
                     depth: null,
                     targetHeading: null,
@@ -3962,7 +4038,7 @@ function AICSimulator() {
                             lat: loadedBullseye.lat - (50 / 60),
                             lon: loadedBullseye.lon,
                             heading: 0,
-                            speed: 150,
+                            speed: 0,
                             altitude: 15000,
                             depth: null,
                             targetHeading: null,
@@ -5602,6 +5678,11 @@ function AICSimulator() {
         const size = 12; // Consistent size for all assets
         const strokeWidth = 2;
 
+        // INSTRUCTOR MODE: Use grey color for hidden assets to indicate they're not visible to students
+        const assetColor = (simulatorMode === 'instructor' && asset.hidden && asset.type !== 'ownship')
+            ? '#808080' // Grey for hidden assets
+            : config.color;
+
         // Heading line
         const headingLength = 30;
         const headingRad = asset.heading * Math.PI / 180;
@@ -5619,7 +5700,7 @@ function AICSimulator() {
                             cy={pos.y}
                             r={22}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth="1.5"
                             opacity="0.4"
                         />
@@ -5629,7 +5710,7 @@ function AICSimulator() {
                             cy={pos.y}
                             r={20}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth="2.5"
                             strokeDasharray="4,3"
                             opacity="0.9"
@@ -5650,7 +5731,7 @@ function AICSimulator() {
                             cy={pos.y}
                             r={18}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth="1"
                             opacity="0.3"
                         />
@@ -5660,7 +5741,7 @@ function AICSimulator() {
                 {/* Heading line - hide for land domain (stationary) */}
                 {asset.domain !== 'land' && (
                     <line x1={pos.x} y1={pos.y} x2={headingX} y2={headingY}
-                          stroke={config.color} strokeWidth="2" />
+                          stroke={assetColor} strokeWidth="2" />
                 )}
 
                 {/* Asset symbol - MIL-STD-2525 symbology based on domain */}
@@ -5671,7 +5752,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x - size} ${pos.y} A ${size} ${size} 0 0 1 ${pos.x + size} ${pos.y}`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     ) : config.shape === 'diamond' ? (
@@ -5679,7 +5760,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x - size} ${pos.y} L ${pos.x} ${pos.y - size} L ${pos.x + size} ${pos.y}`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     ) : config.shape === 'ownship' ? (
@@ -5690,7 +5771,7 @@ function AICSimulator() {
                                 cy={pos.y}
                                 r={size}
                                 fill="none"
-                                stroke={config.color}
+                                stroke={assetColor}
                                 strokeWidth={strokeWidth}
                             />
                             <line
@@ -5698,7 +5779,7 @@ function AICSimulator() {
                                 y1={pos.y}
                                 x2={pos.x + size}
                                 y2={pos.y}
-                                stroke={config.color}
+                                stroke={assetColor}
                                 strokeWidth={strokeWidth}
                             />
                             <line
@@ -5706,7 +5787,7 @@ function AICSimulator() {
                                 y1={pos.y - size}
                                 x2={pos.x}
                                 y2={pos.y + size}
-                                stroke={config.color}
+                                stroke={assetColor}
                                 strokeWidth={strokeWidth}
                             />
                         </g>
@@ -5715,7 +5796,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x - size} ${pos.y} L ${pos.x - size} ${pos.y - size} L ${pos.x + size} ${pos.y - size} L ${pos.x + size} ${pos.y}`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     )
@@ -5728,7 +5809,7 @@ function AICSimulator() {
                             cy={pos.y}
                             r={size}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     ) : config.shape === 'diamond' ? (
@@ -5736,7 +5817,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x} ${pos.y - size} L ${pos.x + size} ${pos.y} L ${pos.x} ${pos.y + size} L ${pos.x - size} ${pos.y} Z`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     ) : (
@@ -5747,7 +5828,7 @@ function AICSimulator() {
                             width={size * 2}
                             height={size * 2}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     )
@@ -5758,7 +5839,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x + size} ${pos.y} A ${size} ${size} 0 0 1 ${pos.x - size} ${pos.y}`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     ) : config.shape === 'diamond' ? (
@@ -5766,7 +5847,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x - size} ${pos.y} L ${pos.x} ${pos.y + size} L ${pos.x + size} ${pos.y}`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     ) : (
@@ -5774,7 +5855,7 @@ function AICSimulator() {
                         <path
                             d={`M ${pos.x - size} ${pos.y} L ${pos.x - size} ${pos.y + size} L ${pos.x + size} ${pos.y + size} L ${pos.x + size} ${pos.y}`}
                             fill="none"
-                            stroke={config.color}
+                            stroke={assetColor}
                             strokeWidth={strokeWidth}
                         />
                     )
@@ -5784,13 +5865,13 @@ function AICSimulator() {
                     <path
                         d={`M ${pos.x - size} ${pos.y - size * 0.3} L ${pos.x - size * 0.3} ${pos.y - size} L ${pos.x + size * 0.3} ${pos.y - size} L ${pos.x + size} ${pos.y - size * 0.3} L ${pos.x + size} ${pos.y + size} L ${pos.x - size} ${pos.y + size} Z`}
                         fill="none"
-                        stroke={config.color}
+                        stroke={assetColor}
                         strokeWidth={strokeWidth}
                     />
                 ) : null}
 
                 {/* Name label above */}
-                <text x={pos.x} y={pos.y-size-5} fill={config.color} fontSize="10"
+                <text x={pos.x} y={pos.y-size-5} fill={assetColor} fontSize="10"
                       textAnchor="middle" fontWeight="700">
                     {asset.name}
                 </text>
@@ -5804,7 +5885,7 @@ function AICSimulator() {
                     // Track number
                     if (asset.trackNumber) {
                         labels.push(
-                            <text key="tn" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                            <text key="tn" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
                                   textAnchor="middle" fontWeight="700">
                                 TN#{asset.trackNumber}
                             </text>
@@ -5816,7 +5897,7 @@ function AICSimulator() {
                     if (asset.iffSquawking) {
                         if (asset.iffModeI) {
                             labels.push(
-                                <text key="m1" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                <text key="m1" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
                                       textAnchor="middle" fontWeight="700">
                                     M1: {asset.iffModeI}
                                 </text>
@@ -5825,7 +5906,7 @@ function AICSimulator() {
                         }
                         if (asset.iffModeII) {
                             labels.push(
-                                <text key="m2" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                <text key="m2" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
                                       textAnchor="middle" fontWeight="700">
                                     M2: {asset.iffModeII}
                                 </text>
@@ -5834,7 +5915,7 @@ function AICSimulator() {
                         }
                         if (asset.iffModeIII) {
                             labels.push(
-                                <text key="m3" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                                <text key="m3" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
                                       textAnchor="middle" fontWeight="700">
                                     M3: {asset.iffModeIII}
                                 </text>
@@ -5846,14 +5927,14 @@ function AICSimulator() {
                     // Altitude / Depth - always shown
                     if (asset.domain === 'air') {
                         labels.push(
-                            <text key="alt" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                            <text key="alt" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
                                   textAnchor="middle" fontWeight="700">
                                 ALT: FL{Math.round(asset.altitude/100)}
                             </text>
                         );
                     } else if (asset.domain === 'subSurface' && asset.depth !== null) {
                         labels.push(
-                            <text key="depth" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                            <text key="depth" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
                                   textAnchor="middle" fontWeight="700">
                                 DEPTH: {Math.round(asset.depth)}ft
                             </text>
@@ -5890,14 +5971,14 @@ function AICSimulator() {
                         return (
                             <g key={wp.id}> {/* Use waypoint ID as key */}
                                 <line x1={prevPos.x} y1={prevPos.y} x2={wpPos.x} y2={wpPos.y}
-                                      stroke={config.color} strokeWidth={wp.wrappedWithPrevious ? "2" : "1"}
+                                      stroke={assetColor} strokeWidth={wp.wrappedWithPrevious ? "2" : "1"}
                                       strokeDasharray={wp.wrappedWithPrevious ? "none" : "5,5"} />
                                 <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
-                                    <line x1={-6} y1={0} x2={6} y2={0} stroke={config.color} strokeWidth="2" />
-                                    <line x1={0} y1={-6} x2={0} y2={6} stroke={config.color} strokeWidth="2" />
+                                    <line x1={-6} y1={0} x2={6} y2={0} stroke={assetColor} strokeWidth="2" />
+                                    <line x1={0} y1={-6} x2={0} y2={6} stroke={assetColor} strokeWidth="2" />
                                 </g>
                                 {/* Waypoint label using ID to preserve numbering */}
-                                <text x={wpPos.x} y={wpPos.y-10} fill={config.color} fontSize="8"
+                                <text x={wpPos.x} y={wpPos.y-10} fill={assetColor} fontSize="8"
                                       textAnchor="middle" fontWeight="700">
                                     WP{wp.id}
                                 </text>
@@ -7833,11 +7914,13 @@ function ControlPanel({
         // If a track is selected (student mode), use the track's underlying asset
         // Note: ownship has id=0, so we must check for undefined/null, not falsy
         let assetId = selectedAsset?.id;
+        let asset = selectedAsset;
         if (assetId === undefined || assetId === null) {
             if (selectedTrackId) {
                 const selectedTrack = studentTracks.find(t => t.id === selectedTrackId);
                 if (selectedTrack && selectedTrack.assetId !== undefined && selectedTrack.assetId !== null) {
                     assetId = selectedTrack.assetId;
+                    asset = assets.find(a => a.id === assetId);
                 }
             }
         }
@@ -7847,13 +7930,20 @@ function ControlPanel({
             return;
         }
 
-        // Apply the target value
-        updateAsset(assetId, { [targetField]: value });
-
-        // Reset the edit field color
-        setEditValues(prev => ({ ...prev, [field]: undefined }));
-
-        console.log(`Setting ${targetField} to ${value} for asset ${assetId}`);
+        // For HIDDEN assets, apply value immediately to both actual and target fields
+        // This provides immediate visual feedback and the physics engine will apply it instantly
+        if (asset && asset.hidden) {
+            updateAsset(assetId, { [field]: value, [targetField]: null });
+            // Keep the entered value displayed in the field
+            setEditValues(prev => ({ ...prev, [field]: Math.round(value) }));
+            console.log(`Setting ${field} directly to ${value} for hidden asset ${assetId}`);
+        } else {
+            // For visible assets, apply as target value (gradual transition)
+            updateAsset(assetId, { [targetField]: value });
+            // Reset the edit field to show current value
+            setEditValues(prev => ({ ...prev, [field]: undefined }));
+            console.log(`Setting ${targetField} to ${value} for asset ${assetId}`);
+        }
     };
 
     const applyAssetCoordinate = (field) => {
