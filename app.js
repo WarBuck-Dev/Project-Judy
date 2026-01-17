@@ -1574,6 +1574,14 @@ function AICSimulator() {
                             });
                             updated.targetHeading = calculateBearing(updated.lat, updated.lon, prevWp.lat, prevWp.lon);
                         }
+                        else if (wp.isOrbitPoint) {
+                            // Orbit point - mark reached and start orbiting
+                            updated.waypoints = waypoints.map((w, idx) =>
+                                idx === currentWpIndex ? { ...w, reached: true } : w
+                            );
+                            updated.isOrbiting = true;
+                            // Don't clear targetHeading - orbit logic below will handle continuous turning
+                        }
                         else {
                             // Normal behavior - mark reached and go to next
                             updated.waypoints = waypoints.map((w, idx) =>
@@ -1595,6 +1603,19 @@ function AICSimulator() {
                         // This ensures asset tracks waypoint even if it moves or after behaviors change heading
                         updated.targetHeading = calculateBearing(updated.lat, updated.lon, wp.lat, wp.lon);
                     }
+                }
+            }
+
+            // Orbit logic - continuous turning when orbiting
+            if (updated.isOrbiting || asset.isOrbiting) {
+                const orbitWp = (updated.waypoints || asset.waypoints).find(wp => wp.isOrbitPoint && wp.reached);
+                if (orbitWp) {
+                    // Continuously turn right at standard rate to create orbit
+                    const turnRate = asset.platform ? asset.platform.maxTurn : domainConfig.turnRate;
+                    // Apply turn rate - heading increments create continuous circle
+                    const currentHeading = updated.heading !== undefined ? updated.heading : asset.heading;
+                    updated.targetHeading = (currentHeading + turnRate * 2) % 360;
+                    updated.isOrbiting = true;
                 }
             }
 
@@ -3369,6 +3390,11 @@ function AICSimulator() {
                 updates.targetHeading = calculateBearing(asset.lat, asset.lon, lat, lon);
             }
 
+            // Exit orbit mode when new waypoint is added
+            if (asset.isOrbiting) {
+                updates.isOrbiting = false;
+            }
+
             return { ...asset, ...updates };
         }));
     }, []);
@@ -3421,7 +3447,8 @@ function AICSimulator() {
                     ...asset,
                     waypoints: [],
                     nextWaypointId: 0, // Reset waypoint ID counter for fresh start
-                    targetHeading: null // Reset heading to manual control
+                    targetHeading: null, // Reset heading to manual control
+                    isOrbiting: false // Exit orbit mode
                 };
             }
             return asset;
@@ -3450,6 +3477,37 @@ function AICSimulator() {
             );
 
             return { ...asset, waypoints: newWaypoints };
+        }));
+    }, []);
+
+    const addOrbitPoint = useCallback((assetId, lat, lon) => {
+        setAssets(prev => prev.map(asset => {
+            if (asset.id !== assetId) return asset;
+
+            // Only air domain can orbit
+            if (asset.domain !== 'air') {
+                return asset;
+            }
+
+            // Generate unique ID for orbit point
+            const nextWaypointId = (asset.nextWaypointId || 0) + 1;
+
+            const orbitPoint = {
+                id: nextWaypointId,
+                lat: lat,
+                lon: lon,
+                reached: false,
+                isOrbitPoint: true
+            };
+
+            // Replace all waypoints with single orbit point (like "Go To")
+            return {
+                ...asset,
+                waypoints: [orbitPoint],
+                nextWaypointId: nextWaypointId,
+                targetHeading: calculateBearing(asset.lat, asset.lon, lat, lon),
+                isOrbiting: false  // Will be set true when orbit point reached
+            };
         }));
     }, []);
 
@@ -5988,14 +6046,28 @@ function AICSimulator() {
                                 <line x1={prevPos.x} y1={prevPos.y} x2={wpPos.x} y2={wpPos.y}
                                       stroke={assetColor} strokeWidth={wp.wrappedWithPrevious ? "2" : "1"}
                                       strokeDasharray={wp.wrappedWithPrevious ? "none" : "5,5"} />
-                                <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
-                                    <line x1={-6} y1={0} x2={6} y2={0} stroke={assetColor} strokeWidth="2" />
-                                    <line x1={0} y1={-6} x2={0} y2={6} stroke={assetColor} strokeWidth="2" />
-                                </g>
-                                {/* Waypoint label using ID to preserve numbering */}
+                                {wp.isOrbitPoint ? (
+                                    /* Orbit point: Circle symbol */
+                                    <circle
+                                        cx={wpPos.x}
+                                        cy={wpPos.y}
+                                        r={8}
+                                        fill="none"
+                                        stroke={assetColor}
+                                        strokeWidth="2"
+                                        strokeDasharray={asset.isOrbiting ? "none" : "3,3"}
+                                    />
+                                ) : (
+                                    /* Regular waypoint: X symbol */
+                                    <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
+                                        <line x1={-6} y1={0} x2={6} y2={0} stroke={assetColor} strokeWidth="2" />
+                                        <line x1={0} y1={-6} x2={0} y2={6} stroke={assetColor} strokeWidth="2" />
+                                    </g>
+                                )}
+                                {/* Waypoint label - ORBIT for orbit points, WP# for regular */}
                                 <text x={wpPos.x} y={wpPos.y-10} fill={assetColor} fontSize="8"
                                       textAnchor="middle" fontWeight="700">
-                                    WP{wp.id}
+                                    {wp.isOrbitPoint ? 'ORBIT' : `WP${wp.id}`}
                                 </text>
                             </g>
                         );
@@ -6279,14 +6351,28 @@ function AICSimulator() {
                                 <line x1={prevPos.x} y1={prevPos.y} x2={wpPos.x} y2={wpPos.y}
                                       stroke={config.color} strokeWidth={wp.wrappedWithPrevious ? "2" : "1"}
                                       strokeDasharray={wp.wrappedWithPrevious ? "none" : "5,5"} />
-                                <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
-                                    <line x1={-6} y1={0} x2={6} y2={0} stroke={config.color} strokeWidth="2" />
-                                    <line x1={0} y1={-6} x2={0} y2={6} stroke={config.color} strokeWidth="2" />
-                                </g>
-                                {/* Waypoint label using ID to preserve numbering */}
+                                {wp.isOrbitPoint ? (
+                                    /* Orbit point: Circle symbol */
+                                    <circle
+                                        cx={wpPos.x}
+                                        cy={wpPos.y}
+                                        r={8}
+                                        fill="none"
+                                        stroke={config.color}
+                                        strokeWidth="2"
+                                        strokeDasharray={asset.isOrbiting ? "none" : "3,3"}
+                                    />
+                                ) : (
+                                    /* Regular waypoint: X symbol */
+                                    <g transform={`translate(${wpPos.x}, ${wpPos.y}) rotate(45)`}>
+                                        <line x1={-6} y1={0} x2={6} y2={0} stroke={config.color} strokeWidth="2" />
+                                        <line x1={0} y1={-6} x2={0} y2={6} stroke={config.color} strokeWidth="2" />
+                                    </g>
+                                )}
+                                {/* Waypoint label - ORBIT for orbit points, WP# for regular */}
                                 <text x={wpPos.x} y={wpPos.y-10} fill={config.color} fontSize="8"
                                       textAnchor="middle" fontWeight="700">
-                                    WP{wp.id}
+                                    {wp.isOrbitPoint ? 'ORBIT' : `WP${wp.id}`}
                                 </text>
                             </g>
                         );
@@ -7149,6 +7235,7 @@ function AICSimulator() {
                     studentTracks={studentTracks}
                     setShowCreateOperatorTrackDialog={setShowCreateOperatorTrackDialog}
                     fuseTrack={fuseTrack}
+                    addOrbitPoint={addOrbitPoint}
                 />
             )}
 
@@ -7948,13 +8035,23 @@ function ControlPanel({
         // For HIDDEN assets, apply value immediately to both actual and target fields
         // This provides immediate visual feedback and the physics engine will apply it instantly
         if (asset && asset.hidden) {
-            updateAsset(assetId, { [field]: value, [targetField]: null });
+            const updates = { [field]: value, [targetField]: null };
+            // Exit orbit mode when heading is manually set
+            if (field === 'heading' && asset.isOrbiting) {
+                updates.isOrbiting = false;
+            }
+            updateAsset(assetId, updates);
             // Keep the entered value displayed in the field
             setEditValues(prev => ({ ...prev, [field]: Math.round(value) }));
             console.log(`Setting ${field} directly to ${value} for hidden asset ${assetId}`);
         } else {
             // For visible assets, apply as target value (gradual transition)
-            updateAsset(assetId, { [targetField]: value });
+            const updates = { [targetField]: value };
+            // Exit orbit mode when heading is manually set
+            if (field === 'heading' && asset && asset.isOrbiting) {
+                updates.isOrbiting = false;
+            }
+            updateAsset(assetId, updates);
             // Reset the edit field to show current value
             setEditValues(prev => ({ ...prev, [field]: undefined }));
             console.log(`Setting ${targetField} to ${value} for asset ${assetId}`);
@@ -12390,7 +12487,7 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, clearWaypoints, deleteWaypoint, wrapWaypoint, unwrapWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType, simulatorMode, studentTracks, setShowCreateOperatorTrackDialog, fuseTrack }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, clearWaypoints, deleteWaypoint, wrapWaypoint, unwrapWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType, simulatorMode, studentTracks, setShowCreateOperatorTrackDialog, fuseTrack, addOrbitPoint }) {
     const [showDomainSubmenu, setShowDomainSubmenu] = useState(false);
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
     const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
@@ -12447,6 +12544,14 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                     addWaypoint(contextMenu.assetId, contextMenu.lat, contextMenu.lon, true);
                 } else if (selectedAsset) {
                     addWaypoint(selectedAsset.id, contextMenu.lat, contextMenu.lon, true);
+                }
+                break;
+            case 'orbit':
+                // Orbit command - air assets only, replaces waypoints with orbit point
+                if (contextMenu.assetId !== undefined) {
+                    addOrbitPoint(contextMenu.assetId, contextMenu.lat, contextMenu.lon);
+                } else if (selectedAsset) {
+                    addOrbitPoint(selectedAsset.id, contextMenu.lat, contextMenu.lon);
                 }
                 break;
             case 'addWaypoint':
@@ -12591,9 +12696,16 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             {/* Waypoint options - Instructor OR Friendly in Student */}
             {/* For 'asset' type - use selectedAsset */}
             {contextMenu.type === 'asset' && !selectedAsset?.waypoints.length && isFriendlyAssetOrTrack() && (
-                <div className="context-menu-item" onClick={() => handleClick('goTo')}>
-                    Go To
-                </div>
+                <>
+                    <div className="context-menu-item" onClick={() => handleClick('goTo')}>
+                        Go To
+                    </div>
+                    {selectedAsset?.domain === 'air' && (
+                        <div className="context-menu-item" onClick={() => handleClick('orbit')}>
+                            Orbit
+                        </div>
+                    )}
+                </>
             )}
 
             {contextMenu.type === 'asset' && selectedAsset?.waypoints.length > 0 && isFriendlyAssetOrTrack() && (
@@ -12601,6 +12713,11 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                     <div className="context-menu-item" onClick={() => handleClick('addWaypoint')}>
                         Add Waypoint
                     </div>
+                    {selectedAsset?.domain === 'air' && (
+                        <div className="context-menu-item" onClick={() => handleClick('orbit')}>
+                            Orbit
+                        </div>
+                    )}
                     <div
                         className="context-menu-item"
                         style={{
@@ -12623,9 +12740,16 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
 
                 if (!trackAsset.waypoints || trackAsset.waypoints.length === 0) {
                     return (
-                        <div className="context-menu-item" onClick={() => handleClick('goTo')}>
-                            Go To
-                        </div>
+                        <>
+                            <div className="context-menu-item" onClick={() => handleClick('goTo')}>
+                                Go To
+                            </div>
+                            {trackAsset.domain === 'air' && (
+                                <div className="context-menu-item" onClick={() => handleClick('orbit')}>
+                                    Orbit
+                                </div>
+                            )}
+                        </>
                     );
                 } else {
                     return (
@@ -12633,6 +12757,11 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                             <div className="context-menu-item" onClick={() => handleClick('addWaypoint')}>
                                 Add Waypoint
                             </div>
+                            {trackAsset.domain === 'air' && (
+                                <div className="context-menu-item" onClick={() => handleClick('orbit')}>
+                                    Orbit
+                                </div>
+                            )}
                             <div
                                 className="context-menu-item"
                                 style={{
