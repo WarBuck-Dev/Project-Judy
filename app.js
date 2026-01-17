@@ -1405,6 +1405,7 @@ function AICSimulator() {
 
             // HIDDEN ASSETS: Apply target values immediately (no gradual transitions)
             // This allows instructors to set up threat presentations before revealing assets
+            // Hidden assets still move based on their speed/heading, they're just not visible to students
             if (asset.hidden) {
                 if (asset.targetHeading !== null) {
                     updated.heading = asset.targetHeading;
@@ -1434,8 +1435,7 @@ function AICSimulator() {
                         updated.depth = Math.min(updated.depth, asset.platform.maxDepth);
                     }
                 }
-                // Skip position updates for hidden assets - they stay in place
-                return updated;
+                // Continue to position updates - hidden assets move, they're just not visible
             }
 
             // Update heading
