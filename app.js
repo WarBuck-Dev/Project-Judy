@@ -1423,6 +1423,9 @@ function AICSimulator() {
             'shades': 'spades',
             'bandaid': 'bandit',
             'banned it': 'bandit',
+            'banished': 'vanished',
+            'vanish': 'vanished',
+            'finished': 'vanished',
         };
 
         // Apply tactical corrections
@@ -1683,15 +1686,39 @@ function AICSimulator() {
 
         // Try patterns in order of specificity:
 
-        // 1. First try 4+ consecutive digits after bullseye - e.g., "Rock 09134" = 091/34 or "Rock 0726" = 072/6
+        // 1. First try 4-5 consecutive digits after bullseye - e.g., "Rock 09134" = 091/34 or "Rock 0726" = 072/6
         // Take first 3 as bearing (always 3 digits 000-360), remaining 1-2 digits as range
-        const fourPlusDigitPattern = /(\d{4,})/;
-        const fourPlusDigitMatch = afterBullseye.match(fourPlusDigitPattern);
-        if (fourPlusDigitMatch) {
-            const digits = fourPlusDigitMatch[1];
+        // Use {4,5} to avoid matching into altitude (e.g., "073625000" from "0736-25,000")
+        const fourFiveDigitPattern = /(\d{4,5})(?!\d)/;
+        const fourFiveDigitMatch = afterBullseye.match(fourFiveDigitPattern);
+        if (fourFiveDigitMatch) {
+            const digits = fourFiveDigitMatch[1];
             bearing = parseInt(digits.substring(0, 3));
-            // Range is the remaining digits (1 or 2 digits)
-            range = parseInt(digits.substring(3));
+            // Range is the remaining digits (1 or 2 digits), max 2 digits for range
+            const rangeDigits = digits.substring(3, 5);
+            range = parseInt(rangeDigits);
+        }
+
+        // 1b. Try 4 digits followed by hyphen (e.g., "0736-25,000" = 073/6, altitude 25000)
+        // This handles speech recognition merging bearing+range then hyphen before altitude
+        if (bearing === null) {
+            const fourDigitHyphenPattern = /(\d{4})-/;
+            const fourDigitHyphenMatch = afterBullseye.match(fourDigitHyphenPattern);
+            if (fourDigitHyphenMatch) {
+                const digits = fourDigitHyphenMatch[1];
+                bearing = parseInt(digits.substring(0, 3));
+                range = parseInt(digits.substring(3));
+            }
+        }
+
+        // 1c. Try 3-digit bearing followed by hyphen and 1-2 digit range: "073-6" or "091-34"
+        if (bearing === null) {
+            const bearingHyphenRangePattern = /(\d{3})\s*-\s*(\d{1,2})(?!\d)/;
+            const bearingHyphenMatch = afterBullseye.match(bearingHyphenRangePattern);
+            if (bearingHyphenMatch) {
+                bearing = parseInt(bearingHyphenMatch[1]);
+                range = parseInt(bearingHyphenMatch[2]);
+            }
         }
 
         // 2. Try explicit separator patterns - "091/34" or "091-34"
@@ -2383,9 +2410,10 @@ function AICSimulator() {
         }
 
         // TAC RANGE: "Heat one one, North Group 30 miles"
-        // Fighter acknowledges
+        // Fighter acknowledges - works in engagement phase OR when fighter is intercepting (for loaded saves)
         const tacRangeMatch = text.match(/(\w+\s*group)\s*(\d+)\s*miles/i);
-        if (!commandExecuted && tacRangeMatch && interceptState.phase === 'engagement') {
+        const isIntercepting = targetAsset?.targetingState === 'intercepting';
+        if (!commandExecuted && tacRangeMatch && (interceptState.phase === 'engagement' || isIntercepting)) {
             const response = generateFighterReadback(targetAsset.name);
             speakResponse(response);
             addToRadioLog(targetAsset.name, response, 'incoming');
@@ -2393,10 +2421,12 @@ function AICSimulator() {
         }
 
         // DECLARE RESPONSE: "Closeout, North Group Rock 090/28, twenty-five thousand, track west, hostile"
-        // Fighter acknowledges
+        // Fighter acknowledges - works in engagement phase OR when fighter is intercepting (for loaded saves)
+        // IMPORTANT: Exclude vanished calls - they should be handled by the vanished handler
         const declareResponseMatch = text.match(/(\w+\s*group).*?(rock|bullseye)/i);
         const isNotCommit = !text.match(/commit/i);
-        if (!commandExecuted && declareResponseMatch && isNotCommit && interceptState.phase === 'engagement') {
+        const isVanishedCall = text.match(/vanished/i);
+        if (!commandExecuted && declareResponseMatch && isNotCommit && !isVanishedCall && (interceptState.phase === 'engagement' || isIntercepting)) {
             const response = generateFighterReadback(targetAsset.name);
             speakResponse(response);
             addToRadioLog(targetAsset.name, response, 'incoming');
@@ -2404,9 +2434,9 @@ function AICSimulator() {
         }
 
         // SEPARATION RESPONSE: "Closeout, South Group separation 10, twenty-five thousand, track west, hostile"
-        // No fighter response to separation
+        // No fighter response to separation - works in engagement phase OR when fighter is intercepting
         const separationMatch = text.match(/(\w+\s*group)\s*separation\s*(\d+)/i);
-        if (!commandExecuted && separationMatch && interceptState.phase === 'engagement') {
+        if (!commandExecuted && separationMatch && (interceptState.phase === 'engagement' || isIntercepting)) {
             // Just log the AIC's call - no fighter response
             commandExecuted = true;
         }
@@ -2426,14 +2456,45 @@ function AICSimulator() {
             }));
 
             // Check for directive targeting
-            const directive = parseDirectiveTarget(text);
-            if (directive && directive.anchor) {
-                // Find next target asset
-                const nextTarget = findAssetByBullseyeAnchor(
-                    directive.anchor.bearing,
-                    directive.anchor.range,
-                    directive.anchor.altitude ? directive.anchor.altitude / 1000 : null
+            let directive = parseDirectiveTarget(text);
+
+            // Fallback: if parseDirectiveTarget failed but text contains "target" and a group name
+            if (!directive && text.match(/target/i)) {
+                const groupNames = extractGroupNames(text);
+                // Find a group name that's NOT the vanished group
+                const newTargetGroup = groupNames.find(g =>
+                    !g.toLowerCase().includes(vanishedGroupName.toLowerCase())
                 );
+                if (newTargetGroup) {
+                    directive = {
+                        groupName: newTargetGroup,
+                        anchor: parseBullseyeAnchor(text)
+                    };
+                }
+            }
+
+            if (directive && directive.groupName) {
+                // Find next target asset by bullseye anchor if available
+                let nextTarget = null;
+                if (directive.anchor) {
+                    nextTarget = findAssetByBullseyeAnchor(
+                        directive.anchor.bearing,
+                        directive.anchor.range,
+                        directive.anchor.altitude ? directive.anchor.altitude / 1000 : null
+                    );
+                }
+
+                // If no target found by anchor, try to find any other hostile asset
+                if (!nextTarget) {
+                    const otherHostiles = assets.filter(a =>
+                        a.identity === 'hostile' &&
+                        a.id !== targetAsset?.targetedAssetId &&
+                        !a.isDestroyed
+                    );
+                    if (otherHostiles.length > 0) {
+                        nextTarget = otherHostiles[0];
+                    }
+                }
 
                 if (nextTarget) {
                     // Fighter acknowledges and retargets
@@ -2441,7 +2502,7 @@ function AICSimulator() {
                     speakResponse(response);
                     addToRadioLog(targetAsset.name, response, 'incoming');
 
-                    // Update fighter targeting
+                    // Update fighter targeting - reset range-triggered call flags for new target
                     const interceptHeading = calculateBearing(
                         targetAsset.lat, targetAsset.lon,
                         nextTarget.lat, nextTarget.lon
@@ -2450,7 +2511,9 @@ function AICSimulator() {
                         targetHeading: interceptHeading,
                         targetedAssetId: nextTarget.id,
                         targetGroupName: directive.groupName,
-                        targetingState: 'intercepting'
+                        targetingState: 'intercepting',
+                        declareCalled28nm: true,  // Skip declare for retarget (already engaged)
+                        fox3Called25nm: false     // Allow fox-3 for new target
                     });
 
                     // Update intercept state
@@ -2905,14 +2968,29 @@ function AICSimulator() {
 
                                 // Check interceptState for next priority group to request separation
                                 const currentGroup = interceptState.groups.find(g => g.assetId === asset.targetedAssetId);
-                                const nextGroup = interceptState.groups
+                                let nextGroup = interceptState.groups
                                     .filter(g => g.status === 'active' && g.assetId !== asset.targetedAssetId)
                                     .sort((a, b) => (a.priority || 99) - (b.priority || 99))[0];
 
+                                // If no next group in interceptState, check for other hostile assets
+                                // This handles the case where only one group was mentioned in the commit
+                                let nextGroupName = nextGroup?.name;
+                                if (!nextGroupName) {
+                                    const otherHostiles = assets.filter(a =>
+                                        a.identity === 'hostile' &&
+                                        a.id !== asset.targetedAssetId &&
+                                        !a.isDestroyed
+                                    );
+                                    if (otherHostiles.length > 0) {
+                                        // Use a generic group name based on relative position
+                                        nextGroupName = 'south group'; // Default to south group as secondary
+                                    }
+                                }
+
                                 setTimeout(() => {
                                     let fox3Call = `${formatCallsignForRadio(asset.name)}, fox-3 ${groupName}`;
-                                    if (nextGroup) {
-                                        fox3Call += `. ${ownshipTacticalCallsign}, say separation ${nextGroup.name}`;
+                                    if (nextGroupName) {
+                                        fox3Call += `. ${ownshipTacticalCallsign}, say separation ${nextGroupName}`;
                                     }
                                     speakResponse(fox3Call);
                                     addToRadioLog(asset.name, fox3Call, 'incoming');
@@ -4761,12 +4839,17 @@ function AICSimulator() {
                     fireWeapon(asset.id, asset.targetedAssetId, 'AAM');
 
                     // Announce FOX-3 call (AAM is a Fox-3 weapon - active radar homing)
-                    // Format: "Heat one one, FOX 3, single group"
-                    const callsign = formatCallsignForRadio(asset.name);
-                    const groupName = asset.targetGroupName || 'group';
-                    const foxCall = `${callsign}, FOX 3, ${groupName}`;
-                    speakResponse(foxCall);
-                    addToRadioLog(asset.name, foxCall, 'incoming');
+                    // Skip if in AIC Training mode OR if fox3Called25nm is already set
+                    // The fox-3 call is handled by the 25nm trigger which includes separation request
+                    const isAICTrainingMode = interceptState.phase === 'committed' || interceptState.phase === 'engagement';
+                    if (!isAICTrainingMode && !asset.fox3Called25nm) {
+                        // Format: "Heat one one, FOX 3, single group"
+                        const callsign = formatCallsignForRadio(asset.name);
+                        const groupName = asset.targetGroupName || 'group';
+                        const foxCall = `${callsign}, FOX 3, ${groupName}`;
+                        speakResponse(foxCall);
+                        addToRadioLog(asset.name, foxCall, 'incoming');
+                    }
                 }
 
                 // Clear the engageAttempted flag
@@ -4775,7 +4858,7 @@ function AICSimulator() {
                 ));
             }
         });
-    }, [assets, fireWeapon, weaponConfigs, speakResponse, addToRadioLog, formatCallsignForRadio]);
+    }, [assets, fireWeapon, weaponConfigs, speakResponse, addToRadioLog, formatCallsignForRadio, interceptState.phase]);
 
     // Process pending timeout calls (weapon impact announcements)
     useEffect(() => {
