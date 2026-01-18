@@ -1092,7 +1092,10 @@ function AICSimulator() {
             targetDeclaration: null, // 'hostile' | 'bandit' | 'bogeySpades'
             // VID (Visual ID) state for Bogey Spades intercepts
             vidCalled20nm: false,  // Has called "V-I-D, group" at 20nm
-            vidCalled2nm: false    // Has called "V-I-D group, group NATO name" at 2nm
+            vidCalled2nm: false,   // Has called "V-I-D group, group NATO name" at 2nm
+            // AIC Training Mode - range-triggered call flags
+            declareCalled28nm: false,  // Has fighter called "declare group" at 28nm
+            fox3Called25nm: false      // Has fighter called "fox-3 group" at 25nm
         }
     ]);
     const [selectedAssetId, setSelectedAssetId] = useState(null);
@@ -1239,6 +1242,17 @@ function AICSimulator() {
     const [radioLog, setRadioLog] = useState([]); // Communication history
     const [pendingTimeoutCalls, setPendingTimeoutCalls] = useState([]); // Queue for timeout announcements
     const [pendingVIDCalls, setPendingVIDCalls] = useState([]); // Queue for VID announcements
+
+    // AIC Training - Intercept State Management
+    const [interceptState, setInterceptState] = useState({
+        phase: 'idle', // 'idle' | 'broadcast' | 'committed' | 'engagement' | 'post-merge'
+        groups: [], // All groups mentioned in intercept
+        // Group shape: { id, name, assetId, status: 'active'|'engaged'|'vanished',
+        //                priority, position: {lat, lon}, altitude, track, declaration,
+        //                declareCalled, fox3Called, timeoutCalled }
+        currentTargetGroupId: null,
+        engagingFighterId: null, // Which friendly asset is running the intercept
+    });
 
     // Radio log window position and size (draggable/resizable)
     // Default position: top of screen, to the right of the TX indicator box
@@ -1387,6 +1401,35 @@ function AICSimulator() {
             normalized = normalized.replace(new RegExp('\\b' + wrong + '\\b', 'g'), correct);
         });
 
+        // Common tactical/AIC term mishearings
+        const tacticalCorrections = {
+            'asthma': 'azimuth',
+            'asma': 'azimuth',
+            'as a math': 'azimuth',
+            'as a meth': 'azimuth',
+            'as smith': 'azimuth',
+            'hostel': 'hostile',
+            'hostels': 'hostile',
+            'hospital': 'hostile',
+            'austell': 'hostile',
+            'bully': 'bullseye',
+            'bulls eye': 'bullseye',
+            'bull\'s eye': 'bullseye',
+            'bull eye': 'bullseye',
+            'boggie': 'bogey',
+            'boogey': 'bogey',
+            'boogie': 'bogey',
+            'spades': 'spades',  // usually correct, but just in case
+            'shades': 'spades',
+            'bandaid': 'bandit',
+            'banned it': 'bandit',
+        };
+
+        // Apply tactical corrections
+        Object.entries(tacticalCorrections).forEach(([wrong, correct]) => {
+            normalized = normalized.replace(new RegExp('\\b' + wrong + '\\b', 'gi'), correct);
+        });
+
         return normalized;
     };
 
@@ -1423,7 +1466,7 @@ function AICSimulator() {
     const findAssetByCallsign = useCallback((transcript, assetList) => {
         const text = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, '');
 
-        // First pass: exact matching
+        // First pass: exact matching (full callsign like "Heat 11")
         for (const asset of assetList) {
             if (!asset.name) continue;
 
@@ -1460,6 +1503,24 @@ function AICSimulator() {
                     if (pattern && text.includes(pattern)) {
                         return asset;
                     }
+                }
+            }
+        }
+
+        // Third pass: match base callsign only (e.g., "Showtime" matches "Showtime 11")
+        // This is needed for COMMIT calls like "Showtime commit" where flight number isn't spoken
+        for (const asset of assetList) {
+            if (!asset.name) continue;
+            const name = asset.name.toLowerCase();
+
+            // Extract the word part of the callsign (before any numbers)
+            const wordPart = name.match(/^([a-z]+)/)?.[1];
+            if (wordPart && wordPart.length > 2) {
+                // Check if transcript contains just the base callsign word
+                // Use word boundary to avoid false matches (e.g., "heat" in "wheat")
+                const basePattern = new RegExp(`\\b${wordPart}\\b`);
+                if (basePattern.test(text)) {
+                    return asset;
                 }
             }
         }
@@ -1559,6 +1620,253 @@ function AICSimulator() {
         const words = ['zero', 'one', 'two', 'three', 'four',
                       'five', 'six', 'seven', 'eight', 'niner'];
         return callsign.replace(/(\d)/g, (d) => ' ' + words[parseInt(d)]).trim();
+    }, []);
+
+    // ============================================
+    // AIC Training Helper Functions
+    // ============================================
+
+    // Get track direction string from heading (cardinal/subcardinal)
+    const getTrackDirection = useCallback((heading) => {
+        const directions = ['north', 'northeast', 'east', 'southeast',
+                           'south', 'southwest', 'west', 'northwest'];
+        const normalizedHeading = ((heading % 360) + 360) % 360;
+        const index = Math.round(normalizedHeading / 45) % 8;
+        return directions[index];
+    }, []);
+
+    // Extract group names from AIC call text
+    const extractGroupNames = useCallback((text) => {
+        const patterns = [
+            /(?:north|south|east|west)\s*(?:lead|trail)?\s*group/gi,
+            /(?:lead|trail|middle)\s*group/gi,
+            /single\s*group/gi,
+            /(?:north|south|east|west|lead|trail)\s*arm/gi
+        ];
+        const names = [];
+        patterns.forEach(p => {
+            const matches = text.match(p);
+            if (matches) names.push(...matches);
+        });
+        return [...new Set(names.map(n => n.trim()))];
+    }, []);
+
+    // Parse declaration from text (hostile, bandit, bogey spades)
+    const parseDeclarationFromText = useCallback((text) => {
+        const lower = text.toLowerCase();
+        if (lower.includes('hostile') || lower.includes('hostel') || lower.includes('hostil')) {
+            return 'hostile';
+        } else if (lower.includes('bandit') || lower.includes('bandid') || lower.includes('banned it')) {
+            return 'bandit';
+        } else if (lower.includes('bogey') || lower.includes('spades') || lower.includes('boggy') || lower.includes('bogie')) {
+            return 'bogeySpades';
+        }
+        return 'hostile'; // Default to hostile if not specified
+    }, []);
+
+    // Parse bullseye anchor from text (bearing, range, altitude)
+    // Reuses logic from TARGET command parsing
+    const parseBullseyeAnchor = useCallback((text) => {
+        // Use configured bullseye name, or default to 'rock'
+        const bullseyeNameLower = (bullseyeName || 'rock').toLowerCase();
+        const normalizedText = text.toLowerCase();
+
+        // Check if text contains bullseye name
+        if (!normalizedText.includes(bullseyeNameLower)) return null;
+
+        let bearing = null;
+        let range = null;
+
+        // Find the bullseye name and look for numbers after it
+        const bullseyeIndex = normalizedText.indexOf(bullseyeNameLower);
+        const afterBullseye = bullseyeIndex >= 0 ? text.substring(bullseyeIndex + bullseyeNameLower.length) : text;
+
+        // Try patterns in order of specificity:
+
+        // 1. First try 4+ consecutive digits after bullseye - e.g., "Rock 09134" = 091/34 or "Rock 0726" = 072/6
+        // Take first 3 as bearing (always 3 digits 000-360), remaining 1-2 digits as range
+        const fourPlusDigitPattern = /(\d{4,})/;
+        const fourPlusDigitMatch = afterBullseye.match(fourPlusDigitPattern);
+        if (fourPlusDigitMatch) {
+            const digits = fourPlusDigitMatch[1];
+            bearing = parseInt(digits.substring(0, 3));
+            // Range is the remaining digits (1 or 2 digits)
+            range = parseInt(digits.substring(3));
+        }
+
+        // 2. Try explicit separator patterns - "091/34" or "091-34"
+        if (bearing === null) {
+            const explicitSepPattern = /(\d{2,3})\s*[\/\-]\s*(\d{1,2})/;
+            const explicitMatch = afterBullseye.match(explicitSepPattern);
+            if (explicitMatch) {
+                bearing = parseInt(explicitMatch[1]);
+                range = parseInt(explicitMatch[2]);
+            }
+        }
+
+        // 3. Try space-separated - "093 32" followed by space, comma, or larger number (altitude)
+        // Match 3-digit bearing, space, 1-2 digit range
+        if (bearing === null) {
+            const spaceSepPattern = /(\d{3})\s+(\d{1,2})(?:\s|,|$)/;
+            const spaceMatch = afterBullseye.match(spaceSepPattern);
+            if (spaceMatch) {
+                bearing = parseInt(spaceMatch[1]);
+                range = parseInt(spaceMatch[2]);
+            }
+        }
+
+        // 4. Fallback: Look for first 3-digit number as bearing, then next number as range
+        // This handles cases where speech recognition adds unexpected characters
+        if (bearing === null) {
+            const firstThreeDigits = afterBullseye.match(/(\d{3})/);
+            if (firstThreeDigits) {
+                bearing = parseInt(firstThreeDigits[1]);
+                // Look for range after the bearing (skip any non-digits, find 1-2 digit number)
+                const afterBearing = afterBullseye.substring(afterBullseye.indexOf(firstThreeDigits[1]) + 3);
+                const rangeMatch = afterBearing.match(/^\D*(\d{1,2})(?:\D|$)/);
+                if (rangeMatch) {
+                    range = parseInt(rangeMatch[1]);
+                }
+            }
+        }
+
+        if (bearing === null || range === null) {
+            // Try to find spoken numbers
+            const words = ['zero', 'one', 'two', 'three', 'four',
+                          'five', 'six', 'seven', 'eight', 'niner', 'nine'];
+            const wordToNum = {};
+            words.forEach((w, i) => { wordToNum[w] = i % 10; });
+
+            // Find sequences of number words
+            const wordPattern = new RegExp(`(${words.join('|')})`, 'gi');
+            const foundWords = normalizedText.match(wordPattern);
+
+            if (foundWords && foundWords.length >= 4) {
+                // First 3 digits = bearing, rest = range
+                bearing = parseInt(foundWords.slice(0, 3).map(w => wordToNum[w.toLowerCase()]).join(''));
+                range = parseInt(foundWords.slice(3, 5).map(w => wordToNum[w.toLowerCase()]).join(''));
+            }
+        }
+
+        // Parse altitude (e.g., "twenty-five thousand" or "25 thousand")
+        let altitude = null;
+        const altMatch = text.match(/(\d+)\s*thousand/i);
+        if (altMatch) {
+            altitude = parseInt(altMatch[1]) * 1000;
+        } else {
+            // Try word-based altitude
+            const altWords = {
+                'twenty': 20, 'thirty': 30, 'forty': 40,
+                'fifteen': 15, 'ten': 10, 'five': 5
+            };
+            for (const [word, val] of Object.entries(altWords)) {
+                if (normalizedText.includes(word) && normalizedText.includes('thousand')) {
+                    altitude = val * 1000;
+                    break;
+                }
+            }
+        }
+
+        if (bearing !== null && range !== null) {
+            return { bearing, range, altitude };
+        }
+        return null;
+    }, [bullseyeName]);
+
+    // Parse directive target from text (group name + anchor)
+    // Used for vanished calls with retargeting, maneuver calls, etc.
+    const parseDirectiveTarget = useCallback((text) => {
+        // Look for "target [group name]" pattern
+        const match = text.match(/target\s+(.+?(?:group|arm))\s+/i);
+        if (!match) return null;
+
+        const groupName = match[1].trim();
+        const anchor = parseBullseyeAnchor(text);
+
+        return { groupName, anchor };
+    }, [parseBullseyeAnchor]);
+
+    // Find group by name in interceptState
+    const findGroupByName = useCallback((name) => {
+        if (!name) return null;
+        return interceptState.groups.find(g =>
+            g.name.toLowerCase().includes(name.toLowerCase())
+        );
+    }, [interceptState.groups]);
+
+    // Get next priority group (for separation requests, retargeting)
+    const getNextPriorityGroup = useCallback((currentGroupId) => {
+        return interceptState.groups
+            .filter(g => g.status === 'active' && g.id !== currentGroupId)
+            .sort((a, b) => a.priority - b.priority)[0] || null;
+    }, [interceptState.groups]);
+
+    // Check if text contains group info (for detecting broadcast calls)
+    const containsGroupInfo = useCallback((text) => {
+        const lower = text.toLowerCase();
+        return (lower.includes('group') || lower.includes('groups')) &&
+               (lower.includes('thousand') || lower.includes('track') ||
+                lower.includes('hostile') || lower.includes('bogey') || lower.includes('bandit'));
+    }, []);
+
+    // ============================================
+    // AIC Training Fighter Call Generators
+    // ============================================
+
+    // Simple acknowledgment - just callsign
+    const generateFighterReadback = useCallback((callsign) => {
+        return formatCallsignForRadio(callsign);
+    }, [formatCallsignForRadio]);
+
+    // Commit response - "Heat commit"
+    const generateFighterCommitResponse = useCallback((callsign) => {
+        const base = callsign.split(/\s+/)[0];
+        return `${base} commit`;
+    }, []);
+
+    // Target acknowledgment - "Heat one one, target North Group"
+    const generateFighterTargetAck = useCallback((callsign, groupName) => {
+        return `${formatCallsignForRadio(callsign)}, target ${groupName}`;
+    }, [formatCallsignForRadio]);
+
+    // Declare request - "Closeout, Heat one one, declare North Group"
+    const generateFighterDeclareRequest = useCallback((callsign, aicCallsign, groupName) => {
+        return `${aicCallsign}, ${formatCallsignForRadio(callsign)}, declare ${groupName}`;
+    }, [formatCallsignForRadio]);
+
+    // Fox-3 with optional separation request
+    const generateFighterFox3Call = useCallback((callsign, aicCallsign, engagedGroup, nextGroup) => {
+        let call = `${formatCallsignForRadio(callsign)}, fox-3 ${engagedGroup}`;
+        if (nextGroup) {
+            call += `. ${aicCallsign}, say separation ${nextGroup}`;
+        }
+        return call;
+    }, [formatCallsignForRadio]);
+
+    // Timeout call - "Heat one one, timeout North Group"
+    const generateFighterTimeoutCall = useCallback((callsign, groupName) => {
+        return `${formatCallsignForRadio(callsign)}, timeout ${groupName}`;
+    }, [formatCallsignForRadio]);
+
+    // Picture request (post-merge) - "Closeout, Heat one one, Rock 095/10, flowing west, picture"
+    const generateFighterPictureRequest = useCallback((callsign, aicCallsign, position) => {
+        return `${aicCallsign}, ${formatCallsignForRadio(callsign)}, ${position}, flowing west, picture`;
+    }, [formatCallsignForRadio]);
+
+    // Reset acknowledgment - "Heat one one, resetting TAMPA, state green"
+    const generateFighterResetAck = useCallback((callsign, stationName) => {
+        return `${formatCallsignForRadio(callsign)}, resetting ${stationName}, state green`;
+    }, [formatCallsignForRadio]);
+
+    // Format lat/lon as bullseye position string - "Rock 095/10"
+    const getBullseyePosition = useCallback((lat, lon, bullseyeRef) => {
+        if (!bullseyeRef || !bullseyeRef.lat || !bullseyeRef.lon) {
+            return 'position unknown';
+        }
+        const bearing = Math.round(calculateBearing(bullseyeRef.lat, bullseyeRef.lon, lat, lon));
+        const range = Math.round(calculateDistance(bullseyeRef.lat, bullseyeRef.lon, lat, lon));
+        const bearingStr = bearing.toString().padStart(3, '0');
+        return `Rock ${bearingStr}/${range}`;
     }, []);
 
     // Generate readback message with proper radio terminology
@@ -1674,7 +1982,10 @@ function AICSimulator() {
             text.includes('bogey')
         );
 
-        if (startsWithOwnCallsign && containsGroupInfo) {
+        // Only treat as broadcast if we're in idle phase (no active intercept) AND not a commit call
+        // Once committed, similar calls are labeled pictures, not broadcasts
+        const isCommitCall = text.includes('commit');
+        if (startsWithOwnCallsign && containsGroupInfo && interceptState.phase === 'idle' && !isCommitCall) {
             // This is a broadcast call - log it and have friendly assets acknowledge
             addToRadioLog(ownshipTacticalCallsign, transcript, 'outgoing');
 
@@ -1692,7 +2003,14 @@ function AICSimulator() {
 
         // Find the friendly asset being addressed (exclude ownship)
         const friendlyAssets = assets.filter(a => a.identity === 'friendly' && a.type !== 'ownship');
-        const targetAsset = findAssetByCallsign(text, friendlyAssets);
+        let targetAsset = findAssetByCallsign(text, friendlyAssets);
+
+        // If no explicit callsign found but we're in an active intercept, use the engaging fighter
+        // Once a fighter commits, all AIC calls apply to them - the fighter callsign is implied
+        if (!targetAsset && interceptState.engagingFighterId &&
+            (interceptState.phase === 'committed' || interceptState.phase === 'engagement' || interceptState.phase === 'post-merge')) {
+            targetAsset = assets.find(a => a.id === interceptState.engagingFighterId);
+        }
 
         if (!targetAsset) {
             // Log unrecognized command
@@ -1932,7 +2250,9 @@ function AICSimulator() {
                             targetHeading: interceptHeading,
                             targetGroupName: groupName, // Store group name for FOX/timeout calls
                             vidCalled20nm: false, // Reset VID state for new intercept
-                            vidCalled2nm: false
+                            vidCalled2nm: false,
+                            declareCalled28nm: false, // Reset AIC training flags for new intercept
+                            fox3Called25nm: false
                         });
 
                         // Generate readback
@@ -1963,13 +2283,352 @@ function AICSimulator() {
             }
         }
 
+        // ============================================
+        // AIC Training Voice Commands
+        // ============================================
+
+        // COMMIT: "Closeout, North Group Rock 090/45... Heat commit"
+        // This triggers the intercept - fighter responds "Heat commit" and starts intercepting
+        const commitMatch = text.match(/(\w+)\s*commit/i);
+        if (!commandExecuted && commitMatch) {
+            const anchor = parseBullseyeAnchor(text);
+            const groupNames = extractGroupNames(text);
+            const priorityGroupName = groupNames[0] || 'single group';
+
+            if (anchor) {
+                // Find hostile asset at anchor position
+                const targetGroup = findAssetByBullseyeAnchor(anchor.bearing, anchor.range, anchor.altitude ? anchor.altitude / 1000 : null);
+
+                if (targetGroup) {
+                    // Create group entry
+                    const groupId = `group-${Date.now()}`;
+                    const newGroup = {
+                        id: groupId,
+                        name: priorityGroupName,
+                        assetId: targetGroup.id,
+                        status: 'active',
+                        priority: 1,
+                        position: { lat: targetGroup.lat, lon: targetGroup.lon },
+                        altitude: targetGroup.altitude,
+                        track: getTrackDirection(targetGroup.heading),
+                        declaration: parseDeclarationFromText(text),
+                        declareCalled: false,
+                        fox3Called: false,
+                        timeoutCalled: false
+                    };
+
+                    // Fighter commits and begins intercept
+                    const response = generateFighterCommitResponse(targetAsset.name);
+                    speakResponse(response);
+                    addToRadioLog(targetAsset.name, response, 'incoming');
+
+                    // Calculate intercept heading and start intercept
+                    const interceptHeading = calculateBearing(
+                        targetAsset.lat, targetAsset.lon,
+                        targetGroup.lat, targetGroup.lon
+                    );
+                    updateAsset(targetAsset.id, {
+                        targetHeading: interceptHeading,
+                        targetingState: 'intercepting',
+                        targetedAssetId: targetGroup.id,
+                        targetGroupName: priorityGroupName,
+                        targetDeclaration: newGroup.declaration,
+                        vidCalled20nm: false,
+                        vidCalled2nm: false,
+                        declareCalled28nm: false, // Reset AIC training flags for new intercept
+                        fox3Called25nm: false
+                    });
+
+                    setInterceptState(prev => ({
+                        ...prev,
+                        phase: 'committed',
+                        groups: [newGroup],
+                        currentTargetGroupId: groupId,
+                        engagingFighterId: targetAsset.id
+                    }));
+                    commandExecuted = true;
+                }
+            }
+        }
+
+        // LABELED PICTURE: "Closeout, 2 groups azimuth 10, track west. North Group Rock 090/40..."
+        // Fighter responds "Heat one one, target North Group"
+        // Match both digit and word numbers: "2 groups", "two groups", "three groups", etc.
+        // Also match common mishearings like "to groups" (two) or "free groups" (three)
+        const pictureMatch = text.match(/(\d+|one|two|to|three|free|four|for|five|six|seven|eight|nine|ten)\s*group/i);
+        if (!commandExecuted && pictureMatch && interceptState.phase === 'committed') {
+            const groupNames = extractGroupNames(text);
+            const priorityGroup = groupNames[0] || interceptState.groups[0]?.name || 'group';
+
+            // Update fighter's target group name based on labeled picture
+            // This ensures declare/fox-3 calls use the correct group name
+            updateAsset(targetAsset.id, {
+                targetGroupName: priorityGroup
+            });
+
+            // Fighter acknowledges with target
+            const response = generateFighterTargetAck(targetAsset.name, priorityGroup);
+            speakResponse(response);
+            addToRadioLog(targetAsset.name, response, 'incoming');
+
+            setInterceptState(prev => ({
+                ...prev,
+                phase: 'engagement',
+                // Update the group name in intercept state too
+                groups: prev.groups.map((g, idx) =>
+                    idx === 0 ? { ...g, name: priorityGroup } : g
+                )
+            }));
+            commandExecuted = true;
+        }
+
+        // TAC RANGE: "Heat one one, North Group 30 miles"
+        // Fighter acknowledges
+        const tacRangeMatch = text.match(/(\w+\s*group)\s*(\d+)\s*miles/i);
+        if (!commandExecuted && tacRangeMatch && interceptState.phase === 'engagement') {
+            const response = generateFighterReadback(targetAsset.name);
+            speakResponse(response);
+            addToRadioLog(targetAsset.name, response, 'incoming');
+            commandExecuted = true;
+        }
+
+        // DECLARE RESPONSE: "Closeout, North Group Rock 090/28, twenty-five thousand, track west, hostile"
+        // Fighter acknowledges
+        const declareResponseMatch = text.match(/(\w+\s*group).*?(rock|bullseye)/i);
+        const isNotCommit = !text.match(/commit/i);
+        if (!commandExecuted && declareResponseMatch && isNotCommit && interceptState.phase === 'engagement') {
+            const response = generateFighterReadback(targetAsset.name);
+            speakResponse(response);
+            addToRadioLog(targetAsset.name, response, 'incoming');
+            commandExecuted = true;
+        }
+
+        // SEPARATION RESPONSE: "Closeout, South Group separation 10, twenty-five thousand, track west, hostile"
+        // No fighter response to separation
+        const separationMatch = text.match(/(\w+\s*group)\s*separation\s*(\d+)/i);
+        if (!commandExecuted && separationMatch && interceptState.phase === 'engagement') {
+            // Just log the AIC's call - no fighter response
+            commandExecuted = true;
+        }
+
+        // VANISHED + Directive Targeting: "Closeout, North Group vanished. Heat one one, target South Group Rock 100/22..."
+        const vanishedMatch = text.match(/(\w+\s*(?:group|arm))\s*vanished/i);
+        if (!commandExecuted && vanishedMatch) {
+            const vanishedGroupName = vanishedMatch[1];
+
+            // Mark group vanished
+            setInterceptState(prev => ({
+                ...prev,
+                groups: prev.groups.map(g =>
+                    g.name.toLowerCase().includes(vanishedGroupName.toLowerCase())
+                        ? { ...g, status: 'vanished' } : g
+                )
+            }));
+
+            // Check for directive targeting
+            const directive = parseDirectiveTarget(text);
+            if (directive && directive.anchor) {
+                // Find next target asset
+                const nextTarget = findAssetByBullseyeAnchor(
+                    directive.anchor.bearing,
+                    directive.anchor.range,
+                    directive.anchor.altitude ? directive.anchor.altitude / 1000 : null
+                );
+
+                if (nextTarget) {
+                    // Fighter acknowledges and retargets
+                    const response = generateFighterTargetAck(targetAsset.name, directive.groupName);
+                    speakResponse(response);
+                    addToRadioLog(targetAsset.name, response, 'incoming');
+
+                    // Update fighter targeting
+                    const interceptHeading = calculateBearing(
+                        targetAsset.lat, targetAsset.lon,
+                        nextTarget.lat, nextTarget.lon
+                    );
+                    updateAsset(targetAsset.id, {
+                        targetHeading: interceptHeading,
+                        targetedAssetId: nextTarget.id,
+                        targetGroupName: directive.groupName,
+                        targetingState: 'intercepting'
+                    });
+
+                    // Update intercept state
+                    const nextGroupId = `group-${Date.now()}`;
+                    setInterceptState(prev => ({
+                        ...prev,
+                        groups: [...prev.groups, {
+                            id: nextGroupId,
+                            name: directive.groupName,
+                            assetId: nextTarget.id,
+                            status: 'active',
+                            priority: prev.groups.length + 1,
+                            position: { lat: nextTarget.lat, lon: nextTarget.lon },
+                            altitude: nextTarget.altitude,
+                            track: getTrackDirection(nextTarget.heading),
+                            declaration: parseDeclarationFromText(text),
+                            declareCalled: false,
+                            fox3Called: false,
+                            timeoutCalled: false
+                        }],
+                        currentTargetGroupId: nextGroupId
+                    }));
+                }
+            } else {
+                // No retarget - final group vanished
+                setInterceptState(prev => ({ ...prev, phase: 'post-merge' }));
+
+                // Fighter picture request after short delay
+                // "Closeout, Heat one one, Rock 095/10, flowing west, picture"
+                setTimeout(() => {
+                    if (targetAsset && bullseyePosition) {
+                        const fighterPosition = getBullseyePosition(targetAsset.lat, targetAsset.lon, bullseyePosition);
+                        const pictureReq = generateFighterPictureRequest(
+                            targetAsset.name,
+                            ownshipTacticalCallsign,
+                            fighterPosition
+                        );
+                        speakResponse(pictureReq);
+                        addToRadioLog(targetAsset.name, pictureReq, 'incoming');
+                    }
+                }, 2000);
+            }
+            commandExecuted = true;
+        }
+
+        // MANEUVER Calls (Inside SW): "Closeout, Single Group maneuver azimuth. Heat one one, target South Arm Rock 090/22..."
+        const maneuverMatch = text.match(/maneuver\s*(azimuth|range)/i);
+        if (!commandExecuted && maneuverMatch) {
+            const directive = parseDirectiveTarget(text);
+            if (directive && directive.anchor) {
+                const maneuverTarget = findAssetByBullseyeAnchor(
+                    directive.anchor.bearing,
+                    directive.anchor.range,
+                    directive.anchor.altitude ? directive.anchor.altitude / 1000 : null
+                );
+
+                if (maneuverTarget) {
+                    const response = generateFighterTargetAck(targetAsset.name, directive.groupName);
+                    speakResponse(response);
+                    addToRadioLog(targetAsset.name, response, 'incoming');
+
+                    const interceptHeading = calculateBearing(
+                        targetAsset.lat, targetAsset.lon,
+                        maneuverTarget.lat, maneuverTarget.lon
+                    );
+                    updateAsset(targetAsset.id, {
+                        targetHeading: interceptHeading,
+                        targetedAssetId: maneuverTarget.id,
+                        targetGroupName: directive.groupName
+                    });
+                }
+            }
+            commandExecuted = true;
+        }
+
+        // CROSSING/PASSING Calls (Inside SW): "Closeout, North Group, South Group crossing. Heat one one, target North Group Rock 160/20..."
+        const crossingMatch = text.match(/(crossing|passing)/i);
+        if (!commandExecuted && crossingMatch) {
+            const directive = parseDirectiveTarget(text);
+            if (directive && directive.anchor) {
+                const crossingTarget = findAssetByBullseyeAnchor(
+                    directive.anchor.bearing,
+                    directive.anchor.range,
+                    directive.anchor.altitude ? directive.anchor.altitude / 1000 : null
+                );
+
+                if (crossingTarget) {
+                    const response = generateFighterTargetAck(targetAsset.name, directive.groupName);
+                    speakResponse(response);
+                    addToRadioLog(targetAsset.name, response, 'incoming');
+
+                    const interceptHeading = calculateBearing(
+                        targetAsset.lat, targetAsset.lon,
+                        crossingTarget.lat, crossingTarget.lon
+                    );
+                    updateAsset(targetAsset.id, {
+                        targetHeading: interceptHeading,
+                        targetedAssetId: crossingTarget.id,
+                        targetGroupName: directive.groupName
+                    });
+                }
+            }
+            commandExecuted = true;
+        }
+
+        // JOIN Call (Inside SW): "Closeout, North Group, South Group joined. Heat one one, target North Group Rock 090/18..."
+        const joinMatch = text.match(/joined/i);
+        if (!commandExecuted && joinMatch) {
+            const directive = parseDirectiveTarget(text);
+            if (directive && directive.anchor) {
+                const joinTarget = findAssetByBullseyeAnchor(
+                    directive.anchor.bearing,
+                    directive.anchor.range,
+                    directive.anchor.altitude ? directive.anchor.altitude / 1000 : null
+                );
+
+                if (joinTarget) {
+                    const response = generateFighterTargetAck(targetAsset.name, directive.groupName);
+                    speakResponse(response);
+                    addToRadioLog(targetAsset.name, response, 'incoming');
+
+                    const interceptHeading = calculateBearing(
+                        targetAsset.lat, targetAsset.lon,
+                        joinTarget.lat, joinTarget.lon
+                    );
+                    updateAsset(targetAsset.id, {
+                        targetHeading: interceptHeading,
+                        targetedAssetId: joinTarget.id,
+                        targetGroupName: directive.groupName
+                    });
+                }
+            }
+            commandExecuted = true;
+        }
+
+        // PICTURE CLEAN + RESET: "Closeout, picture clean. Heat one one, reset TAMPA, say state"
+        const pictureCleanMatch = text.match(/picture\s*clean/i);
+        const resetMatchInClean = text.match(/reset\s+(\w+)/i);
+        if (!commandExecuted && pictureCleanMatch && interceptState.phase === 'post-merge') {
+            if (resetMatchInClean) {
+                const stationName = resetMatchInClean[1];
+                const capStation = findGeoPointByName(stationName, geoPoints);
+
+                if (capStation) {
+                    // Fighter acknowledges reset
+                    const response = generateFighterResetAck(targetAsset.name, capStation.name);
+                    speakResponse(response);
+                    addToRadioLog(targetAsset.name, response, 'incoming');
+
+                    // Clear targeting state and return to CAP
+                    updateAsset(targetAsset.id, {
+                        targetingState: null,
+                        targetedAssetId: null,
+                        targetGroupName: null
+                    });
+
+                    // Add orbit point to return to CAP station
+                    addOrbitPoint(targetAsset.id, capStation.lat, capStation.lon);
+                }
+            }
+
+            // Reset intercept state
+            setInterceptState({
+                phase: 'idle',
+                groups: [],
+                currentTargetGroupId: null,
+                engagingFighterId: null
+            });
+            commandExecuted = true;
+        }
+
         // Unrecognized command
         if (!commandExecuted) {
             const readback = `${targetAsset.name}, say again`;
             speakResponse(readback);
             addToRadioLog(targetAsset.name, readback, 'incoming');
         }
-    }, [assets, geoPoints, findAssetByCallsign, findGeoPointByName, addToRadioLog, ownshipTacticalCallsign, speakResponse, updateAsset, addOrbitPoint, bullseyeName, containsBullseyeName, findAssetByBullseyeAnchor, bullseyePosition]);
+    }, [assets, geoPoints, findAssetByCallsign, findGeoPointByName, addToRadioLog, ownshipTacticalCallsign, speakResponse, updateAsset, addOrbitPoint, bullseyeName, containsBullseyeName, findAssetByBullseyeAnchor, bullseyePosition, interceptState, setInterceptState, parseBullseyeAnchor, extractGroupNames, parseDeclarationFromText, getTrackDirection, parseDirectiveTarget, generateFighterCommitResponse, generateFighterTargetAck, generateFighterReadback, generateFighterResetAck]);
 
     // Keep a ref to the latest processVoiceCommand to avoid recreating speech recognition
     const processVoiceCommandRef = useRef(processVoiceCommand);
@@ -2222,8 +2881,44 @@ function AICSimulator() {
                         // Continuously update heading toward target
                         updated.targetHeading = bearingToTarget;
 
+                        // AIC Training Mode: Range-triggered fighter calls
+                        // These calls happen at range milestones regardless of user's AIC calls
+
+                        // DECLARE request at 28nm
+                        if (distanceToTarget <= 28 && !asset.declareCalled28nm && asset.targetDeclaration === 'hostile') {
+                            updated.declareCalled28nm = true;
+                            const groupName = asset.targetGroupName || 'group';
+                            // Queue the declare request to be spoken
+                            setTimeout(() => {
+                                const declareCall = `${ownshipTacticalCallsign}, ${formatCallsignForRadio(asset.name)}, declare ${groupName}`;
+                                speakResponse(declareCall);
+                                addToRadioLog(asset.name, declareCall, 'incoming');
+                            }, 500);
+                        }
+
                         // Check if within engagement range (25 NM) and HOSTILE
                         if (distanceToTarget <= 25 && asset.targetDeclaration === 'hostile') {
+                            // FOX-3 call with separation request if there are more groups
+                            if (!asset.fox3Called25nm) {
+                                updated.fox3Called25nm = true;
+                                const groupName = asset.targetGroupName || 'group';
+
+                                // Check interceptState for next priority group to request separation
+                                const currentGroup = interceptState.groups.find(g => g.assetId === asset.targetedAssetId);
+                                const nextGroup = interceptState.groups
+                                    .filter(g => g.status === 'active' && g.assetId !== asset.targetedAssetId)
+                                    .sort((a, b) => (a.priority || 99) - (b.priority || 99))[0];
+
+                                setTimeout(() => {
+                                    let fox3Call = `${formatCallsignForRadio(asset.name)}, fox-3 ${groupName}`;
+                                    if (nextGroup) {
+                                        fox3Call += `. ${ownshipTacticalCallsign}, say separation ${nextGroup.name}`;
+                                    }
+                                    speakResponse(fox3Call);
+                                    addToRadioLog(asset.name, fox3Call, 'incoming');
+                                }, 500);
+                            }
+
                             // Switch to engaging state - weapon will be fired by separate logic
                             updated.targetingState = 'engaging';
                             updated.engageAttempted = true; // Flag to trigger weapon fire
@@ -2275,6 +2970,8 @@ function AICSimulator() {
                             updated.targetDeclaration = null;
                             updated.vidCalled20nm = false;
                             updated.vidCalled2nm = false;
+                            updated.declareCalled28nm = false;
+                            updated.fox3Called25nm = false;
                         }
                     }
 
@@ -2317,6 +3014,8 @@ function AICSimulator() {
                     updated.targetDeclaration = null;
                     updated.vidCalled20nm = false;
                     updated.vidCalled2nm = false;
+                    updated.declareCalled28nm = false;
+                    updated.fox3Called25nm = false;
                 }
             }
 
@@ -3766,7 +4465,10 @@ function AICSimulator() {
             targetDeclaration: null, // 'hostile' | 'bandit' | 'bogeySpades'
             // VID (Visual ID) state for Bogey Spades intercepts
             vidCalled20nm: false,  // Has called "V-I-D, group" at 20nm
-            vidCalled2nm: false    // Has called "V-I-D group, group NATO name" at 2nm
+            vidCalled2nm: false,   // Has called "V-I-D group, group NATO name" at 2nm
+            // AIC Training Mode - range-triggered call flags
+            declareCalled28nm: false,  // Has fighter called "declare group" at 28nm
+            fox3Called25nm: false      // Has fighter called "fox-3 group" at 25nm
         };
 
         setAssets(prev => [...prev, newAsset]);
@@ -4084,6 +4786,20 @@ function AICSimulator() {
                 const timeoutCall = `${callsign}, timeout, ${call.groupName}`;
                 speakResponse(timeoutCall);
                 addToRadioLog(call.assetName, timeoutCall, 'incoming');
+
+                // Update interceptState to mark group timeout called
+                // This helps track which groups have been engaged
+                setInterceptState(prev => {
+                    if (prev.phase === 'idle') return prev;
+
+                    const updatedGroups = prev.groups.map(g =>
+                        g.name.toLowerCase().includes(call.groupName.toLowerCase())
+                            ? { ...g, timeoutCalled: true }
+                            : g
+                    );
+
+                    return { ...prev, groups: updatedGroups };
+                });
             });
             // Clear the queue
             setPendingTimeoutCalls([]);
