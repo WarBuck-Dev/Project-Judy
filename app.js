@@ -1246,6 +1246,7 @@ function AICSimulator() {
     // AIC Training - Intercept State Management
     const [interceptState, setInterceptState] = useState({
         phase: 'idle', // 'idle' | 'broadcast' | 'committed' | 'engagement' | 'post-merge'
+        pictureType: null, // 'azimuth' | 'range' | 'champagne' - determined from labeled picture call
         groups: [], // All groups mentioned in intercept
         // Group shape: { id, name, assetId, status: 'active'|'engaged'|'vanished',
         //                priority, position: {lat, lon}, altitude, track, declaration,
@@ -1639,19 +1640,58 @@ function AICSimulator() {
     }, []);
 
     // Extract group names from AIC call text
+    // Group naming conventions:
+    // - Azimuth picture: "north group", "south group" (cardinal direction + group)
+    // - Range picture: "lead group", "trail group" (NOT "west lead group" - west is track direction)
+    // - Champagne: "west lead group", "east trail group" (cardinal + lead/trail + group)
+    // - Arms (after maneuver): "north arm", "south arm", "lead arm", "trail arm"
     const extractGroupNames = useCallback((text) => {
-        const patterns = [
-            /(?:north|south|east|west)\s*(?:lead|trail)?\s*group/gi,
-            /(?:lead|trail|middle)\s*group/gi,
-            /single\s*group/gi,
-            /(?:north|south|east|west|lead|trail)\s*arm/gi
-        ];
         const names = [];
-        patterns.forEach(p => {
-            const matches = text.match(p);
+
+        // First, check if this is a range picture (contains "range" before groups)
+        // In range pictures, "lead group" and "trail group" are standalone - cardinal is track direction
+        const isRangePicture = /\brange\s+\d+/i.test(text);
+
+        // Check if this is a champagne (3+ groups with both azimuth and range separation)
+        // Champagne uses "west lead group", "east trail group" etc.
+        const isChampagne = /champagne/i.test(text) || /\b[3-9]\s*groups?\b/i.test(text);
+
+        if (isRangePicture && !isChampagne) {
+            // Range picture: only match "lead group" and "trail group" without cardinal prefix
+            const leadTrailPattern = /\b(lead|trail|middle)\s*group/gi;
+            const matches = text.match(leadTrailPattern);
             if (matches) names.push(...matches);
-        });
-        return [...new Set(names.map(n => n.trim()))];
+        } else {
+            // Azimuth picture or champagne: cardinal directions are part of group name
+            const patterns = [
+                // Champagne: cardinal + lead/trail + group (must match this first)
+                /(?:north|south|east|west)\s+(?:lead|trail)\s*group/gi,
+                // Azimuth: cardinal + group (no lead/trail)
+                /(?:north|south|east|west)\s*group/gi,
+                // Standalone lead/trail/middle group
+                /\b(?:lead|trail|middle)\s*group/gi,
+                // Single group
+                /single\s*group/gi,
+            ];
+
+            patterns.forEach(p => {
+                const matches = text.match(p);
+                if (matches) names.push(...matches);
+            });
+        }
+
+        // Also check for arms (after maneuver calls)
+        const armPattern = /(?:north|south|east|west|lead|trail)\s*arm/gi;
+        const armMatches = text.match(armPattern);
+        if (armMatches) names.push(...armMatches);
+
+        // Deduplicate and trim, preserving order of first occurrence
+        // IMPORTANT: NO SORTING - the order the AIC calls groups is ALWAYS the targeting order
+        // This applies to ALL picture types: range, azimuth, vic, and champagne
+        // The first group mentioned is the priority target
+        const uniqueNames = [...new Set(names.map(n => n.trim().toLowerCase()))];
+
+        return uniqueNames;
     }, []);
 
     // Parse declaration from text (hostile, bandit, bogey spades)
@@ -2414,6 +2454,10 @@ function AICSimulator() {
                         targetAsset.lat, targetAsset.lon,
                         targetGroup.lat, targetGroup.lon
                     );
+
+                    // Clear any orbit waypoints - break the CAP orbit on commit
+                    const nonOrbitWaypoints = (targetAsset.waypoints || []).filter(wp => !wp.isOrbitPoint);
+
                     updateAsset(targetAsset.id, {
                         targetHeading: interceptHeading,
                         targetingState: 'intercepting',
@@ -2423,7 +2467,9 @@ function AICSimulator() {
                         vidCalled20nm: false,
                         vidCalled2nm: false,
                         declareCalled28nm: false, // Reset AIC training flags for new intercept
-                        fox3Called25nm: false
+                        fox3Called25nm: false,
+                        isOrbiting: false, // Break out of CAP orbit
+                        waypoints: nonOrbitWaypoints // Clear orbit waypoints
                     });
 
                     setInterceptState(prev => ({
@@ -2447,6 +2493,24 @@ function AICSimulator() {
             const groupNames = extractGroupNames(text);
             const priorityGroup = groupNames[0] || interceptState.groups[0]?.name || 'group';
 
+            // Detect picture type from the call:
+            // - "range X" = range picture (lead/trail groups)
+            // - "azimuth X" = azimuth picture (north/south groups)
+            // - 3+ groups = champagne (cardinal + lead/trail)
+            let detectedPictureType = 'azimuth'; // default
+            if (/\brange\s+\d+/i.test(text)) {
+                detectedPictureType = 'range';
+            } else if (/\bazimuth\s+\d+/i.test(text) || /\bazma\s+\d+/i.test(text)) {
+                detectedPictureType = 'azimuth';
+            }
+            // Check for 3+ groups (champagne)
+            const numGroupsMatch = pictureMatch[1];
+            const numGroups = parseInt(numGroupsMatch) ||
+                {'one':1,'two':2,'to':2,'three':3,'free':3,'four':4,'for':4,'five':5,'six':6,'seven':7,'eight':8,'nine':9,'ten':10}[numGroupsMatch.toLowerCase()] || 2;
+            if (numGroups >= 3) {
+                detectedPictureType = 'champagne';
+            }
+
             // Update fighter's target group name based on labeled picture
             // This ensures declare/fox-3 calls use the correct group name
             updateAsset(targetAsset.id, {
@@ -2461,6 +2525,7 @@ function AICSimulator() {
             setInterceptState(prev => ({
                 ...prev,
                 phase: 'engagement',
+                pictureType: detectedPictureType,
                 // Update the group name in intercept state too
                 groups: prev.groups.map((g, idx) =>
                     idx === 0 ? { ...g, name: priorityGroup } : g
@@ -3102,8 +3167,14 @@ function AICSimulator() {
                                         !a.isDestroyed
                                     );
                                     if (otherHostiles.length > 0) {
-                                        // Use a generic group name based on relative position
-                                        nextGroupName = 'south group'; // Default to south group as secondary
+                                        // Use appropriate group name based on picture type
+                                        // Range picture: lead/trail groups
+                                        // Azimuth picture: north/south groups
+                                        if (interceptState.pictureType === 'range') {
+                                            nextGroupName = 'trail group';
+                                        } else {
+                                            nextGroupName = 'south group';
+                                        }
                                     }
                                 }
 
