@@ -1085,7 +1085,11 @@ function AICSimulator() {
             targetDepth: null,
             waypoints: [],
             trackNumber: null,
-            behaviors: []
+            behaviors: [],
+            // AIC targeting state
+            targetingState: null,  // null | 'intercepting' | 'engaging' | 'escorting'
+            targetedAssetId: null, // ID of the asset being targeted
+            targetDeclaration: null // 'hostile' | 'bandit' | 'bogeySpades'
         }
     ]);
     const [selectedAssetId, setSelectedAssetId] = useState(null);
@@ -1445,6 +1449,78 @@ function AICSimulator() {
         return null;
     }, []);
 
+    // Normalize bullseye name for matching (case-insensitive, alphanumeric only)
+    const normalizeBullseyeName = (name) => {
+        return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+    };
+
+    // Check if transcript contains bullseye name (fuzzy match with common mishearings)
+    const containsBullseyeName = useCallback((transcript, beName) => {
+        const normalizedTranscript = normalizeBullseyeName(transcript);
+        const normalizedBullseye = normalizeBullseyeName(beName || 'bullseye');
+
+        // Direct match
+        if (normalizedTranscript.includes(normalizedBullseye)) return true;
+
+        // Common mishearings
+        const mishearings = {
+            'rock': ['rok', 'rog', 'roc', 'rack', 'ruck'],
+            'bullseye': ['bullseye', 'bullsye', 'bulleye'],
+            'vegas': ['vegas', 'vagas', 'vega'],
+            'alpha': ['alpha', 'alfa']
+        };
+
+        const variations = mishearings[normalizedBullseye] || [];
+        return variations.some(v => normalizedTranscript.includes(v));
+    }, []);
+
+    // Find asset by bullseye anchor point (bearing/range from bullseye)
+    // Tolerance: 3 degrees bearing, 3 NM range (AIC standard)
+    const findAssetByBullseyeAnchor = useCallback((bearing, range, altitudeThousands) => {
+        const BEARING_TOLERANCE = 3; // degrees
+        const RANGE_TOLERANCE = 3;   // nautical miles
+        const ALTITUDE_TOLERANCE = 2000; // feet
+
+        // Filter to potential targets (non-friendly, visible, air domain)
+        const potentialTargets = assets.filter(a =>
+            a.identity !== 'friendly' &&
+            a.type !== 'ownship' &&
+            !a.hidden &&
+            a.domain === 'air'
+        );
+
+        for (const asset of potentialTargets) {
+            // Calculate bearing/range from bullseye to asset
+            const assetBearing = calculateBearing(
+                bullseyePosition.lat, bullseyePosition.lon,
+                asset.lat, asset.lon
+            );
+            const assetRange = calculateDistance(
+                bullseyePosition.lat, bullseyePosition.lon,
+                asset.lat, asset.lon
+            );
+
+            // Check bearing match (within tolerance)
+            const bearingDiff = Math.abs(shortestTurn(bearing, assetBearing));
+            if (bearingDiff > BEARING_TOLERANCE) continue;
+
+            // Check range match (within tolerance)
+            const rangeDiff = Math.abs(range - assetRange);
+            if (rangeDiff > RANGE_TOLERANCE) continue;
+
+            // Check altitude match if provided
+            if (altitudeThousands !== null) {
+                const expectedAlt = altitudeThousands * 1000;
+                const altDiff = Math.abs((asset.altitude || 0) - expectedAlt);
+                if (altDiff > ALTITUDE_TOLERANCE) continue;
+            }
+
+            return asset; // Found matching target
+        }
+
+        return null; // No match found
+    }, [assets, bullseyePosition]);
+
     // Generate readback message with proper radio terminology
     // extraParam is used for optional modifiers (e.g., sayState for SET/RESET)
     const generateReadback = (assetName, commandType, value, extraParam = null) => {
@@ -1491,6 +1567,9 @@ function AICSimulator() {
                     return `${callsign}, resetting ${value}, state green`;
                 }
                 return `${callsign}, resetting ${value}`;
+            case 'target':
+                // value = group description (e.g., "single group")
+                return `${callsign}, target ${value}`;
             default:
                 return `${callsign}, copy`;
         }
@@ -1641,13 +1720,139 @@ function AICSimulator() {
             }
         }
 
+        // TARGET: "Heat 11 target single group ROCK 120/30 twenty-four thousand track east hostile"
+        // Directs asset to intercept group at bullseye position
+        const targetMatch = text.match(/\btarget\b/i);
+        if (!commandExecuted && targetMatch) {
+            // Check if bullseye name is mentioned
+            if (containsBullseyeName(text, bullseyeName)) {
+                const afterTarget = text.substring(text.toLowerCase().indexOf('target'));
+
+                let bearing = null;
+                let range = null;
+                let altitudeThousands = null;
+
+                // STEP 1: Parse altitude first - look for number followed by "thousand"
+                // This is the most reliable anchor point
+                const altitudeMatch = afterTarget.match(/(\d+)\s*thousand/i);
+                if (altitudeMatch) {
+                    altitudeThousands = parseInt(altitudeMatch[1]);
+                }
+
+                // STEP 2: Parse bearing and range
+                // The format is typically: "ROCK [bearing] [range]" where:
+                // - bearing is 3 digits (possibly spoken individually or concatenated)
+                // - range is 1-2 digits (spoken as whole number like "twenty-five" -> "25")
+
+                // Get the portion BEFORE "thousand" to find bearing/range
+                const beforeThousand = altitudeMatch
+                    ? afterTarget.substring(0, afterTarget.toLowerCase().indexOf('thousand'))
+                    : afterTarget;
+
+                // Find all numbers in the bearing/range portion
+                const numbers = beforeThousand.match(/\d+/g) || [];
+
+                if (numbers.length >= 1) {
+                    const firstNum = numbers[0];
+
+                    // Case 1: Numbers are properly separated (e.g., "114", "25")
+                    if (firstNum.length === 3) {
+                        bearing = parseInt(firstNum);
+                        if (numbers.length >= 2) {
+                            range = parseInt(numbers[1]);
+                        }
+                    }
+                    // Case 2: Bearing spoken as individual digits (e.g., "1", "1", "4", "25")
+                    else if (numbers.length >= 3 && firstNum.length === 1 && numbers[1].length === 1 && numbers[2].length === 1) {
+                        bearing = parseInt(numbers[0] + numbers[1] + numbers[2]);
+                        if (numbers.length >= 4) {
+                            range = parseInt(numbers[3]);
+                        }
+                    }
+                    // Case 3: Concatenated bearing+range (e.g., "11425" for bearing 114, range 25)
+                    // This happens when voice recognition doesn't insert spaces
+                    else if (firstNum.length > 3) {
+                        // Bearing is first 3 digits, range is the rest
+                        bearing = parseInt(firstNum.substring(0, 3));
+                        range = parseInt(firstNum.substring(3));
+                    }
+                    // Case 4: 2-digit bearing (e.g., "90" for 090)
+                    else if (firstNum.length === 2) {
+                        bearing = parseInt(firstNum);
+                        if (numbers.length >= 2) {
+                            range = parseInt(numbers[1]);
+                        }
+                    }
+                    // Case 5: Single digit followed by more numbers
+                    else {
+                        bearing = parseInt(firstNum);
+                        if (numbers.length >= 2) {
+                            range = parseInt(numbers[1]);
+                        }
+                    }
+                }
+
+                // Validate bearing is in valid range (0-360)
+                if (bearing !== null && bearing > 360) {
+                    // Likely concatenated - try to extract 3-digit bearing
+                    const bearingStr = bearing.toString();
+                    if (bearingStr.length > 3) {
+                        bearing = parseInt(bearingStr.substring(0, 3));
+                        range = parseInt(bearingStr.substring(3));
+                    }
+                }
+
+                // Parse declaration (with common mishearings)
+                let declaration = 'bogeySpades'; // Default
+                if (text.includes('hostile') || text.includes('hostel') || text.includes('hostil')) declaration = 'hostile';
+                else if (text.includes('bandit') || text.includes('bandid') || text.includes('banned it')) declaration = 'bandit';
+                else if (text.includes('bogey') || text.includes('spades') || text.includes('boggy') || text.includes('bogie')) declaration = 'bogeySpades';
+
+                if (bearing !== null && range !== null) {
+                    // Find target at this bullseye position
+                    const targetGroup = findAssetByBullseyeAnchor(bearing, range, altitudeThousands);
+
+                    if (targetGroup) {
+                        // Calculate intercept heading from controlled asset to target
+                        const interceptHeading = calculateBearing(
+                            targetAsset.lat, targetAsset.lon,
+                            targetGroup.lat, targetGroup.lon
+                        );
+
+                        // Update controlled asset with targeting info and heading
+                        updateAsset(targetAsset.id, {
+                            targetingState: 'intercepting',
+                            targetedAssetId: targetGroup.id,
+                            targetDeclaration: declaration,
+                            targetHeading: interceptHeading
+                        });
+
+                        // Generate readback
+                        const readback = generateReadback(targetAsset.name, 'target', 'single group');
+                        speakResponse(readback);
+                        addToRadioLog(targetAsset.name, readback, 'incoming');
+                        commandExecuted = true;
+                    } else {
+                        addToRadioLog('SYSTEM', `No target found at ${bullseyeName || 'BULLSEYE'} ${bearing}/${range}`, 'error');
+                        commandExecuted = true;
+                    }
+                } else {
+                    addToRadioLog('SYSTEM', 'Could not parse bearing/range from target command', 'error');
+                    commandExecuted = true;
+                }
+            } else {
+                addToRadioLog('SYSTEM', `Bullseye name "${bullseyeName || 'BULLSEYE'}" not recognized in command`, 'error');
+                commandExecuted = true;
+            }
+        }
+
         // Unrecognized command
         if (!commandExecuted) {
             const readback = `${targetAsset.name}, say again`;
             speakResponse(readback);
             addToRadioLog(targetAsset.name, readback, 'incoming');
         }
-    }, [assets, geoPoints, findAssetByCallsign, findGeoPointByName, addToRadioLog, ownshipTacticalCallsign, speakResponse, updateAsset, addOrbitPoint]);
+    }, [assets, geoPoints, findAssetByCallsign, findGeoPointByName, addToRadioLog, ownshipTacticalCallsign, speakResponse, updateAsset, addOrbitPoint, bullseyeName, containsBullseyeName, findAssetByBullseyeAnchor, bullseyePosition]);
 
     // Keep a ref to the latest processVoiceCommand to avoid recreating speech recognition
     const processVoiceCommandRef = useRef(processVoiceCommand);
@@ -1878,6 +2083,77 @@ function AICSimulator() {
                     }
                 }
                 // Continue to position updates - hidden assets move, they're just not visible
+            }
+
+            // Handle AIC targeting behavior (intercept/escort)
+            if (asset.targetingState && asset.targetedAssetId) {
+                const targetAsset = prevAssets.find(a => a.id === asset.targetedAssetId);
+
+                if (targetAsset && !targetAsset.hidden) {
+                    const distanceToTarget = calculateDistance(
+                        asset.lat, asset.lon,
+                        targetAsset.lat, targetAsset.lon
+                    );
+
+                    // Calculate intercept heading toward target
+                    const bearingToTarget = calculateBearing(
+                        asset.lat, asset.lon,
+                        targetAsset.lat, targetAsset.lon
+                    );
+
+                    if (asset.targetingState === 'intercepting') {
+                        // Continuously update heading toward target
+                        updated.targetHeading = bearingToTarget;
+
+                        // Check if within engagement range (25 NM) and HOSTILE
+                        if (distanceToTarget <= 25 && asset.targetDeclaration === 'hostile') {
+                            // Switch to engaging state - weapon will be fired by separate logic
+                            updated.targetingState = 'engaging';
+                            updated.engageAttempted = true; // Flag to trigger weapon fire
+                        }
+
+                        // If BANDIT or BOGEY SPADES and close (5 NM), switch to escort
+                        if (distanceToTarget <= 5 && asset.targetDeclaration !== 'hostile') {
+                            updated.targetingState = 'escorting';
+                        }
+                    }
+
+                    if (asset.targetingState === 'engaging') {
+                        // Continue to close on target while engaging
+                        updated.targetHeading = bearingToTarget;
+
+                        // If target destroyed or escaped, clear targeting
+                        if (distanceToTarget > 50) {
+                            updated.targetingState = null;
+                            updated.targetedAssetId = null;
+                            updated.targetDeclaration = null;
+                        }
+                    }
+
+                    if (asset.targetingState === 'escorting') {
+                        // Follow behind target at 2 NM trail position
+                        const targetHeadingRad = (targetAsset.heading + 180) * Math.PI / 180;
+                        const trailDistance = 2; // NM behind target
+
+                        // Calculate trail position
+                        const trailLat = targetAsset.lat + (trailDistance / 60) * Math.cos(targetHeadingRad);
+                        const trailLon = targetAsset.lon + (trailDistance / 60) * Math.sin(targetHeadingRad) / Math.cos(targetAsset.lat * Math.PI / 180);
+
+                        // Steer toward trail position
+                        updated.targetHeading = calculateBearing(asset.lat, asset.lon, trailLat, trailLon);
+
+                        // Match target speed when close to trail position
+                        const distanceToTrail = calculateDistance(asset.lat, asset.lon, trailLat, trailLon);
+                        if (distanceToTrail < 1) {
+                            updated.targetSpeed = targetAsset.speed;
+                        }
+                    }
+                } else {
+                    // Target lost (destroyed or hidden) - clear targeting state
+                    updated.targetingState = null;
+                    updated.targetedAssetId = null;
+                    updated.targetDeclaration = null;
+                }
             }
 
             // Update heading
@@ -3307,7 +3583,11 @@ function AICSimulator() {
             behaviors: [],
             hidden: assetData.hidden !== undefined ? assetData.hidden : true, // HIDDEN checkbox (instructor only) - defaults to CHECKED
             trackFileEnabled: assetData.trackFileEnabled !== undefined ? assetData.trackFileEnabled : true, // TRACK FILE checkbox (instructor only)
-            studentLabel: assetData.studentLabel || '' // Student-assigned label (student mode)
+            studentLabel: assetData.studentLabel || '', // Student-assigned label (student mode)
+            // AIC targeting state
+            targetingState: null,  // null | 'intercepting' | 'engaging' | 'escorting'
+            targetedAssetId: null, // ID of the asset being targeted
+            targetDeclaration: null // 'hostile' | 'bandit' | 'bogeySpades'
         };
 
         setAssets(prev => [...prev, newAsset]);
@@ -3583,6 +3863,30 @@ function AICSimulator() {
             }));
         }
     }, [assets, weaponConfigs, nextWeaponId, missionTime, simulatorMode, studentTracks]);
+
+    // Handle automatic weapon engagement from AIC targeting
+    // When engageAttempted flag is set by physics update, fire AAM at target
+    useEffect(() => {
+        assets.forEach(asset => {
+            if (asset.engageAttempted && asset.targetedAssetId && asset.targetingState === 'engaging') {
+                // Check if asset has AAM weapons available
+                const hasAAM = asset.platform?.weapons?.some(w => {
+                    const config = weaponConfigs[w];
+                    return config?.type === 'AAM';
+                });
+
+                if (hasAAM) {
+                    // Fire AAM at target
+                    fireWeapon(asset.id, asset.targetedAssetId, 'AAM');
+                }
+
+                // Clear the engageAttempted flag
+                setAssets(prev => prev.map(a =>
+                    a.id === asset.id ? { ...a, engageAttempted: false } : a
+                ));
+            }
+        });
+    }, [assets, fireWeapon, weaponConfigs]);
 
     const updateAsset = useCallback((assetId, updates) => {
         setAssets(prev => prev.map(a => {
