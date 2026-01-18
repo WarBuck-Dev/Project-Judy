@@ -2162,8 +2162,10 @@ function AICSimulator() {
 
         // TARGET: "Heat 11 target single group ROCK 120/30 twenty-four thousand track east hostile"
         // Directs asset to intercept group at bullseye position
+        // IMPORTANT: Exclude vanished calls - they use "target" but should be handled by the vanished handler
         const targetMatch = text.match(/\btarget\b/i);
-        if (!commandExecuted && targetMatch) {
+        const isVanishedForTarget = text.match(/vanished/i);
+        if (!commandExecuted && targetMatch && !isVanishedForTarget) {
             // Check if bullseye name is mentioned
             if (containsBullseyeName(text, bullseyeName)) {
                 const afterTarget = text.substring(text.toLowerCase().indexOf('target'));
