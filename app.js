@@ -1089,7 +1089,10 @@ function AICSimulator() {
             // AIC targeting state
             targetingState: null,  // null | 'intercepting' | 'engaging' | 'escorting'
             targetedAssetId: null, // ID of the asset being targeted
-            targetDeclaration: null // 'hostile' | 'bandit' | 'bogeySpades'
+            targetDeclaration: null, // 'hostile' | 'bandit' | 'bogeySpades'
+            // VID (Visual ID) state for Bogey Spades intercepts
+            vidCalled20nm: false,  // Has called "V-I-D, group" at 20nm
+            vidCalled2nm: false    // Has called "V-I-D group, group NATO name" at 2nm
         }
     ]);
     const [selectedAssetId, setSelectedAssetId] = useState(null);
@@ -1234,6 +1237,8 @@ function AICSimulator() {
     const [lastTranscript, setLastTranscript] = useState('');
     const [radioEnabled, setRadioEnabled] = useState(true);
     const [radioLog, setRadioLog] = useState([]); // Communication history
+    const [pendingTimeoutCalls, setPendingTimeoutCalls] = useState([]); // Queue for timeout announcements
+    const [pendingVIDCalls, setPendingVIDCalls] = useState([]); // Queue for VID announcements
 
     // Radio log window position and size (draggable/resizable)
     // Default position: top of screen, to the right of the TX indicator box
@@ -1339,6 +1344,33 @@ function AICSimulator() {
     // Normalize transcript to handle common speech recognition errors
     const normalizeTranscript = (transcript) => {
         let normalized = transcript.toLowerCase();
+
+        // Common compound callsigns that get split into separate words
+        const callsignCorrections = {
+            'close out': 'closeout',
+            'close-out': 'closeout',
+            'show time': 'showtime',
+            'show-time': 'showtime',
+            'sun down': 'sundown',
+            'sun-down': 'sundown',
+            'black jack': 'blackjack',
+            'black-jack': 'blackjack',
+            'war hawk': 'warhawk',
+            'war-hawk': 'warhawk',
+            'top gun': 'topgun',
+            'top-gun': 'topgun',
+            'red dog': 'reddog',
+            'red-dog': 'reddog',
+            'bull dog': 'bulldog',
+            'bull-dog': 'bulldog',
+            'fire bird': 'firebird',
+            'fire-bird': 'firebird',
+        };
+
+        // Apply callsign corrections first (before number corrections)
+        Object.entries(callsignCorrections).forEach(([wrong, correct]) => {
+            normalized = normalized.replace(new RegExp(wrong, 'gi'), correct);
+        });
 
         // Common homophones and mishearings for numbers
         const numberCorrections = {
@@ -1521,6 +1553,14 @@ function AICSimulator() {
         return null; // No match found
     }, [assets, bullseyePosition]);
 
+    // Helper: Spell out callsign with numbers as individual digits
+    // "Heat 11" → "Heat one one" (used for radio communications)
+    const formatCallsignForRadio = useCallback((callsign) => {
+        const words = ['zero', 'one', 'two', 'three', 'four',
+                      'five', 'six', 'seven', 'eight', 'niner'];
+        return callsign.replace(/(\d)/g, (d) => ' ' + words[parseInt(d)]).trim();
+    }, []);
+
     // Generate readback message with proper radio terminology
     // extraParam is used for optional modifiers (e.g., sayState for SET/RESET)
     const generateReadback = (assetName, commandType, value, extraParam = null) => {
@@ -1570,6 +1610,15 @@ function AICSimulator() {
             case 'target':
                 // value = group description (e.g., "single group")
                 return `${callsign}, target ${value}`;
+            case 'sayState':
+                // Standalone fuel state request
+                return `${callsign}, state green`;
+            case 'unable':
+                // Asset cannot comply with command
+                return `${callsign}, unable`;
+            case 'broadcast':
+                // Acknowledge broadcast call - just callsign
+                return `${callsign}`;
             default:
                 return `${callsign}, copy`;
         }
@@ -1611,6 +1660,35 @@ function AICSimulator() {
         // Normalize transcript to fix common mishearings (e.g., "won" → "one", "ate" → "eight")
         const normalizedTranscript = normalizeTranscript(transcript);
         const text = normalizedTranscript.toLowerCase();
+
+        // Check if this is a BROADCAST call (AIC uses their own callsign, not asset callsign)
+        // Broadcast format: "Closeout, [N groups,] group ROCK 234/23, twenty-five thousand, track east hostile"
+        const ownCallsignLower = (ownshipTacticalCallsign || '').toLowerCase();
+        const startsWithOwnCallsign = ownCallsignLower && text.trim().startsWith(ownCallsignLower);
+        const containsGroupInfo = text.includes('group') && (
+            containsBullseyeName(text, bullseyeName) ||
+            text.includes('thousand') ||
+            text.includes('track') ||
+            text.includes('hostile') ||
+            text.includes('bandit') ||
+            text.includes('bogey')
+        );
+
+        if (startsWithOwnCallsign && containsGroupInfo) {
+            // This is a broadcast call - log it and have friendly assets acknowledge
+            addToRadioLog(ownshipTacticalCallsign, transcript, 'outgoing');
+
+            // Find all friendly assets to acknowledge (first one responds)
+            const friendlyAssets = assets.filter(a => a.identity === 'friendly' && a.type !== 'ownship');
+            if (friendlyAssets.length > 0) {
+                // First friendly asset acknowledges the broadcast
+                const respondingAsset = friendlyAssets[0];
+                const readback = generateReadback(respondingAsset.name, 'broadcast');
+                speakResponse(readback);
+                addToRadioLog(respondingAsset.name, readback, 'incoming');
+            }
+            return; // Broadcast handled, no further processing
+        }
 
         // Find the friendly asset being addressed (exclude ownship)
         const friendlyAssets = assets.filter(a => a.identity === 'friendly' && a.type !== 'ownship');
@@ -1694,8 +1772,11 @@ function AICSimulator() {
                 addToRadioLog(targetAsset.name, readback, 'incoming');
                 commandExecuted = true;
             } else {
-                addToRadioLog('SYSTEM', `CAP station "${stationName}" not found`, 'error');
-                commandExecuted = true; // Don't fall through to "say again"
+                // CAP station not found - asset responds "unable"
+                const readback = generateReadback(targetAsset.name, 'unable');
+                speakResponse(readback);
+                addToRadioLog(targetAsset.name, readback, 'incoming');
+                commandExecuted = true;
             }
         }
 
@@ -1715,9 +1796,23 @@ function AICSimulator() {
                 addToRadioLog(targetAsset.name, readback, 'incoming');
                 commandExecuted = true;
             } else {
-                addToRadioLog('SYSTEM', `CAP station "${stationName}" not found`, 'error');
-                commandExecuted = true; // Don't fall through to "say again"
+                // CAP station not found - asset responds "unable"
+                const readback = generateReadback(targetAsset.name, 'unable');
+                speakResponse(readback);
+                addToRadioLog(targetAsset.name, readback, 'incoming');
+                commandExecuted = true;
             }
+        }
+
+        // SAY STATE: "Heat 11 say state" - standalone fuel state request
+        // Must check this BEFORE target to avoid false matches, but only if not part of SET/RESET
+        const sayStateMatch = text.match(/\bsay\s+state\b/i);
+        const isPartOfSetReset = text.match(/\b(set|reset)\b/i);
+        if (!commandExecuted && sayStateMatch && !isPartOfSetReset) {
+            const readback = generateReadback(targetAsset.name, 'sayState');
+            speakResponse(readback);
+            addToRadioLog(targetAsset.name, readback, 'incoming');
+            commandExecuted = true;
         }
 
         // TARGET: "Heat 11 target single group ROCK 120/30 twenty-four thousand track east hostile"
@@ -1808,6 +1903,16 @@ function AICSimulator() {
                 else if (text.includes('bandit') || text.includes('bandid') || text.includes('banned it')) declaration = 'bandit';
                 else if (text.includes('bogey') || text.includes('spades') || text.includes('boggy') || text.includes('bogie')) declaration = 'bogeySpades';
 
+                // Parse group name from command (e.g., "single group", "north group", "lead group")
+                // Look for pattern: "target [group descriptor] group" or just "target group"
+                let groupName = 'group'; // Default
+                const groupMatch = text.match(/target\s+(\w+\s+)?group/i);
+                if (groupMatch && groupMatch[1]) {
+                    groupName = groupMatch[1].trim() + ' group';
+                } else if (text.includes('group')) {
+                    groupName = 'group';
+                }
+
                 if (bearing !== null && range !== null) {
                     // Find target at this bullseye position
                     const targetGroup = findAssetByBullseyeAnchor(bearing, range, altitudeThousands);
@@ -1824,24 +1929,36 @@ function AICSimulator() {
                             targetingState: 'intercepting',
                             targetedAssetId: targetGroup.id,
                             targetDeclaration: declaration,
-                            targetHeading: interceptHeading
+                            targetHeading: interceptHeading,
+                            targetGroupName: groupName, // Store group name for FOX/timeout calls
+                            vidCalled20nm: false, // Reset VID state for new intercept
+                            vidCalled2nm: false
                         });
 
                         // Generate readback
-                        const readback = generateReadback(targetAsset.name, 'target', 'single group');
+                        const readback = generateReadback(targetAsset.name, 'target', groupName);
                         speakResponse(readback);
                         addToRadioLog(targetAsset.name, readback, 'incoming');
                         commandExecuted = true;
                     } else {
-                        addToRadioLog('SYSTEM', `No target found at ${bullseyeName || 'BULLSEYE'} ${bearing}/${range}`, 'error');
+                        // No target found at bullseye position - asset responds "unable"
+                        const readback = generateReadback(targetAsset.name, 'unable');
+                        speakResponse(readback);
+                        addToRadioLog(targetAsset.name, readback, 'incoming');
                         commandExecuted = true;
                     }
                 } else {
-                    addToRadioLog('SYSTEM', 'Could not parse bearing/range from target command', 'error');
+                    // Could not parse bearing/range - asset responds "unable"
+                    const readback = generateReadback(targetAsset.name, 'unable');
+                    speakResponse(readback);
+                    addToRadioLog(targetAsset.name, readback, 'incoming');
                     commandExecuted = true;
                 }
             } else {
-                addToRadioLog('SYSTEM', `Bullseye name "${bullseyeName || 'BULLSEYE'}" not recognized in command`, 'error');
+                // Bullseye name not recognized - asset responds "unable"
+                const readback = generateReadback(targetAsset.name, 'unable');
+                speakResponse(readback);
+                addToRadioLog(targetAsset.name, readback, 'incoming');
                 commandExecuted = true;
             }
         }
@@ -2112,6 +2229,35 @@ function AICSimulator() {
                             updated.engageAttempted = true; // Flag to trigger weapon fire
                         }
 
+                        // VID (Visual ID) calls for BOGEY SPADES intercepts
+                        // At 20nm: "Heat one one, V-I-D, single group"
+                        // At 2nm: "Heat one one, V-I-D single group, single group FISHBED"
+                        if (asset.targetDeclaration === 'bogeySpades') {
+                            // 20nm VID call - announce commencing VID
+                            if (distanceToTarget <= 20 && !asset.vidCalled20nm) {
+                                updated.vidCalled20nm = true;
+                                const groupName = asset.targetGroupName || 'group';
+                                setPendingVIDCalls(prev => [...prev, {
+                                    assetName: asset.name,
+                                    type: '20nm',
+                                    groupName: groupName
+                                }]);
+                            }
+
+                            // 2nm VID call - visual identification with NATO reporting name
+                            if (distanceToTarget <= 2 && !asset.vidCalled2nm) {
+                                updated.vidCalled2nm = true;
+                                const groupName = asset.targetGroupName || 'group';
+                                const natoName = targetAsset.platform?.natoReportingName || targetAsset.platform?.name || 'unknown';
+                                setPendingVIDCalls(prev => [...prev, {
+                                    assetName: asset.name,
+                                    type: '2nm',
+                                    groupName: groupName,
+                                    natoName: natoName
+                                }]);
+                            }
+                        }
+
                         // If BANDIT or BOGEY SPADES and close (5 NM), switch to escort
                         if (distanceToTarget <= 5 && asset.targetDeclaration !== 'hostile') {
                             updated.targetingState = 'escorting';
@@ -2127,6 +2273,8 @@ function AICSimulator() {
                             updated.targetingState = null;
                             updated.targetedAssetId = null;
                             updated.targetDeclaration = null;
+                            updated.vidCalled20nm = false;
+                            updated.vidCalled2nm = false;
                         }
                     }
 
@@ -2147,12 +2295,28 @@ function AICSimulator() {
                         if (distanceToTrail < 1) {
                             updated.targetSpeed = targetAsset.speed;
                         }
+
+                        // VID 2nm call for BOGEY SPADES - visual identification with NATO reporting name
+                        // This happens during escort since we switch to escort at 5nm
+                        if (asset.targetDeclaration === 'bogeySpades' && distanceToTarget <= 2 && !asset.vidCalled2nm) {
+                            updated.vidCalled2nm = true;
+                            const groupName = asset.targetGroupName || 'group';
+                            const natoName = targetAsset.platform?.natoReportingName || targetAsset.platform?.name || 'unknown';
+                            setPendingVIDCalls(prev => [...prev, {
+                                assetName: asset.name,
+                                type: '2nm',
+                                groupName: groupName,
+                                natoName: natoName
+                            }]);
+                        }
                     }
                 } else {
                     // Target lost (destroyed or hidden) - clear targeting state
                     updated.targetingState = null;
                     updated.targetedAssetId = null;
                     updated.targetDeclaration = null;
+                    updated.vidCalled20nm = false;
+                    updated.vidCalled2nm = false;
                 }
             }
 
@@ -2563,9 +2727,21 @@ function AICSimulator() {
             });
 
             // Remove impacted weapons and their targets
-            const impactedWeapons = updatedWeapons.filter(w => w.impact);
+            const impactedWeapons = updatedWeapons.filter(w => w.impact && w.impactTargetId);
             if (impactedWeapons.length > 0) {
                 const targetIdsToRemove = impactedWeapons.map(w => w.impactTargetId);
+
+                // Queue timeout calls for AIC-controlled assets that fired weapons
+                impactedWeapons.forEach(weapon => {
+                    const firingAsset = assets.find(a => a.id === weapon.firingAssetId);
+                    // Only announce timeout if this was an AIC-controlled engagement
+                    if (firingAsset && firingAsset.targetingState) {
+                        setPendingTimeoutCalls(prev => [...prev, {
+                            assetName: firingAsset.name,
+                            groupName: firingAsset.targetGroupName || 'group'
+                        }]);
+                    }
+                });
 
                 // Remove assets regardless of launch mode - weapons always destroy their targets
                 // In student mode, the student track will age naturally after 2 sweeps without radar returns
@@ -3587,7 +3763,10 @@ function AICSimulator() {
             // AIC targeting state
             targetingState: null,  // null | 'intercepting' | 'engaging' | 'escorting'
             targetedAssetId: null, // ID of the asset being targeted
-            targetDeclaration: null // 'hostile' | 'bandit' | 'bogeySpades'
+            targetDeclaration: null, // 'hostile' | 'bandit' | 'bogeySpades'
+            // VID (Visual ID) state for Bogey Spades intercepts
+            vidCalled20nm: false,  // Has called "V-I-D, group" at 20nm
+            vidCalled2nm: false    // Has called "V-I-D group, group NATO name" at 2nm
         };
 
         setAssets(prev => [...prev, newAsset]);
@@ -3878,6 +4057,14 @@ function AICSimulator() {
                 if (hasAAM) {
                     // Fire AAM at target
                     fireWeapon(asset.id, asset.targetedAssetId, 'AAM');
+
+                    // Announce FOX-3 call (AAM is a Fox-3 weapon - active radar homing)
+                    // Format: "Heat one one, FOX 3, single group"
+                    const callsign = formatCallsignForRadio(asset.name);
+                    const groupName = asset.targetGroupName || 'group';
+                    const foxCall = `${callsign}, FOX 3, ${groupName}`;
+                    speakResponse(foxCall);
+                    addToRadioLog(asset.name, foxCall, 'incoming');
                 }
 
                 // Clear the engageAttempted flag
@@ -3886,7 +4073,47 @@ function AICSimulator() {
                 ));
             }
         });
-    }, [assets, fireWeapon, weaponConfigs]);
+    }, [assets, fireWeapon, weaponConfigs, speakResponse, addToRadioLog, formatCallsignForRadio]);
+
+    // Process pending timeout calls (weapon impact announcements)
+    useEffect(() => {
+        if (pendingTimeoutCalls.length > 0) {
+            pendingTimeoutCalls.forEach(call => {
+                // Format: "Heat one one, timeout, single group"
+                const callsign = formatCallsignForRadio(call.assetName);
+                const timeoutCall = `${callsign}, timeout, ${call.groupName}`;
+                speakResponse(timeoutCall);
+                addToRadioLog(call.assetName, timeoutCall, 'incoming');
+            });
+            // Clear the queue
+            setPendingTimeoutCalls([]);
+        }
+    }, [pendingTimeoutCalls, speakResponse, addToRadioLog, formatCallsignForRadio]);
+
+    // Process pending VID calls (Visual ID announcements for Bogey Spades intercepts)
+    useEffect(() => {
+        if (pendingVIDCalls.length > 0) {
+            pendingVIDCalls.forEach(call => {
+                const callsign = formatCallsignForRadio(call.assetName);
+                let vidCall;
+
+                if (call.type === '20nm') {
+                    // At 20nm: "Heat one one, V-I-D, single group"
+                    vidCall = `${callsign}, V I D, ${call.groupName}`;
+                } else if (call.type === '2nm') {
+                    // At 2nm: "Heat one one, V-I-D single group, single group FISHBED"
+                    vidCall = `${callsign}, V I D ${call.groupName}, ${call.groupName} ${call.natoName}`;
+                }
+
+                if (vidCall) {
+                    speakResponse(vidCall);
+                    addToRadioLog(call.assetName, vidCall, 'incoming');
+                }
+            });
+            // Clear the queue
+            setPendingVIDCalls([]);
+        }
+    }, [pendingVIDCalls, speakResponse, addToRadioLog, formatCallsignForRadio]);
 
     const updateAsset = useCallback((assetId, updates) => {
         setAssets(prev => prev.map(a => {

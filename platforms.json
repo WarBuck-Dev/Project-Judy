@@ -106,7 +106,8 @@
       "maxTurn": 8,
       "image": "com-air.png",
       "threatLevel": 3,
-      "hasDatalink": false
+      "hasDatalink": false,
+      "natoReportingName": "AIRLINER"
     },
     {
       "name": "MiG-21",
@@ -124,7 +125,8 @@
       "maxTurn": 16,
       "image": "mig-21.png",
       "threatLevel": 1,
-      "hasDatalink": false
+      "hasDatalink": false,
+      "natoReportingName": "FISHBED"
     },
     {
       "name": "MiG-29",
@@ -142,7 +144,8 @@
       "maxTurn": 17,
       "image": "mig-29.png",
       "threatLevel": 1,
-      "hasDatalink": false
+      "hasDatalink": false,
+      "natoReportingName": "FULCRUM"
     },
     {
       "name": "F-5",
@@ -160,7 +163,8 @@
       "maxTurn": 15,
       "image": "f-5.png",
       "threatLevel": 1,
-      "hasDatalink": false
+      "hasDatalink": false,
+      "natoReportingName": "TIGER TWO"
     },
     {
       "name": "F-4",
@@ -178,7 +182,8 @@
       "maxTurn": 13,
       "image": "f-4.png",
       "threatLevel": 1,
-      "hasDatalink": false
+      "hasDatalink": false,
+      "natoReportingName": "PHANTOM"
     },
     {
       "name": "F-14",
@@ -196,7 +201,8 @@
       "maxTurn": 14,
       "image": "f-14.png",
       "threatLevel": 1,
-      "hasDatalink": false
+      "hasDatalink": false,
+      "natoReportingName": "TOMCAT"
     },
     {
       "name": "Su-24",
@@ -214,7 +220,8 @@
       "maxTurn": 10,
       "image": "su-24.png",
       "threatLevel": 1,
-      "hasDatalink": false
+      "hasDatalink": false,
+      "natoReportingName": "FENCER"
     },
     {
       "name": "P-3",
@@ -232,7 +239,8 @@
       "maxTurn": 6,
       "image": "p-3.png",
       "threatLevel": 2,
-      "hasDatalink": true
+      "hasDatalink": true,
+      "natoReportingName": "ORION"
     },
     {
       "name": "Tu-95",
@@ -250,7 +258,8 @@
       "maxTurn": 5,
       "image": "tu-95.png",
       "threatLevel": 1,
-      "hasDatalink": false
+      "hasDatalink": false,
+      "natoReportingName": "BEAR"
     }
   ],
   "surface": [
