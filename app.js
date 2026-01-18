@@ -1875,9 +1875,15 @@ function AICSimulator() {
         return `${formatCallsignForRadio(callsign)}, timeout ${groupName}`;
     }, [formatCallsignForRadio]);
 
-    // Picture request (post-merge) - "Closeout, Heat one one, Rock 095/10, flowing west, picture"
-    const generateFighterPictureRequest = useCallback((callsign, aicCallsign, position) => {
-        return `${aicCallsign}, ${formatCallsignForRadio(callsign)}, ${position}, flowing west, picture`;
+    // Picture request (post-merge) - "Closeout, Heat one one, Rock 095/10, flowing one five six, picture"
+    // heading parameter is the fighter's current heading (number)
+    const generateFighterPictureRequest = useCallback((callsign, aicCallsign, position, heading) => {
+        const words = ['zero', 'one', 'two', 'three', 'four',
+                      'five', 'six', 'seven', 'eight', 'niner'];
+        // Spell out heading digit by digit with leading zeros (156 → "one five six")
+        const headingStr = Math.round(heading).toString().padStart(3, '0');
+        const headingSpoken = headingStr.split('').map(d => words[parseInt(d)]).join(' ');
+        return `${aicCallsign}, ${formatCallsignForRadio(callsign)}, ${position}, flowing ${headingSpoken}, picture`;
     }, [formatCallsignForRadio]);
 
     // Reset acknowledgment - "Heat one one, resetting TAMPA, state green"
@@ -1885,15 +1891,20 @@ function AICSimulator() {
         return `${formatCallsignForRadio(callsign)}, resetting ${stationName}, state green`;
     }, [formatCallsignForRadio]);
 
-    // Format lat/lon as bullseye position string - "Rock 095/10"
+    // Format lat/lon as bullseye position string for speech - "Rock zero niner five, eighteen"
+    // Bearing is spelled digit-by-digit, range is spoken naturally
     const getBullseyePosition = useCallback((lat, lon, bullseyeRef) => {
         if (!bullseyeRef || !bullseyeRef.lat || !bullseyeRef.lon) {
             return 'position unknown';
         }
+        const words = ['zero', 'one', 'two', 'three', 'four',
+                      'five', 'six', 'seven', 'eight', 'niner'];
         const bearing = Math.round(calculateBearing(bullseyeRef.lat, bullseyeRef.lon, lat, lon));
         const range = Math.round(calculateDistance(bullseyeRef.lat, bullseyeRef.lon, lat, lon));
+        // Spell out bearing digit by digit with leading zeros (272 → "two seven two")
         const bearingStr = bearing.toString().padStart(3, '0');
-        return `Rock ${bearingStr}/${range}`;
+        const bearingSpoken = bearingStr.split('').map(d => words[parseInt(d)]).join(' ');
+        return `Rock ${bearingSpoken}, ${range}`;
     }, []);
 
     // Generate readback message with proper radio terminology
@@ -1996,6 +2007,13 @@ function AICSimulator() {
         const normalizedTranscript = normalizeTranscript(transcript);
         const text = normalizedTranscript.toLowerCase();
 
+        // DEBUG: Log every voice command as it comes in
+        console.log('========================================');
+        console.log('[VOICE CMD] Raw transcript:', transcript);
+        console.log('[VOICE CMD] Normalized text:', text);
+        console.log('[VOICE CMD] interceptState.phase:', interceptState.phase);
+        console.log('========================================');
+
         // Check if this is a BROADCAST call (AIC uses their own callsign, not asset callsign)
         // Broadcast format: "Closeout, [N groups,] group ROCK 234/23, twenty-five thousand, track east hostile"
         const ownCallsignLower = (ownshipTacticalCallsign || '').toLowerCase();
@@ -2009,10 +2027,37 @@ function AICSimulator() {
             text.includes('bogey')
         );
 
-        // Only treat as broadcast if we're in idle phase (no active intercept) AND not a commit call
+        // Only treat as broadcast if we're in idle phase (no active intercept) AND not a commit/vanished call
         // Once committed, similar calls are labeled pictures, not broadcasts
+        // Vanished calls should never be treated as broadcasts - they are directive targeting calls
         const isCommitCall = text.includes('commit');
-        if (startsWithOwnCallsign && containsGroupInfo && interceptState.phase === 'idle' && !isCommitCall) {
+        const isVanishedBroadcast = text.includes('vanished');
+        const isSeparationCall = text.includes('separation');
+        const isDeclareResponse = text.match(/(\w+\s*group).*?(rock|bullseye).*?(hostile|friendly|neutral|bogey)/i);
+        const isTacRangeCall = text.match(/(\w+\s*group)\s*(\d+)\s*miles/i);
+
+        // Check if any fighter is in an active engagement (intercepting, engaging, or has a target)
+        const isFighterInEngagement = assets.some(a =>
+            a.identity === 'friendly' &&
+            (a.targetingState === 'intercepting' || a.targetingState === 'engaging' || a.targetedAssetId)
+        );
+
+        // Check if there are still hostile assets (we're in an active engagement scenario even if current target destroyed)
+        const hasRemainingHostiles = assets.some(a => a.identity === 'hostile' && !a.isDestroyed && !a.hidden);
+
+        // Check if any fighter has recently fired (engagement in progress even if target destroyed)
+        const hasFiredRecently = assets.some(a =>
+            a.identity === 'friendly' &&
+            (a.fox3Called25nm || a.declareCalled28nm || a.engageAttempted)
+        );
+
+        // We're in an active intercept scenario if:
+        // 1. A fighter is currently targeting something, OR
+        // 2. There are remaining hostiles AND a fighter has engaged (fired or called declare/fox3)
+        const isActiveInterceptScenario = isFighterInEngagement || (hasRemainingHostiles && hasFiredRecently);
+
+        // Don't treat as broadcast if: it's a commit, vanished, separation, declare response, tac range, or we're in active intercept
+        if (startsWithOwnCallsign && containsGroupInfo && interceptState.phase === 'idle' && !isCommitCall && !isVanishedBroadcast && !isSeparationCall && !isDeclareResponse && !isTacRangeCall && !isActiveInterceptScenario) {
             // This is a broadcast call - log it and have friendly assets acknowledge
             addToRadioLog(ownshipTacticalCallsign, transcript, 'outgoing');
 
@@ -2037,6 +2082,15 @@ function AICSimulator() {
         if (!targetAsset && interceptState.engagingFighterId &&
             (interceptState.phase === 'committed' || interceptState.phase === 'engagement' || interceptState.phase === 'post-merge')) {
             targetAsset = assets.find(a => a.id === interceptState.engagingFighterId);
+        }
+
+        // Fallback for loaded saves: if no explicit callsign and isActiveInterceptScenario,
+        // find the fighter that has been engaging (has fired or called declare)
+        if (!targetAsset && isActiveInterceptScenario) {
+            targetAsset = friendlyAssets.find(a =>
+                a.fox3Called25nm || a.declareCalled28nm || a.engageAttempted ||
+                a.targetingState === 'intercepting' || a.targetingState === 'engaging'
+            );
         }
 
         if (!targetAsset) {
@@ -2165,7 +2219,9 @@ function AICSimulator() {
         // IMPORTANT: Exclude vanished calls - they use "target" but should be handled by the vanished handler
         const targetMatch = text.match(/\btarget\b/i);
         const isVanishedForTarget = text.match(/vanished/i);
+        console.log('[HANDLER DEBUG] TARGET check - targetMatch:', targetMatch, 'isVanishedForTarget:', isVanishedForTarget, 'commandExecuted:', commandExecuted);
         if (!commandExecuted && targetMatch && !isVanishedForTarget) {
+            console.log('[HANDLER DEBUG] >>> TARGET handler ENTERED');
             // Check if bullseye name is mentioned
             if (containsBullseyeName(text, bullseyeName)) {
                 const afterTarget = text.substring(text.toLowerCase().indexOf('target'));
@@ -2319,7 +2375,9 @@ function AICSimulator() {
         // COMMIT: "Closeout, North Group Rock 090/45... Heat commit"
         // This triggers the intercept - fighter responds "Heat commit" and starts intercepting
         const commitMatch = text.match(/(\w+)\s*commit/i);
+        console.log('[HANDLER DEBUG] COMMIT check - commitMatch:', commitMatch, 'commandExecuted:', commandExecuted);
         if (!commandExecuted && commitMatch) {
+            console.log('[HANDLER DEBUG] >>> COMMIT handler ENTERED');
             const anchor = parseBullseyeAnchor(text);
             const groupNames = extractGroupNames(text);
             const priorityGroupName = groupNames[0] || 'single group';
@@ -2412,10 +2470,12 @@ function AICSimulator() {
         }
 
         // TAC RANGE: "Heat one one, North Group 30 miles"
-        // Fighter acknowledges - works in engagement phase OR when fighter is intercepting (for loaded saves)
+        // Fighter acknowledges - works in engagement phase, when intercepting, OR in active intercept scenario (loaded saves)
         const tacRangeMatch = text.match(/(\w+\s*group)\s*(\d+)\s*miles/i);
         const isIntercepting = targetAsset?.targetingState === 'intercepting';
-        if (!commandExecuted && tacRangeMatch && (interceptState.phase === 'engagement' || isIntercepting)) {
+        console.log('[HANDLER DEBUG] TAC RANGE check - tacRangeMatch:', tacRangeMatch, 'commandExecuted:', commandExecuted, 'isIntercepting:', isIntercepting, 'isActiveInterceptScenario:', isActiveInterceptScenario);
+        if (!commandExecuted && tacRangeMatch && (interceptState.phase === 'engagement' || isIntercepting || isActiveInterceptScenario)) {
+            console.log('[HANDLER DEBUG] >>> TAC RANGE handler ENTERED - setting commandExecuted=true');
             const response = generateFighterReadback(targetAsset.name);
             speakResponse(response);
             addToRadioLog(targetAsset.name, response, 'incoming');
@@ -2423,12 +2483,14 @@ function AICSimulator() {
         }
 
         // DECLARE RESPONSE: "Closeout, North Group Rock 090/28, twenty-five thousand, track west, hostile"
-        // Fighter acknowledges - works in engagement phase OR when fighter is intercepting (for loaded saves)
+        // Fighter acknowledges - works in engagement phase, when intercepting, OR in active intercept scenario (loaded saves)
         // IMPORTANT: Exclude vanished calls - they should be handled by the vanished handler
         const declareResponseMatch = text.match(/(\w+\s*group).*?(rock|bullseye)/i);
         const isNotCommit = !text.match(/commit/i);
         const isVanishedCall = text.match(/vanished/i);
-        if (!commandExecuted && declareResponseMatch && isNotCommit && !isVanishedCall && (interceptState.phase === 'engagement' || isIntercepting)) {
+        console.log('[HANDLER DEBUG] DECLARE check - declareResponseMatch:', declareResponseMatch, 'isVanishedCall:', isVanishedCall, 'commandExecuted:', commandExecuted, 'isIntercepting:', isIntercepting, 'isActiveInterceptScenario:', isActiveInterceptScenario);
+        if (!commandExecuted && declareResponseMatch && isNotCommit && !isVanishedCall && (interceptState.phase === 'engagement' || isIntercepting || isActiveInterceptScenario)) {
+            console.log('[HANDLER DEBUG] >>> DECLARE handler ENTERED - setting commandExecuted=true');
             const response = generateFighterReadback(targetAsset.name);
             speakResponse(response);
             addToRadioLog(targetAsset.name, response, 'incoming');
@@ -2436,17 +2498,30 @@ function AICSimulator() {
         }
 
         // SEPARATION RESPONSE: "Closeout, South Group separation 10, twenty-five thousand, track west, hostile"
-        // No fighter response to separation - works in engagement phase OR when fighter is intercepting
-        const separationMatch = text.match(/(\w+\s*group)\s*separation\s*(\d+)/i);
-        if (!commandExecuted && separationMatch && (interceptState.phase === 'engagement' || isIntercepting)) {
-            // Just log the AIC's call - no fighter response
+        // Also matches "South separation 10" (without "group" keyword)
+        // Fighter acknowledges - works in engagement phase, when intercepting, OR in active intercept scenario
+        const separationMatch = text.match(/(\w+)\s*(?:group\s*)?separation\s*(\d+)/i);
+        console.log('[HANDLER DEBUG] SEPARATION check - separationMatch:', separationMatch, 'commandExecuted:', commandExecuted, 'phase:', interceptState.phase, 'isIntercepting:', isIntercepting, 'isActiveInterceptScenario:', isActiveInterceptScenario);
+        if (!commandExecuted && separationMatch && (interceptState.phase === 'engagement' || isIntercepting || isActiveInterceptScenario)) {
+            console.log('[HANDLER DEBUG] SEPARATION handler entered');
+            // Fighter acknowledges separation call
+            const response = generateFighterReadback(targetAsset.name);
+            speakResponse(response);
+            addToRadioLog(targetAsset.name, response, 'incoming');
             commandExecuted = true;
         }
 
         // VANISHED + Directive Targeting: "Closeout, North Group vanished. Heat one one, target South Group Rock 100/22..."
         const vanishedMatch = text.match(/(\w+\s*(?:group|arm))\s*vanished/i);
+        // DEBUG: Log vanished handler entry conditions
+        console.log('[HANDLER DEBUG] VANISHED check - vanishedMatch:', vanishedMatch, 'commandExecuted:', commandExecuted, 'isActiveInterceptScenario:', isActiveInterceptScenario);
+        console.log('[VANISHED DEBUG] Text:', text);
+        console.log('[VANISHED DEBUG] vanishedMatch:', vanishedMatch);
+        console.log('[VANISHED DEBUG] commandExecuted:', commandExecuted);
+
         if (!commandExecuted && vanishedMatch) {
             const vanishedGroupName = vanishedMatch[1];
+            console.log('[VANISHED DEBUG] Entered handler, vanishedGroupName:', vanishedGroupName);
 
             // Mark group vanished
             setInterceptState(prev => ({
@@ -2459,31 +2534,40 @@ function AICSimulator() {
 
             // Check for directive targeting
             let directive = parseDirectiveTarget(text);
+            console.log('[VANISHED DEBUG] parseDirectiveTarget result:', directive);
 
             // Fallback: if parseDirectiveTarget failed but text contains "target" and a group name
             if (!directive && text.match(/target/i)) {
                 const groupNames = extractGroupNames(text);
+                console.log('[VANISHED DEBUG] Fallback - extractGroupNames:', groupNames);
                 // Find a group name that's NOT the vanished group
                 const newTargetGroup = groupNames.find(g =>
                     !g.toLowerCase().includes(vanishedGroupName.toLowerCase())
                 );
+                console.log('[VANISHED DEBUG] Fallback - newTargetGroup:', newTargetGroup);
                 if (newTargetGroup) {
+                    const anchor = parseBullseyeAnchor(text);
+                    console.log('[VANISHED DEBUG] Fallback - parseBullseyeAnchor:', anchor);
                     directive = {
                         groupName: newTargetGroup,
-                        anchor: parseBullseyeAnchor(text)
+                        anchor: anchor
                     };
                 }
             }
+
+            console.log('[VANISHED DEBUG] Final directive:', directive);
 
             if (directive && directive.groupName) {
                 // Find next target asset by bullseye anchor if available
                 let nextTarget = null;
                 if (directive.anchor) {
+                    console.log('[VANISHED DEBUG] Looking for asset at bearing:', directive.anchor.bearing, 'range:', directive.anchor.range, 'altitude:', directive.anchor.altitude);
                     nextTarget = findAssetByBullseyeAnchor(
                         directive.anchor.bearing,
                         directive.anchor.range,
                         directive.anchor.altitude ? directive.anchor.altitude / 1000 : null
                     );
+                    console.log('[VANISHED DEBUG] findAssetByBullseyeAnchor result:', nextTarget?.name || 'null');
                 }
 
                 // If no target found by anchor, try to find any other hostile asset
@@ -2493,30 +2577,41 @@ function AICSimulator() {
                         a.id !== targetAsset?.targetedAssetId &&
                         !a.isDestroyed
                     );
+                    console.log('[VANISHED DEBUG] Fallback hostiles:', otherHostiles.map(h => h.name));
                     if (otherHostiles.length > 0) {
                         nextTarget = otherHostiles[0];
                     }
                 }
+
+                console.log('[VANISHED DEBUG] nextTarget:', nextTarget?.name || 'null');
 
                 if (nextTarget) {
                     // Fighter acknowledges and retargets
                     const response = generateFighterTargetAck(targetAsset.name, directive.groupName);
                     speakResponse(response);
                     addToRadioLog(targetAsset.name, response, 'incoming');
+                    console.log('[VANISHED DEBUG] Generated target ack:', response);
 
                     // Update fighter targeting - reset range-triggered call flags for new target
                     const interceptHeading = calculateBearing(
                         targetAsset.lat, targetAsset.lon,
                         nextTarget.lat, nextTarget.lon
                     );
+                    // Parse declaration from the vanished call text (should contain hostile/bandit/bogey)
+                    const retargetDeclaration = parseDeclarationFromText(text) || 'hostile';
+                    // Add 7 second delay before next engagement (simulates clearing the merge)
+                    const retargetDelayUntil = Date.now() + 7000;
                     updateAsset(targetAsset.id, {
                         targetHeading: interceptHeading,
                         targetedAssetId: nextTarget.id,
                         targetGroupName: directive.groupName,
                         targetingState: 'intercepting',
+                        targetDeclaration: retargetDeclaration, // Set declaration for fox-3 logic
                         declareCalled28nm: true,  // Skip declare for retarget (already engaged)
-                        fox3Called25nm: false     // Allow fox-3 for new target
+                        fox3Called25nm: false,    // Allow fox-3 for new target
+                        retargetDelayUntil: retargetDelayUntil  // Delay before engaging next target
                     });
+                    console.log('[VANISHED DEBUG] Retarget - set targetDeclaration:', retargetDeclaration, 'fox3Called25nm:', false, 'delayUntil:', retargetDelayUntil);
 
                     // Update intercept state
                     const nextGroupId = `group-${Date.now()}`;
@@ -2538,23 +2633,40 @@ function AICSimulator() {
                         }],
                         currentTargetGroupId: nextGroupId
                     }));
+                } else {
+                    // Directive exists but couldn't find target - acknowledge anyway
+                    console.log('[VANISHED DEBUG] No target found for directive, generating simple readback');
+                    const response = generateFighterReadback(targetAsset.name);
+                    speakResponse(response);
+                    addToRadioLog(targetAsset.name, response, 'incoming');
                 }
             } else {
                 // No retarget - final group vanished
+                // Fighter acknowledges the vanished call
+                const response = generateFighterReadback(targetAsset.name);
+                speakResponse(response);
+                addToRadioLog(targetAsset.name, response, 'incoming');
+
                 setInterceptState(prev => ({ ...prev, phase: 'post-merge' }));
 
                 // Fighter picture request after short delay
-                // "Closeout, Heat one one, Rock 095/10, flowing west, picture"
+                // "Closeout, Heat one one, Rock 095/10, flowing one five six, picture"
+                // Capture fighter info for setTimeout closure
+                const fighterName = targetAsset.name;
+                const fighterIdForPicture = targetAsset.id;
                 setTimeout(() => {
-                    if (targetAsset && bullseyePosition) {
-                        const fighterPosition = getBullseyePosition(targetAsset.lat, targetAsset.lon, bullseyePosition);
+                    // Get fresh asset data for current position/heading
+                    const currentFighter = assets.find(a => a.id === fighterIdForPicture);
+                    if (currentFighter && bullseyePosition) {
+                        const fighterPosition = getBullseyePosition(currentFighter.lat, currentFighter.lon, bullseyePosition);
                         const pictureReq = generateFighterPictureRequest(
-                            targetAsset.name,
+                            fighterName,
                             ownshipTacticalCallsign,
-                            fighterPosition
+                            fighterPosition,
+                            currentFighter.heading
                         );
                         speakResponse(pictureReq);
-                        addToRadioLog(targetAsset.name, pictureReq, 'incoming');
+                        addToRadioLog(fighterName, pictureReq, 'incoming');
                     }
                 }, 2000);
             }
@@ -2962,7 +3074,13 @@ function AICSimulator() {
                         }
 
                         // Check if within engagement range (25 NM) and HOSTILE
-                        if (distanceToTarget <= 25 && asset.targetDeclaration === 'hostile') {
+                        // Also check retargetDelayUntil - wait before engaging after retarget (clearing the merge)
+                        const canEngage = !asset.retargetDelayUntil || Date.now() >= asset.retargetDelayUntil;
+                        if (distanceToTarget <= 25 && asset.targetDeclaration === 'hostile' && canEngage) {
+                            // Clear the delay flag once we're past it
+                            if (asset.retargetDelayUntil) {
+                                updated.retargetDelayUntil = null;
+                            }
                             // FOX-3 call with separation request if there are more groups
                             if (!asset.fox3Called25nm) {
                                 updated.fox3Called25nm = true;
