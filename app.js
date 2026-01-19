@@ -1477,7 +1477,8 @@ function AICSimulator() {
             'league group': 'lead group',
             'lead grape': 'lead group',
             'trail grape': 'trail group',
-            'trail grape': 'trail group',
+            'shingle group': 'single group',
+            'shingle': 'single',
         };
 
         // Apply tactical corrections
@@ -2391,6 +2392,24 @@ function AICSimulator() {
             if (capStation) {
                 addOrbitPoint(targetAsset.id, capStation.lat, capStation.lon);
 
+                // Clear targeting state - fighter is returning to CAP
+                updateAsset(targetAsset.id, {
+                    targetingState: null,
+                    targetedAssetId: null,
+                    targetGroupName: null,
+                    fox3Called25nm: false,
+                    declareCalled28nm: false,
+                    engageAttempted: false
+                });
+
+                // Reset intercept state - intercept is complete
+                setInterceptState({
+                    phase: 'idle',
+                    groups: [],
+                    currentTargetGroupId: null,
+                    engagingFighterId: null
+                });
+
                 const sayState = text.includes('say state') || text.includes('state');
                 const readback = generateReadback(targetAsset.name, 'reset', capStation.name, sayState);
 
@@ -2651,7 +2670,8 @@ function AICSimulator() {
         // Fighter responds "Heat one one, target North Group"
         // Match both digit and word numbers: "2 groups", "two groups", "three groups", etc.
         // Also match common mishearings like "to groups" (two) or "free groups" (three)
-        const pictureMatch = text.match(/(\d+|one|two|to|three|free|four|for|five|six|seven|eight|nine|ten)\s*group/i);
+        // Also match "single group" for single group intercepts
+        const pictureMatch = text.match(/(\d+|single|one|two|to|three|free|four|for|five|six|seven|eight|nine|ten)\s*group/i);
         if (!commandExecuted && pictureMatch && interceptState.phase === 'committed') {
             const groupNames = extractGroupNames(text);
 
@@ -2671,15 +2691,23 @@ function AICSimulator() {
             } else if (/\bazimuth\s+\d+/i.test(text) || /\bazma\s+\d+/i.test(text)) {
                 detectedPictureType = 'azimuth';
             }
-            // Check for 3+ groups (champagne)
+            // Check for number of groups (including "single" = 1)
             const numGroupsMatch = pictureMatch[1];
             const numGroups = parseInt(numGroupsMatch) ||
-                {'one':1,'two':2,'to':2,'three':3,'free':3,'four':4,'for':4,'five':5,'six':6,'seven':7,'eight':8,'nine':9,'ten':10}[numGroupsMatch.toLowerCase()] || 2;
+                {'single':1,'one':1,'two':2,'to':2,'three':3,'free':3,'four':4,'for':4,'five':5,'six':6,'seven':7,'eight':8,'nine':9,'ten':10}[numGroupsMatch.toLowerCase()] || 2;
+
+            // 3+ groups = champagne
             if (numGroups >= 3) {
                 detectedPictureType = 'champagne';
             }
+            // Single group = single (no picture type complexity)
+            const isSingleGroup = numGroups === 1;
+            if (isSingleGroup) {
+                detectedPictureType = 'single';
+            }
 
             // POST-COMMIT TARGETING DECISION:
+            // - Single group = "single group"
             // - 2 groups range = ALWAYS lead group
             // - 3 group ladder = ALWAYS lead group
             // - 3 group vic = ALWAYS lead group
@@ -2687,7 +2715,10 @@ function AICSimulator() {
             // - 3 group wall = First group AIC calls
             // - 3 group champagne = First group AIC calls
             let priorityGroup;
-            if (isRangePicture || isLadder || isVic) {
+            if (isSingleGroup) {
+                // Single group intercept - just "single group"
+                priorityGroup = 'single group';
+            } else if (isRangePicture || isLadder || isVic) {
                 // For range, ladder, vic: always target lead group
                 priorityGroup = 'lead group';
             } else {
@@ -2710,14 +2741,60 @@ function AICSimulator() {
             speakResponse(response);
             addToRadioLog(targetAsset.name, response, 'incoming');
 
+            // Build groups array from ALL groups mentioned in the picture call
+            // The priority group is first, other groups follow in the order mentioned
+            // For single group intercepts, groupNames may be empty - create "single group" entry
+            let newGroups;
+            if (isSingleGroup && groupNames.length === 0) {
+                // Single group intercept - create a single group entry
+                newGroups = [{
+                    id: `group-${Date.now()}-0`,
+                    name: 'single group',
+                    assetId: null,
+                    status: 'active',
+                    priority: 1,
+                    declareCalled: false,
+                    fox3Called: false,
+                    timeoutCalled: false
+                }];
+            } else {
+                newGroups = groupNames.map((name, idx) => ({
+                    id: `group-${Date.now()}-${idx}`,
+                    name: name,
+                    assetId: null, // Will be associated when targeted
+                    status: 'active',
+                    priority: idx + 1, // Priority based on order (1 = highest priority)
+                    declareCalled: false,
+                    fox3Called: false,
+                    timeoutCalled: false
+                }));
+
+                // Make sure priority group is first if it's different from first extracted group
+                if (priorityGroup !== groupNames[0]) {
+                    const priorityIdx = newGroups.findIndex(g => g.name.toLowerCase() === priorityGroup.toLowerCase());
+                    if (priorityIdx > 0) {
+                        const [priorityGroupObj] = newGroups.splice(priorityIdx, 1);
+                        priorityGroupObj.priority = 1;
+                        newGroups.unshift(priorityGroupObj);
+                        // Re-number priorities
+                        newGroups.forEach((g, i) => g.priority = i + 1);
+                    }
+                }
+            }
+
+            // Associate the first group with the current target asset
+            if (newGroups.length > 0 && targetAsset.targetedAssetId) {
+                newGroups[0].assetId = targetAsset.targetedAssetId;
+            }
+
+            console.log('[LABELED PICTURE] Created groups:', newGroups);
+
             setInterceptState(prev => ({
                 ...prev,
                 phase: 'engagement',
                 pictureType: detectedPictureType,
-                // Update the group name in intercept state too
-                groups: prev.groups.map((g, idx) =>
-                    idx === 0 ? { ...g, name: priorityGroup } : g
-                )
+                groups: newGroups,
+                currentTargetGroupId: newGroups[0]?.id || null
             }));
             commandExecuted = true;
         }
@@ -3343,9 +3420,13 @@ function AICSimulator() {
                                 // ONLY request separation if there are OTHER ACTIVE groups (not vanished)
                                 // No separation call if:
                                 // - All other groups are vanished
-                                // - Only one group remaining
+                                // - Only one group remaining (the current target)
+                                // Filter by both assetId AND group name to handle cases where assetId is null
+                                const currentTargetGroupName = groupName.toLowerCase();
                                 const activeGroups = interceptState.groups.filter(g =>
-                                    g.status === 'active' && g.assetId !== asset.targetedAssetId
+                                    g.status === 'active' &&
+                                    g.assetId !== asset.targetedAssetId &&
+                                    g.name.toLowerCase() !== currentTargetGroupName
                                 );
                                 let nextGroup = activeGroups
                                     .sort((a, b) => (a.priority || 99) - (b.priority || 99))[0];
@@ -3354,6 +3435,7 @@ function AICSimulator() {
                                 // Don't use fallback to find other hostiles - trust the AIC's group status calls
                                 let nextGroupName = nextGroup?.name || null;
 
+                                console.log('[FOX3 DEBUG] Current target group name:', currentTargetGroupName);
                                 console.log('[FOX3 DEBUG] All groups:', interceptState.groups.map(g => ({ name: g.name, status: g.status, assetId: g.assetId })));
                                 console.log('[FOX3 DEBUG] Active groups (excluding current target):', activeGroups.map(g => ({ name: g.name, status: g.status })));
                                 console.log('[FOX3 DEBUG] Next group for separation:', nextGroup?.name || 'NONE');
@@ -4097,8 +4179,6 @@ function AICSimulator() {
                             const currentCount = radarDetectionCounts[asset.id] || 0;
                             const newCount = currentCount + 1;
                             const threshold = currentThresholds[asset.id];
-
-                            console.log(`[Student Mode] Asset ${asset.id} (${asset.name}) - Sweep ${newCount}/${threshold} (time: ${missionTime}s)`);
 
                             // Update detection count and last detection time
                             setRadarDetectionCounts(prev => ({ ...prev, [asset.id]: newCount }));
