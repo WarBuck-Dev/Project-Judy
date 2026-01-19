@@ -1114,6 +1114,7 @@ function AICSimulator() {
     const [showSaveDialog, setShowSaveDialog] = useState(false);
     const [showLoadDialog, setShowLoadDialog] = useState(false);
     const [showControlsDialog, setShowControlsDialog] = useState(false);
+    const [showSoundDialog, setShowSoundDialog] = useState(false);
     const [showMissionProductsDialog, setShowMissionProductsDialog] = useState(false);
     const [missionProducts, setMissionProducts] = useState([]); // Array of {id, name, type, size, dateAdded, data}
     const [isLoading, setIsLoading] = useState(true); // Start true for initial load
@@ -1243,6 +1244,25 @@ function AICSimulator() {
     const [pendingTimeoutCalls, setPendingTimeoutCalls] = useState([]); // Queue for timeout announcements
     const [pendingVIDCalls, setPendingVIDCalls] = useState([]); // Queue for VID announcements
 
+    // ElevenLabs TTS settings
+    const [elevenLabsApiKey, setElevenLabsApiKey] = useState(() => {
+        return localStorage.getItem('elevenLabsApiKey') || '';
+    });
+    const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState(() => {
+        return localStorage.getItem('elevenLabsVoiceId') || 'pNInz6obpgDQGcFmaJgB'; // Default: Adam (clear male voice)
+    });
+    const [useElevenLabs, setUseElevenLabs] = useState(() => {
+        return localStorage.getItem('useElevenLabs') === 'true';
+    });
+
+    // Radio effect settings
+    const [radioEffectsEnabled, setRadioEffectsEnabled] = useState(() => {
+        return localStorage.getItem('radioEffectsEnabled') !== 'false'; // Default ON
+    });
+    const [radioEffectIntensity, setRadioEffectIntensity] = useState(() => {
+        return parseFloat(localStorage.getItem('radioEffectIntensity')) || 0.5; // 0-1 scale
+    });
+
     // AIC Training - Intercept State Management
     const [interceptState, setInterceptState] = useState({
         phase: 'idle', // 'idle' | 'broadcast' | 'committed' | 'engagement' | 'post-merge'
@@ -1284,6 +1304,30 @@ function AICSimulator() {
         assets.find(a => a.id === selectedAssetId),
         [assets, selectedAssetId]
     );
+
+    // ========================================================================
+    // PERSIST ELEVENLABS SETTINGS TO LOCALSTORAGE
+    // ========================================================================
+
+    useEffect(() => {
+        localStorage.setItem('elevenLabsApiKey', elevenLabsApiKey);
+    }, [elevenLabsApiKey]);
+
+    useEffect(() => {
+        localStorage.setItem('elevenLabsVoiceId', elevenLabsVoiceId);
+    }, [elevenLabsVoiceId]);
+
+    useEffect(() => {
+        localStorage.setItem('useElevenLabs', useElevenLabs.toString());
+    }, [useElevenLabs]);
+
+    useEffect(() => {
+        localStorage.setItem('radioEffectsEnabled', radioEffectsEnabled.toString());
+    }, [radioEffectsEnabled]);
+
+    useEffect(() => {
+        localStorage.setItem('radioEffectIntensity', radioEffectIntensity.toString());
+    }, [radioEffectIntensity]);
 
     // ========================================================================
     // LOAD PLATFORM CONFIGURATIONS
@@ -1413,6 +1457,7 @@ function AICSimulator() {
             'hostels': 'hostile',
             'hospital': 'hostile',
             'austell': 'hostile',
+            'hostil': 'hostile',
             'bully': 'bullseye',
             'bulls eye': 'bullseye',
             'bull\'s eye': 'bullseye',
@@ -1427,6 +1472,12 @@ function AICSimulator() {
             'banished': 'vanished',
             'vanish': 'vanished',
             'finished': 'vanished',
+            // Group name mishearings
+            'lee group': 'lead group',
+            'league group': 'lead group',
+            'lead grape': 'lead group',
+            'trail grape': 'trail group',
+            'trail grape': 'trail group',
         };
 
         // Apply tactical corrections
@@ -2010,8 +2061,120 @@ function AICSimulator() {
         }
     };
 
-    // Speak response using SpeechSynthesis
-    const speakResponse = useCallback((text) => {
+    // Apply radio effect to audio element using Web Audio API
+    // Simulates military UHF/VHF radio transmission characteristics
+    const playWithRadioEffect = useCallback((audioElement, audioUrl) => {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Create source from audio element
+        const source = audioContext.createMediaElementSource(audioElement);
+
+        // High-pass to cut low rumble (radio doesn't transmit below ~300Hz)
+        const highpass = audioContext.createBiquadFilter();
+        highpass.type = 'highpass';
+        highpass.frequency.value = 300 + (radioEffectIntensity * 200);
+
+        // Bandpass filter (radio characteristic: 300Hz - 3400Hz voice band)
+        const bandpass = audioContext.createBiquadFilter();
+        bandpass.type = 'bandpass';
+        bandpass.frequency.value = 1800; // Center frequency
+        bandpass.Q.value = 0.7 + (radioEffectIntensity * 0.6); // Q affects bandwidth
+
+        // Low-pass to cut high frequencies (radio cuts above ~3.4kHz)
+        const lowpass = audioContext.createBiquadFilter();
+        lowpass.type = 'lowpass';
+        lowpass.frequency.value = 3400 - (radioEffectIntensity * 800);
+
+        // Subtle distortion/compression (radio compression)
+        const distortion = audioContext.createWaveShaper();
+        const makeDistortionCurve = (amount) => {
+            const samples = 44100;
+            const curve = new Float32Array(samples);
+            const deg = Math.PI / 180;
+            for (let i = 0; i < samples; i++) {
+                const x = (i * 2) / samples - 1;
+                curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+            }
+            return curve;
+        };
+        distortion.curve = makeDistortionCurve(radioEffectIntensity * 20);
+        distortion.oversample = '2x';
+
+        // Gain node for volume adjustment
+        const gainNode = audioContext.createGain();
+        gainNode.gain.value = 1.1; // Slight boost to compensate for filtering
+
+        // Connect the chain: source -> highpass -> bandpass -> lowpass -> distortion -> gain -> output
+        source.connect(highpass);
+        highpass.connect(bandpass);
+        bandpass.connect(lowpass);
+        lowpass.connect(distortion);
+        distortion.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        // Play the audio
+        audioElement.play();
+
+        // Clean up when done
+        audioElement.onended = () => {
+            audioContext.close();
+            if (audioUrl) URL.revokeObjectURL(audioUrl);
+        };
+    }, [radioEffectIntensity]);
+
+    // Speak response using ElevenLabs or browser SpeechSynthesis
+    const speakResponse = useCallback(async (text) => {
+        // Use ElevenLabs if enabled and API key is set
+        if (useElevenLabs && elevenLabsApiKey) {
+            try {
+                const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${elevenLabsVoiceId}`, {
+                    method: 'POST',
+                    headers: {
+                        'xi-api-key': elevenLabsApiKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        model_id: 'eleven_turbo_v2_5', // Fast, low-latency model
+                        voice_settings: {
+                            stability: 0.5,
+                            similarity_boost: 0.75,
+                            speed: 1.1 // Slightly faster for radio feel
+                        }
+                    })
+                });
+
+                if (!response.ok) {
+                    console.error('ElevenLabs API error:', response.status, response.statusText);
+                    // Fall back to browser TTS
+                    speakWithBrowserTTS(text);
+                    return;
+                }
+
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+
+                // Apply radio effect if enabled, otherwise play directly
+                if (radioEffectsEnabled) {
+                    playWithRadioEffect(audio, audioUrl);
+                } else {
+                    audio.onended = () => URL.revokeObjectURL(audioUrl);
+                    audio.play();
+                }
+            } catch (error) {
+                console.error('ElevenLabs TTS error:', error);
+                // Fall back to browser TTS
+                speakWithBrowserTTS(text);
+            }
+        } else {
+            // Use browser's SpeechSynthesis
+            speakWithBrowserTTS(text);
+        }
+    }, [useElevenLabs, elevenLabsApiKey, elevenLabsVoiceId, radioEffectsEnabled, playWithRadioEffect]);
+
+    // Browser's built-in SpeechSynthesis (fallback)
+    const speakWithBrowserTTS = useCallback((text) => {
         if (!window.speechSynthesis) return;
 
         const utterance = new SpeechSynthesisUtterance(text);
@@ -2491,14 +2654,19 @@ function AICSimulator() {
         const pictureMatch = text.match(/(\d+|one|two|to|three|free|four|for|five|six|seven|eight|nine|ten)\s*group/i);
         if (!commandExecuted && pictureMatch && interceptState.phase === 'committed') {
             const groupNames = extractGroupNames(text);
-            const priorityGroup = groupNames[0] || interceptState.groups[0]?.name || 'group';
 
             // Detect picture type from the call:
             // - "range X" = range picture (lead/trail groups)
             // - "azimuth X" = azimuth picture (north/south groups)
+            // - "ladder" = ladder formation
+            // - "vic" = vic formation
             // - 3+ groups = champagne (cardinal + lead/trail)
             let detectedPictureType = 'azimuth'; // default
-            if (/\brange\s+\d+/i.test(text)) {
+            const isRangePicture = /\brange\s+\d+/i.test(text);
+            const isLadder = /\bladder\b/i.test(text);
+            const isVic = /\bvic\b/i.test(text);
+
+            if (isRangePicture) {
                 detectedPictureType = 'range';
             } else if (/\bazimuth\s+\d+/i.test(text) || /\bazma\s+\d+/i.test(text)) {
                 detectedPictureType = 'azimuth';
@@ -2510,6 +2678,26 @@ function AICSimulator() {
             if (numGroups >= 3) {
                 detectedPictureType = 'champagne';
             }
+
+            // POST-COMMIT TARGETING DECISION:
+            // - 2 groups range = ALWAYS lead group
+            // - 3 group ladder = ALWAYS lead group
+            // - 3 group vic = ALWAYS lead group
+            // - 2 groups azimuth = First group AIC calls
+            // - 3 group wall = First group AIC calls
+            // - 3 group champagne = First group AIC calls
+            let priorityGroup;
+            if (isRangePicture || isLadder || isVic) {
+                // For range, ladder, vic: always target lead group
+                priorityGroup = 'lead group';
+            } else {
+                // For azimuth, wall, champagne: use the order AIC called them
+                priorityGroup = groupNames[0] || interceptState.groups[0]?.name || 'group';
+            }
+
+            console.log('[LABELED PICTURE] Picture type:', detectedPictureType, 'isRange:', isRangePicture, 'isLadder:', isLadder, 'isVic:', isVic);
+            console.log('[LABELED PICTURE] Group names from text:', groupNames);
+            console.log('[LABELED PICTURE] Selected priority group:', priorityGroup);
 
             // Update fighter's target group name based on labeled picture
             // This ensures declare/fox-3 calls use the correct group name
@@ -3152,31 +3340,23 @@ function AICSimulator() {
                                 const groupName = asset.targetGroupName || 'group';
 
                                 // Check interceptState for next priority group to request separation
-                                const currentGroup = interceptState.groups.find(g => g.assetId === asset.targetedAssetId);
-                                let nextGroup = interceptState.groups
-                                    .filter(g => g.status === 'active' && g.assetId !== asset.targetedAssetId)
+                                // ONLY request separation if there are OTHER ACTIVE groups (not vanished)
+                                // No separation call if:
+                                // - All other groups are vanished
+                                // - Only one group remaining
+                                const activeGroups = interceptState.groups.filter(g =>
+                                    g.status === 'active' && g.assetId !== asset.targetedAssetId
+                                );
+                                let nextGroup = activeGroups
                                     .sort((a, b) => (a.priority || 99) - (b.priority || 99))[0];
 
-                                // If no next group in interceptState, check for other hostile assets
-                                // This handles the case where only one group was mentioned in the commit
-                                let nextGroupName = nextGroup?.name;
-                                if (!nextGroupName) {
-                                    const otherHostiles = assets.filter(a =>
-                                        a.identity === 'hostile' &&
-                                        a.id !== asset.targetedAssetId &&
-                                        !a.isDestroyed
-                                    );
-                                    if (otherHostiles.length > 0) {
-                                        // Use appropriate group name based on picture type
-                                        // Range picture: lead/trail groups
-                                        // Azimuth picture: north/south groups
-                                        if (interceptState.pictureType === 'range') {
-                                            nextGroupName = 'trail group';
-                                        } else {
-                                            nextGroupName = 'south group';
-                                        }
-                                    }
-                                }
+                                // Only set nextGroupName if there's an active group to separate to
+                                // Don't use fallback to find other hostiles - trust the AIC's group status calls
+                                let nextGroupName = nextGroup?.name || null;
+
+                                console.log('[FOX3 DEBUG] All groups:', interceptState.groups.map(g => ({ name: g.name, status: g.status, assetId: g.assetId })));
+                                console.log('[FOX3 DEBUG] Active groups (excluding current target):', activeGroups.map(g => ({ name: g.name, status: g.status })));
+                                console.log('[FOX3 DEBUG] Next group for separation:', nextGroup?.name || 'NONE');
 
                                 setTimeout(() => {
                                     let fox3Call = `${formatCallsignForRadio(asset.name)}, fox-3 ${groupName}`;
@@ -9836,6 +10016,10 @@ function AICSimulator() {
                         setShowPauseMenu(false);
                         setShowControlsDialog(true);
                     }}
+                    onSound={() => {
+                        setShowPauseMenu(false);
+                        setShowSoundDialog(true);
+                    }}
                     onMissionProducts={() => {
                         setShowPauseMenu(false);
                         setShowMissionProductsDialog(true);
@@ -9845,6 +10029,22 @@ function AICSimulator() {
 
             {showControlsDialog && (
                 <ControlsDialog onClose={() => setShowControlsDialog(false)} />
+            )}
+
+            {showSoundDialog && (
+                <SoundDialog
+                    onClose={() => setShowSoundDialog(false)}
+                    useElevenLabs={useElevenLabs}
+                    setUseElevenLabs={setUseElevenLabs}
+                    elevenLabsApiKey={elevenLabsApiKey}
+                    setElevenLabsApiKey={setElevenLabsApiKey}
+                    elevenLabsVoiceId={elevenLabsVoiceId}
+                    setElevenLabsVoiceId={setElevenLabsVoiceId}
+                    radioEffectsEnabled={radioEffectsEnabled}
+                    setRadioEffectsEnabled={setRadioEffectsEnabled}
+                    radioEffectIntensity={radioEffectIntensity}
+                    setRadioEffectIntensity={setRadioEffectIntensity}
+                />
             )}
 
             {showMissionProductsDialog && (
@@ -15493,6 +15693,270 @@ function ControlsDialog({ onClose }) {
 }
 
 // ============================================================================
+// SOUND SETTINGS DIALOG
+// ============================================================================
+
+function SoundDialog({
+    onClose,
+    useElevenLabs, setUseElevenLabs,
+    elevenLabsApiKey, setElevenLabsApiKey,
+    elevenLabsVoiceId, setElevenLabsVoiceId,
+    radioEffectsEnabled, setRadioEffectsEnabled,
+    radioEffectIntensity, setRadioEffectIntensity
+}) {
+    const [testStatus, setTestStatus] = useState('');
+
+    // Apply radio effect to audio for testing
+    const playWithRadioEffectTest = (audioElement, audioUrl, intensity) => {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaElementSource(audioElement);
+
+        const highpass = audioContext.createBiquadFilter();
+        highpass.type = 'highpass';
+        highpass.frequency.value = 300 + (intensity * 200);
+
+        const bandpass = audioContext.createBiquadFilter();
+        bandpass.type = 'bandpass';
+        bandpass.frequency.value = 1800;
+        bandpass.Q.value = 0.7 + (intensity * 0.6);
+
+        const lowpass = audioContext.createBiquadFilter();
+        lowpass.type = 'lowpass';
+        lowpass.frequency.value = 3400 - (intensity * 800);
+
+        const distortion = audioContext.createWaveShaper();
+        const makeDistortionCurve = (amount) => {
+            const samples = 44100;
+            const curve = new Float32Array(samples);
+            const deg = Math.PI / 180;
+            for (let i = 0; i < samples; i++) {
+                const x = (i * 2) / samples - 1;
+                curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+            }
+            return curve;
+        };
+        distortion.curve = makeDistortionCurve(intensity * 20);
+        distortion.oversample = '2x';
+
+        const gainNode = audioContext.createGain();
+        gainNode.gain.value = 1.1;
+
+        source.connect(highpass);
+        highpass.connect(bandpass);
+        bandpass.connect(lowpass);
+        lowpass.connect(distortion);
+        distortion.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        audioElement.play();
+        audioElement.onended = () => {
+            audioContext.close();
+            if (audioUrl) URL.revokeObjectURL(audioUrl);
+            setTestStatus('Test complete');
+        };
+    };
+
+    const testVoice = async () => {
+        setTestStatus('Testing...');
+
+        if (useElevenLabs && elevenLabsApiKey) {
+            try {
+                const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${elevenLabsVoiceId}`, {
+                    method: 'POST',
+                    headers: {
+                        'xi-api-key': elevenLabsApiKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text: 'Showtime one one, contact bullseye two seven zero, forty five, twenty thousand, hot.',
+                        model_id: 'eleven_turbo_v2_5',
+                        voice_settings: {
+                            stability: 0.5,
+                            similarity_boost: 0.75,
+                            speed: 1.1
+                        }
+                    })
+                });
+
+                if (!response.ok) {
+                    setTestStatus(`Error: ${response.status} ${response.statusText}`);
+                    return;
+                }
+
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+
+                if (radioEffectsEnabled) {
+                    playWithRadioEffectTest(audio, audioUrl, radioEffectIntensity);
+                    setTestStatus('Playing with radio effect...');
+                } else {
+                    audio.onended = () => {
+                        URL.revokeObjectURL(audioUrl);
+                        setTestStatus('Test complete');
+                    };
+                    audio.play();
+                    setTestStatus('Playing...');
+                }
+            } catch (error) {
+                setTestStatus(`Error: ${error.message}`);
+            }
+        } else {
+            // Test browser TTS
+            if (window.speechSynthesis) {
+                const utterance = new SpeechSynthesisUtterance('Showtime one one, contact bullseye two seven zero, forty five, twenty thousand, hot.');
+                const voices = speechSynthesis.getVoices();
+                const preferredVoice = voices.find(v =>
+                    v.name.includes('Male') || v.name.includes('David') || v.name.includes('Mark')
+                );
+                if (preferredVoice) utterance.voice = preferredVoice;
+                utterance.rate = 1.1;
+                utterance.onend = () => setTestStatus('Test complete');
+                speechSynthesis.speak(utterance);
+                setTestStatus('Playing...');
+            } else {
+                setTestStatus('Browser TTS not available');
+            }
+        }
+    };
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                <h2>SOUND SETTINGS</h2>
+
+                <div style={{ marginTop: '20px' }}>
+                    <h3 style={{ color: '#00FF00', fontSize: '12px', marginBottom: '15px' }}>TEXT-TO-SPEECH</h3>
+
+                    <div style={{ marginBottom: '15px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                            <input
+                                type="checkbox"
+                                checked={useElevenLabs}
+                                onChange={(e) => setUseElevenLabs(e.target.checked)}
+                                style={{ width: '18px', height: '18px' }}
+                            />
+                            <span style={{ fontSize: '11px' }}>Use ElevenLabs TTS (realistic voices)</span>
+                        </label>
+                        <div style={{ fontSize: '9px', color: '#888', marginLeft: '28px', marginTop: '4px' }}>
+                            {useElevenLabs ? 'Using ElevenLabs API' : 'Using browser built-in TTS'}
+                        </div>
+                    </div>
+
+                    {useElevenLabs && (
+                        <>
+                            <div style={{ marginBottom: '15px' }}>
+                                <label style={{ fontSize: '10px', color: '#00FF00', display: 'block', marginBottom: '5px' }}>
+                                    API Key
+                                </label>
+                                <input
+                                    type="password"
+                                    value={elevenLabsApiKey}
+                                    onChange={(e) => setElevenLabsApiKey(e.target.value)}
+                                    placeholder="Enter your ElevenLabs API key"
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                                        border: '1px solid #00FF00',
+                                        color: '#00FF00',
+                                        fontSize: '10px',
+                                        borderRadius: '3px'
+                                    }}
+                                />
+                                <div style={{ fontSize: '8px', color: '#888', marginTop: '4px' }}>
+                                    Get your API key at elevenlabs.io
+                                </div>
+                            </div>
+
+                            <div style={{ marginBottom: '15px' }}>
+                                <label style={{ fontSize: '10px', color: '#00FF00', display: 'block', marginBottom: '5px' }}>
+                                    Voice ID
+                                </label>
+                                <input
+                                    type="text"
+                                    value={elevenLabsVoiceId}
+                                    onChange={(e) => setElevenLabsVoiceId(e.target.value)}
+                                    placeholder="Voice ID from ElevenLabs"
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                                        border: '1px solid #00FF00',
+                                        color: '#00FF00',
+                                        fontSize: '10px',
+                                        borderRadius: '3px'
+                                    }}
+                                />
+                                <div style={{ fontSize: '8px', color: '#888', marginTop: '4px' }}>
+                                    Find pilot/military voices at elevenlabs.io/voice-library
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        <button
+                            className="control-btn"
+                            onClick={testVoice}
+                            style={{ flex: '0 0 auto' }}
+                        >
+                            TEST VOICE
+                        </button>
+                        <span style={{ fontSize: '9px', color: '#888' }}>{testStatus}</span>
+                    </div>
+                </div>
+
+                {/* Radio Effect Settings */}
+                <div style={{ marginTop: '25px', borderTop: '1px solid rgba(0, 255, 0, 0.3)', paddingTop: '20px' }}>
+                    <h3 style={{ color: '#00FF00', fontSize: '12px', marginBottom: '15px' }}>RADIO EFFECT</h3>
+
+                    <div style={{ marginBottom: '15px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                            <input
+                                type="checkbox"
+                                checked={radioEffectsEnabled}
+                                onChange={(e) => setRadioEffectsEnabled(e.target.checked)}
+                                style={{ width: '18px', height: '18px' }}
+                            />
+                            <span style={{ fontSize: '11px' }}>Enable radio transmission effect</span>
+                        </label>
+                        <div style={{ fontSize: '9px', color: '#888', marginLeft: '28px', marginTop: '4px' }}>
+                            Adds bandpass filter and compression to simulate UHF/VHF radio
+                        </div>
+                    </div>
+
+                    {radioEffectsEnabled && (
+                        <div style={{ marginBottom: '15px' }}>
+                            <label style={{ fontSize: '10px', color: '#00FF00', display: 'block', marginBottom: '8px' }}>
+                                Effect Intensity: {Math.round(radioEffectIntensity * 100)}%
+                            </label>
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.1"
+                                value={radioEffectIntensity}
+                                onChange={(e) => setRadioEffectIntensity(parseFloat(e.target.value))}
+                                style={{ width: '100%', accentColor: '#00FF00' }}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8px', color: '#888', marginTop: '4px' }}>
+                                <span>Subtle</span>
+                                <span>Heavy</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="modal-buttons" style={{ marginTop: '25px' }}>
+                    <button className="control-btn primary full-width" onClick={onClose}>CLOSE</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ============================================================================
 // PLATFORM SELECTION DIALOG
 // ============================================================================
 
@@ -15748,7 +16212,7 @@ function MissionProductsDialog({ missionProducts, setMissionProducts, onClose })
     );
 }
 
-function PauseMenu({ onResume, onSave, onLoad, onControls, onMissionProducts }) {
+function PauseMenu({ onResume, onSave, onLoad, onControls, onSound, onMissionProducts }) {
     return (
         <div className="modal-overlay">
             <div className="pause-menu">
@@ -15758,9 +16222,8 @@ function PauseMenu({ onResume, onSave, onLoad, onControls, onMissionProducts }) 
                     <button className="control-btn" onClick={onSave}>SAVE FILE</button>
                     <button className="control-btn" onClick={onLoad}>LOAD FILE</button>
                     <button className="control-btn" onClick={onMissionProducts}>MISSION PRODUCTS</button>
-                    <button className="control-btn" onClick={onControls}>
-                        CONTROLS
-                    </button>
+                    <button className="control-btn" onClick={onSound}>SOUND</button>
+                    <button className="control-btn" onClick={onControls}>CONTROLS</button>
                     <button className="control-btn danger" onClick={() => {
                         if (confirm('Quit simulator?')) window.close();
                     }}>
