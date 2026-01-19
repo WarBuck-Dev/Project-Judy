@@ -2260,8 +2260,10 @@ function AICSimulator() {
         // 2. There are remaining hostiles AND a fighter has engaged (fired or called declare/fox3)
         const isActiveInterceptScenario = isFighterInEngagement || (hasRemainingHostiles && hasFiredRecently);
 
-        // Don't treat as broadcast if: it's a commit, vanished, separation, declare response, tac range, or we're in active intercept
-        if (startsWithOwnCallsign && containsGroupInfo && interceptState.phase === 'idle' && !isCommitCall && !isVanishedBroadcast && !isSeparationCall && !isDeclareResponse && !isTacRangeCall && !isActiveInterceptScenario) {
+        // Don't treat as broadcast if: it's a commit, vanished, separation, or we're in active intercept
+        // Note: isDeclareResponse and isTacRangeCall are only relevant during active intercepts, not for broadcasts
+        // When idle, calls that look like declare responses are actually broadcasts
+        if (startsWithOwnCallsign && containsGroupInfo && interceptState.phase === 'idle' && !isCommitCall && !isVanishedBroadcast && !isSeparationCall && !isActiveInterceptScenario) {
             // This is a broadcast call - log it and have friendly assets acknowledge
             addToRadioLog(ownshipTacticalCallsign, transcript, 'outgoing');
 

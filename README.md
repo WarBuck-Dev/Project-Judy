@@ -486,12 +486,53 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 ## Version
 
 **Version**: 3.2
-**Last Updated**: January 17, 2026
+**Last Updated**: January 19, 2026
 **Status**: Production Ready
 
 ## Recent Updates
 
 ### Version 3.2 (January 2026)
+
+#### AIC Training Mode - Complete Intercept Flow
+- **Automated Fighter Behavior**: Fighters respond realistically to AIC commands throughout the intercept
+  - Broadcast acknowledgment when AIC announces groups
+  - Commit response with intercept heading when directed to engage
+  - Automatic declare calls at 28nm from target
+  - Automatic FOX-3 calls at 25nm with separation requests for multi-group scenarios
+  - Automatic timeout calls after 60 seconds post-missile
+  - Picture clean acknowledgment and reset to CAP station
+
+- **Voice Commands for Intercept Control**:
+  - **Broadcast**: "Closeout, group Rock 045/30, twenty-five thousand, track west, hostile" - fighters acknowledge
+  - **Commit**: "Showtime, commit group Rock 045/30" - fighter commits and turns to intercept
+  - **Labeled Picture (Multi-group)**: "Closeout, 2 groups range 10, north group Rock 045/30, south group Rock 055/25" - fighter targets priority group
+  - **Labeled Picture (Single group)**: "Closeout, single group track west" - fighter acknowledges single group
+  - **Tac Range**: "Showtime, north group 30 miles" - fighter acknowledges range update
+  - **Declare Response**: "Closeout, north group Rock 045/28, hostile" - fighter acknowledges declaration
+  - **Separation**: "Closeout, south group Rock 055/20, hostile" - fighter retargets to new group
+  - **Vanished**: "Closeout, north group vanished, target south group Rock 055/18" - fighter switches targets
+  - **Picture Clean + Reset**: "Closeout picture clean, Showtime reset Tampa say state" - fighter resets to CAP
+
+- **Intercept Targeting Rules**:
+  - Range/Ladder/Vic pictures: Always target lead group
+  - Azimuth/Wall/Champagne pictures: Target first group AIC calls (AIC determines priority)
+  - Single group: Target "single group"
+
+- **ElevenLabs TTS Integration**:
+  - High-quality realistic pilot voices via ElevenLabs API
+  - Configure API key and voice ID in Sound Settings (pause menu)
+  - Falls back to browser TTS if ElevenLabs unavailable
+
+- **Radio Voice Effects**:
+  - Realistic military radio transmission sound effects
+  - Web Audio API bandpass filtering (300Hz-3400Hz voice band)
+  - Adjustable effect intensity (subtle to heavy)
+  - Toggle on/off in Sound Settings
+
+- **Smart Voice Recognition**:
+  - Handles common mishearings: "shingle" → "single", "lee group" → "lead group"
+  - Bullseye format parsing with various speech patterns
+  - Tactical terminology normalization
 
 #### Voice Recognition & Radio Communication System
 - **Push-to-Talk Radio**: Hold SPACEBAR to transmit voice commands to friendly assets
