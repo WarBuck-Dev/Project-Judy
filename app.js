@@ -2155,49 +2155,29 @@ function AICSimulator() {
 
                 case 'champagne':
                     // Champagne: combination of range and azimuth separation
-                    // Groups can be: "north lead group", "south lead group", "trail group", etc.
-                    // Simple logic: use cardinal direction for N/S or E/W, use distance for lead/trail
+                    // Valid groups: "north/south/east/west lead group" + "trail group"
+                    // Note: Champagne NEVER has "north trail group" etc - trail is always standalone
                     {
                         const champagneCandidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
 
                         if (groupNameLower.includes('north') && groupNameLower.includes('lead')) {
-                            // North lead: closest to anchored, northernmost
+                            // North lead: northernmost unassociated hostile
                             champagneCandidates.sort((a, b) => b.asset.lat - a.asset.lat);
                             matchedHostile = champagneCandidates[0];
                         } else if (groupNameLower.includes('south') && groupNameLower.includes('lead')) {
-                            // South lead: closest to anchored, southernmost
+                            // South lead: southernmost unassociated hostile
                             champagneCandidates.sort((a, b) => a.asset.lat - b.asset.lat);
                             matchedHostile = champagneCandidates[0];
                         } else if (groupNameLower.includes('east') && groupNameLower.includes('lead')) {
-                            // East lead: closest to anchored, easternmost
+                            // East lead: easternmost unassociated hostile
                             champagneCandidates.sort((a, b) => b.asset.lon - a.asset.lon);
                             matchedHostile = champagneCandidates[0];
                         } else if (groupNameLower.includes('west') && groupNameLower.includes('lead')) {
-                            // West lead: closest to anchored, westernmost
+                            // West lead: westernmost unassociated hostile
                             champagneCandidates.sort((a, b) => a.asset.lon - b.asset.lon);
-                            matchedHostile = champagneCandidates[0];
-                        } else if (groupNameLower.includes('north') && groupNameLower.includes('trail')) {
-                            // North trail: farthest from anchored, northernmost
-                            champagneCandidates.sort((a, b) => b.asset.lat - a.asset.lat);
-                            matchedHostile = champagneCandidates[0];
-                        } else if (groupNameLower.includes('south') && groupNameLower.includes('trail')) {
-                            // South trail: farthest from anchored, southernmost
-                            champagneCandidates.sort((a, b) => a.asset.lat - b.asset.lat);
-                            matchedHostile = champagneCandidates[0];
-                        } else if (groupNameLower.includes('east') && groupNameLower.includes('trail')) {
-                            // East trail: farthest from anchored, easternmost
-                            champagneCandidates.sort((a, b) => b.asset.lon - a.asset.lon);
-                            matchedHostile = champagneCandidates[0];
-                        } else if (groupNameLower.includes('west') && groupNameLower.includes('trail')) {
-                            // West trail: farthest from anchored, westernmost
-                            champagneCandidates.sort((a, b) => a.asset.lon - b.asset.lon);
-                            matchedHostile = champagneCandidates[0];
-                        } else if (groupNameLower.includes('lead')) {
-                            // Standalone lead: closest to anchored asset
-                            champagneCandidates.sort((a, b) => a.distance - b.distance);
                             matchedHostile = champagneCandidates[0];
                         } else if (groupNameLower.includes('trail')) {
-                            // Standalone trail: farthest from anchored asset
+                            // Trail group: farthest from anchored asset (always standalone in champagne)
                             champagneCandidates.sort((a, b) => b.distance - a.distance);
                             matchedHostile = champagneCandidates[0];
                         }
@@ -2267,8 +2247,9 @@ function AICSimulator() {
             // IMPORTANT: Use a single pass approach to avoid duplicate matching
             // For example, "south lead group" should match as ONE group, not also match "lead group" separately
 
-            // First, find all champagne-style groups (cardinal + lead/trail + group)
-            const champagnePattern = /(?:north|south|east|west)\s+(?:lead|trail)\s*group/gi;
+            // First, find all champagne-style groups (cardinal + lead + group)
+            // Note: Champagne only uses "cardinal lead group", never "cardinal trail group"
+            const champagnePattern = /(?:north|south|east|west)\s+lead\s*group/gi;
             const champagneMatches = text.match(champagnePattern) || [];
             names.push(...champagneMatches);
 
