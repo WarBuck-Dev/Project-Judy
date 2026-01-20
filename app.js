@@ -1490,6 +1490,11 @@ function AICSimulator() {
             'north lee group': 'north lead group',
             'east lee group': 'east lead group',
             'west lee group': 'west lead group',
+            // Vic trail group mishearings
+            'north trail grape': 'north trail group',
+            'south trail grape': 'south trail group',
+            'east trail grape': 'east trail group',
+            'west trail grape': 'west trail group',
             'lead grape': 'lead group',
             'trail grape': 'trail group',
             'shingle group': 'single group',
@@ -2136,20 +2141,33 @@ function AICSimulator() {
                     break;
 
                 case 'vic':
-                    // Vic: lead group in front, flanking groups on sides (north/south or east/west)
-                    if (groupNameLower.includes('lead')) {
-                        // Lead is the one most ahead
-                        const leadCandidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
-                        leadCandidates.sort((a, b) => b.rangeOffset - a.rangeOffset);
-                        matchedHostile = leadCandidates[0];
-                    } else if (groupNameLower.includes('north')) {
-                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
-                        candidates.sort((a, b) => b.asset.lat - a.asset.lat);
-                        matchedHostile = candidates[0];
-                    } else if (groupNameLower.includes('south')) {
-                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
-                        candidates.sort((a, b) => a.asset.lat - b.asset.lat);
-                        matchedHostile = candidates[0];
+                    // Vic: lead group in front, flanking trail groups on sides
+                    // Valid groups: "lead group" + "north/south/east/west trail group"
+                    // Note: Vic NEVER has "north lead group" etc - lead is always standalone
+                    {
+                        const vicCandidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
+
+                        if (groupNameLower.includes('lead')) {
+                            // Lead group: closest to anchored asset (at the point of the V)
+                            vicCandidates.sort((a, b) => a.distance - b.distance);
+                            matchedHostile = vicCandidates[0];
+                        } else if (groupNameLower.includes('north') && groupNameLower.includes('trail')) {
+                            // North trail: northernmost unassociated hostile
+                            vicCandidates.sort((a, b) => b.asset.lat - a.asset.lat);
+                            matchedHostile = vicCandidates[0];
+                        } else if (groupNameLower.includes('south') && groupNameLower.includes('trail')) {
+                            // South trail: southernmost unassociated hostile
+                            vicCandidates.sort((a, b) => a.asset.lat - b.asset.lat);
+                            matchedHostile = vicCandidates[0];
+                        } else if (groupNameLower.includes('east') && groupNameLower.includes('trail')) {
+                            // East trail: easternmost unassociated hostile
+                            vicCandidates.sort((a, b) => b.asset.lon - a.asset.lon);
+                            matchedHostile = vicCandidates[0];
+                        } else if (groupNameLower.includes('west') && groupNameLower.includes('trail')) {
+                            // West trail: westernmost unassociated hostile
+                            vicCandidates.sort((a, b) => a.asset.lon - b.asset.lon);
+                            matchedHostile = vicCandidates[0];
+                        }
                     }
                     break;
 
@@ -2243,19 +2261,30 @@ function AICSimulator() {
             const matches = text.match(leadTrailPattern);
             if (matches) names.push(...matches);
         } else {
-            // Azimuth picture or champagne: cardinal directions are part of group name
+            // Azimuth, champagne, or vic: cardinal directions are part of group name
             // IMPORTANT: Use a single pass approach to avoid duplicate matching
             // For example, "south lead group" should match as ONE group, not also match "lead group" separately
 
-            // First, find all champagne-style groups (cardinal + lead + group)
-            // Note: Champagne only uses "cardinal lead group", never "cardinal trail group"
+            // First, find champagne-style groups (cardinal + lead + group)
+            // Champagne uses "north/south/east/west lead group" + standalone "trail group"
             const champagnePattern = /(?:north|south|east|west)\s+lead\s*group/gi;
             const champagneMatches = text.match(champagnePattern) || [];
             names.push(...champagneMatches);
 
-            // Create a modified text with champagne matches removed to avoid double-matching
+            // Create a modified text with matches removed to avoid double-matching
             let remainingText = text;
             champagneMatches.forEach(m => {
+                remainingText = remainingText.replace(new RegExp(m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '###MATCHED###');
+            });
+
+            // Find vic-style groups (cardinal + trail + group)
+            // Vic uses standalone "lead group" + "north/south/east/west trail group"
+            const vicPattern = /(?:north|south|east|west)\s+trail\s*group/gi;
+            const vicMatches = remainingText.match(vicPattern) || [];
+            names.push(...vicMatches);
+
+            // Remove vic matches from remaining text
+            vicMatches.forEach(m => {
                 remainingText = remainingText.replace(new RegExp(m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '###MATCHED###');
             });
 
