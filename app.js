@@ -1486,6 +1486,10 @@ function AICSimulator() {
             // Group name mishearings
             'lee group': 'lead group',
             'league group': 'lead group',
+            'south lee group': 'south lead group',
+            'north lee group': 'north lead group',
+            'east lee group': 'east lead group',
+            'west lee group': 'west lead group',
             'lead grape': 'lead group',
             'trail grape': 'trail group',
             'shingle group': 'single group',
