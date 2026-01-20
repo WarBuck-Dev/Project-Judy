@@ -935,3 +935,237 @@ select.input-field {
     letter-spacing: 3px;
     text-shadow: 0 0 10px #00FF00;
 }
+
+/* ============================================================================
+   AIC DEBRIEF DIALOG STYLES
+   ============================================================================ */
+
+.debrief-dialog {
+    background: rgba(0, 20, 0, 0.95);
+    border: 2px solid #00FF00;
+    border-radius: 8px;
+    padding: 20px;
+    min-width: 700px;
+    max-width: 900px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 0 30px rgba(0, 255, 0, 0.3);
+}
+
+.debrief-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(0, 255, 0, 0.3);
+}
+
+.debrief-header h2 {
+    color: #00FF00;
+    font-size: 24px;
+    text-shadow: 0 0 10px #00FF00;
+}
+
+.debrief-header .close-btn {
+    background: none;
+    border: none;
+    color: #00FF00;
+    font-size: 28px;
+    cursor: pointer;
+    padding: 0 8px;
+}
+
+.debrief-header .close-btn:hover {
+    color: #FF6600;
+}
+
+.debrief-no-data {
+    color: #888;
+    font-style: italic;
+    text-align: center;
+    padding: 40px;
+}
+
+.intercept-selector {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.intercept-btn {
+    background: rgba(0, 40, 0, 0.8);
+    border: 1px solid #00FF00;
+    color: #00FF00;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+}
+
+.intercept-btn:hover {
+    background: rgba(0, 80, 0, 0.8);
+}
+
+.intercept-btn.selected {
+    background: rgba(0, 255, 0, 0.2);
+    border-width: 2px;
+    font-weight: bold;
+}
+
+.scorecard {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.scorecard-row {
+    display: flex;
+    border-bottom: 1px solid rgba(0, 255, 0, 0.1);
+    padding: 12px 0;
+}
+
+.scorecard-row label {
+    width: 180px;
+    min-width: 180px;
+    color: #00FF00;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.scorecard-row span {
+    flex: 1;
+    font-size: 13px;
+    word-wrap: break-word;
+}
+
+.scorecard-row .success {
+    color: #00FF00;
+}
+
+.scorecard-row .error {
+    color: #FF6600;
+}
+
+.scorecard-row .missed {
+    color: #FF0000;
+}
+
+.scorecard-row .na {
+    color: #666;
+    font-style: italic;
+}
+
+.scorecard-row .good {
+    color: #00FF00;
+}
+
+.scorecard-row .acceptable {
+    color: #FFCC00;
+}
+
+.scorecard-row .slow {
+    color: #FF6600;
+}
+
+.error-detail {
+    display: block;
+    font-size: 11px;
+    color: #FF6600;
+    margin-top: 4px;
+}
+
+.result-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.result-list > div {
+    font-size: 13px;
+}
+
+/* Debrief Tabs */
+.debrief-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 15px;
+    border-bottom: 1px solid rgba(0, 255, 0, 0.3);
+}
+
+.debrief-tab {
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #888;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.debrief-tab:hover {
+    color: #00FF00;
+    background: rgba(0, 255, 0, 0.05);
+}
+
+.debrief-tab.active {
+    color: #00FF00;
+    border-bottom: 2px solid #00FF00;
+    font-weight: bold;
+}
+
+/* Radio Log Tab */
+.radio-log-tab {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.radio-log-entries {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.radio-log-entry {
+    display: flex;
+    gap: 10px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    font-size: 13px;
+    border-left: 3px solid #666;
+}
+
+.radio-log-entry.outgoing {
+    border-left-color: #FF6600;
+    background: rgba(255, 102, 0, 0.1);
+}
+
+.radio-log-entry.incoming {
+    border-left-color: #00FF00;
+    background: rgba(0, 255, 0, 0.05);
+}
+
+.radio-log-entry.error {
+    border-left-color: #FF0000;
+    background: rgba(255, 0, 0, 0.1);
+}
+
+.radio-log-time {
+    color: #888;
+    font-family: monospace;
+    min-width: 50px;
+}
+
+.radio-log-callsign {
+    color: #00CCFF;
+    font-weight: bold;
+    min-width: 100px;
+}
+
+.radio-log-message {
+    color: #CCC;
+    flex: 1;
+}

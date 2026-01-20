@@ -1275,6 +1275,13 @@ function AICSimulator() {
         engagingFighterId: null, // Which friendly asset is running the intercept
     });
 
+    // AIC Debrief System
+    const [debriefData, setDebriefData] = useState([]);  // Array of completed intercept debriefs
+    const [currentIntercept, setCurrentIntercept] = useState(null);  // Active intercept being tracked
+    const [showDebriefDialog, setShowDebriefDialog] = useState(false);
+    const [groupManeuvers, setGroupManeuvers] = useState({});  // Track group heading changes for maneuver recognition
+    // groupManeuvers structure: { [assetId]: { lastHeading, maneuverStartTime, announced } }
+
     // Radio log window position and size (draggable/resizable)
     // Default position: top of screen, to the right of the TX indicator box
     const [radioLogPosition, setRadioLogPosition] = useState({ x: 370, y: 10 });
@@ -1298,6 +1305,7 @@ function AICSimulator() {
     const lastTranscriptRef = useRef(''); // Store latest transcript for processing on PTT release
     const recordedChunksRef = useRef([]);
     const missionTimeIntervalRef = useRef(null);
+    const threatCallsMadeRef = useRef(new Set()); // AIC Debrief: Track which groups have had threat calls logged
 
     // Get selected asset
     const selectedAsset = useMemo(() =>
@@ -1479,6 +1487,8 @@ function AICSimulator() {
             'trail grape': 'trail group',
             'shingle group': 'single group',
             'shingle': 'single',
+            'northrup': 'north group',
+            'northrop': 'north group',
         };
 
         // Apply tactical corrections
@@ -1487,6 +1497,263 @@ function AICSimulator() {
         });
 
         return normalized;
+    };
+
+    // ========================================================================
+    // AIC DEBRIEF: Validation Helper Functions
+    // ========================================================================
+
+    // Validate TAC Range call format: group name + distance in miles
+    const validateTacRange = (transcript) => {
+        const pattern = /(north|south|lead|trail|single)\s*group\s*\d+\s*miles/i;
+        if (pattern.test(transcript)) {
+            return { valid: true, error: null };
+        }
+        // Check what's missing
+        const hasGroupName = /(north|south|lead|trail|single)\s*group/i.test(transcript);
+        const hasDistance = /\d+\s*miles/i.test(transcript);
+        if (!hasGroupName && !hasDistance) {
+            return { valid: false, error: 'Missing group name and distance' };
+        } else if (!hasGroupName) {
+            return { valid: false, error: 'Missing group name' };
+        } else if (!hasDistance) {
+            return { valid: false, error: 'Missing distance in miles' };
+        }
+        return { valid: false, error: 'Improper format' };
+    };
+
+    // Validate Separation call format: group name + altitude + track + declaration
+    // Note: Separation calls do NOT require bullseye anchor
+    const validateSeparation = (transcript) => {
+        const hasGroupName = /(north|south|lead|trail|single)\s*group/i.test(transcript) ||
+                            /(north|south|lead|trail)\s+separation/i.test(transcript);
+        // Altitude: "25 thousand", "25,000", "angels 25", "flight level 250"
+        const hasAltitude = /thousand|angels|flight\s*level|\d{1,2},\d{3}/i.test(transcript);
+        const hasTrack = /track\s*(north|south|east|west)/i.test(transcript);
+        const hasDeclaration = /hostile|bandit|bogey|friendly/i.test(transcript);
+
+        if (hasGroupName && hasAltitude && hasTrack && hasDeclaration) {
+            return { valid: true, error: null };
+        }
+
+        const missing = [];
+        if (!hasGroupName) missing.push('group name');
+        if (!hasAltitude) missing.push('altitude');
+        if (!hasTrack) missing.push('track direction');
+        if (!hasDeclaration) missing.push('declaration');
+
+        return { valid: false, error: `Missing: ${missing.join(', ')}` };
+    };
+
+    // Validate Directive Targeting format: "target" + group name + bullseye anchor + altitude + track + declaration
+    const validateDirectiveTargeting = (transcript) => {
+        const hasTarget = /\btarget\b/i.test(transcript);
+        const hasGroupName = /(north|south|lead|trail|single)\s*group/i.test(transcript);
+        const hasBullseye = /rock|bullseye/i.test(transcript);
+        // Altitude: "25 thousand", "25,000", "angels 25", "flight level 250"
+        const hasAltitude = /thousand|angels|flight\s*level|\d{1,2},\d{3}/i.test(transcript);
+        const hasTrack = /track\s*(north|south|east|west)/i.test(transcript);
+        const hasDeclaration = /hostile|bandit|bogey/i.test(transcript);
+
+        if (hasTarget && hasGroupName && hasBullseye && hasAltitude && hasTrack && hasDeclaration) {
+            return { valid: true, error: null };
+        }
+
+        const missing = [];
+        if (!hasTarget) missing.push('"target" keyword');
+        if (!hasGroupName) missing.push('group name');
+        if (!hasBullseye) missing.push('bullseye anchor');
+        if (!hasAltitude) missing.push('altitude');
+        if (!hasTrack) missing.push('track direction');
+        if (!hasDeclaration) missing.push('declaration');
+
+        return { valid: false, error: `Missing: ${missing.join(', ')}` };
+    };
+
+    // Validate Vanish Assessment format (context-aware based on remaining groups)
+    const validateVanishAssessment = (transcript, remainingActiveGroups) => {
+        const hasVanished = /vanished/i.test(transcript);
+        const hasGroupName = /(north|south|lead|trail|single)\s*group/i.test(transcript);
+
+        if (!hasVanished || !hasGroupName) {
+            return { valid: false, error: 'Missing vanished or group name' };
+        }
+
+        // If there are still groups remaining after this vanish, need a retarget directive
+        // remainingActiveGroups is the count AFTER the current group is vanished
+        if (remainingActiveGroups >= 1) {
+            const retargetValid = validateDirectiveTargeting(transcript);
+            if (!retargetValid.valid) {
+                return { valid: false, error: `Missing retarget directive: ${retargetValid.error}` };
+            }
+        }
+
+        // No groups remaining (final vanish) - just needs "group vanished"
+        return { valid: true, error: null };
+    };
+
+    // Validate Labeled Picture format: group count + picture type + individual group callouts with bullseye
+    const validateLabeledPicture = (transcript, numGroups, pictureType) => {
+        // Single group has simpler requirements
+        if (numGroups === 1 || pictureType === 'single') {
+            const hasSingleGroup = /single\s*group/i.test(transcript);
+            const hasBullseye = /rock|bullseye/i.test(transcript);
+            if (hasSingleGroup && hasBullseye) {
+                return { valid: true, error: null };
+            }
+            const missing = [];
+            if (!hasSingleGroup) missing.push('"single group"');
+            if (!hasBullseye) missing.push('bullseye anchor');
+            return { valid: false, error: `Missing: ${missing.join(', ')}` };
+        }
+
+        // Multi-group picture
+        const hasGroupCount = /(\d+|two|three|four|five)\s*groups?/i.test(transcript);
+        const hasPictureType = /range|azimuth|wall|ladder|vic|champagne/i.test(transcript);
+        const hasBullseye = /rock|bullseye/i.test(transcript);
+        // Altitude: "25 thousand", "25,000", "angels 25", "flight level 250"
+        const hasAltitude = /thousand|angels|flight\s*level|\d{1,2},\d{3}/i.test(transcript);
+        const hasDeclaration = /hostile|bandit|bogey/i.test(transcript);
+
+        // Check for proper group labels based on picture type
+        const groupLabelValidation = validateGroupLabelsForPicture(transcript, numGroups, pictureType);
+
+        const missing = [];
+        if (!hasGroupCount) missing.push('group count');
+        if (!hasPictureType) missing.push('picture type (range/azimuth/etc)');
+        if (!hasBullseye) missing.push('bullseye anchor');
+        if (!hasAltitude) missing.push('altitude');
+        if (!hasDeclaration) missing.push('declaration');
+        if (!groupLabelValidation.valid) missing.push(groupLabelValidation.error);
+
+        if (missing.length === 0) {
+            return { valid: true, error: null };
+        }
+
+        return { valid: false, error: `Missing: ${missing.join(', ')}` };
+    };
+
+    // Validate that group labels match the picture type
+    // Range/Ladder: lead/trail groups
+    // Azimuth/Wall: north/south or east/west groups
+    // Vic: lead + north/south OR lead + east/west
+    // Champagne: lead/trail + north/south OR lead/trail + east/west
+    const validateGroupLabelsForPicture = (transcript, numGroups, pictureType) => {
+        const lowerTranscript = transcript.toLowerCase();
+
+        // Extract mentioned group names
+        const hasLead = /lead\s*group/i.test(transcript);
+        const hasTrail = /trail\s*group/i.test(transcript);
+        const hasNorth = /north\s*group/i.test(transcript);
+        const hasSouth = /south\s*group/i.test(transcript);
+        const hasEast = /east\s*group/i.test(transcript);
+        const hasWest = /west\s*group/i.test(transcript);
+
+        // Count how many group labels were mentioned
+        const groupLabelsCount = [hasLead, hasTrail, hasNorth, hasSouth, hasEast, hasWest].filter(Boolean).length;
+
+        // Determine picture type from transcript if not provided
+        let detectedType = pictureType?.toLowerCase();
+        if (!detectedType) {
+            if (/\brange\b/i.test(transcript)) detectedType = 'range';
+            else if (/\bazimuth\b/i.test(transcript)) detectedType = 'azimuth';
+            else if (/\bladder\b/i.test(transcript)) detectedType = 'ladder';
+            else if (/\bwall\b/i.test(transcript)) detectedType = 'wall';
+            else if (/\bvic\b/i.test(transcript)) detectedType = 'vic';
+            else if (/\bchampagne\b/i.test(transcript)) detectedType = 'champagne';
+        }
+
+        // Validate based on picture type
+        switch (detectedType) {
+            case 'range':
+            case 'ladder':
+                // Range/Ladder pictures require lead and trail groups
+                if (!hasLead && !hasTrail) {
+                    return { valid: false, error: 'range/ladder requires "lead group" and "trail group"' };
+                }
+                if (!hasLead) {
+                    return { valid: false, error: 'missing "lead group" label' };
+                }
+                if (!hasTrail) {
+                    return { valid: false, error: 'missing "trail group" label' };
+                }
+                // Check for incorrect labels (north/south/east/west shouldn't be used)
+                if (hasNorth || hasSouth || hasEast || hasWest) {
+                    return { valid: false, error: 'range/ladder should use lead/trail, not cardinal directions' };
+                }
+                break;
+
+            case 'azimuth':
+            case 'wall':
+                // Azimuth/Wall pictures require north/south OR east/west groups
+                const hasNS = hasNorth && hasSouth;
+                const hasEW = hasEast && hasWest;
+                if (!hasNS && !hasEW) {
+                    if (hasNorth && !hasSouth) {
+                        return { valid: false, error: 'missing "south group" label (azimuth/wall requires north+south or east+west)' };
+                    }
+                    if (hasSouth && !hasNorth) {
+                        return { valid: false, error: 'missing "north group" label (azimuth/wall requires north+south or east+west)' };
+                    }
+                    if (hasEast && !hasWest) {
+                        return { valid: false, error: 'missing "west group" label (azimuth/wall requires north+south or east+west)' };
+                    }
+                    if (hasWest && !hasEast) {
+                        return { valid: false, error: 'missing "east group" label (azimuth/wall requires north+south or east+west)' };
+                    }
+                    return { valid: false, error: 'azimuth/wall requires "north/south group" or "east/west group" labels' };
+                }
+                // Check for incorrect labels (lead/trail shouldn't be used)
+                if (hasLead || hasTrail) {
+                    return { valid: false, error: 'azimuth/wall should use cardinal directions, not lead/trail' };
+                }
+                break;
+
+            case 'vic':
+                // Vic requires lead group + two flanking groups (north/south or east/west)
+                // For 3-group vic: lead + north + south OR lead + east + west
+                if (numGroups >= 3) {
+                    if (!hasLead) {
+                        return { valid: false, error: 'vic requires "lead group" label' };
+                    }
+                    const hasFlankNS = hasNorth && hasSouth;
+                    const hasFlankEW = hasEast && hasWest;
+                    if (!hasFlankNS && !hasFlankEW) {
+                        return { valid: false, error: 'vic requires flanking groups (north+south or east+west)' };
+                    }
+                }
+                break;
+
+            case 'champagne':
+                // Champagne requires lead/trail + north/south or east/west
+                if (!hasLead || !hasTrail) {
+                    if (!hasLead) {
+                        return { valid: false, error: 'champagne requires "lead group" label' };
+                    }
+                    if (!hasTrail) {
+                        return { valid: false, error: 'champagne requires "trail group" label' };
+                    }
+                }
+                // Also needs cardinal directions for the box
+                const hasCardinal = hasNorth || hasSouth || hasEast || hasWest;
+                if (numGroups >= 4 && !hasCardinal) {
+                    return { valid: false, error: 'champagne requires cardinal direction labels for flanking groups' };
+                }
+                break;
+
+            default:
+                // Unknown picture type - just check that some group labels exist
+                if (groupLabelsCount < numGroups) {
+                    return { valid: false, error: `only ${groupLabelsCount} group label(s) mentioned, expected ${numGroups}` };
+                }
+        }
+
+        // Also check that we have enough group labels for the number of groups
+        if (groupLabelsCount < numGroups) {
+            return { valid: false, error: `only ${groupLabelsCount} group label(s) mentioned, expected ${numGroups}` };
+        }
+
+        return { valid: true, error: null };
     };
 
     // Parse spoken numbers: "one eight zero" or "1-8-0" or "180" → 180
@@ -2417,6 +2684,48 @@ function AICSimulator() {
 
                 speakResponse(readback);
                 addToRadioLog(targetAsset.name, readback, 'incoming');
+
+                // AIC DEBRIEF: Finalize intercept on reset
+                if (currentIntercept) {
+                    // Check for unannounced maneuvers (missed calls)
+                    const missedManeuvers = Object.entries(groupManeuvers)
+                        .filter(([assetId, data]) => !data.announced && data.maneuverStartTime !== null)
+                        .map(([assetId, data]) => {
+                            const hostileAsset = assets.find(a => a.id === assetId);
+                            const groupInfo = interceptState.groups.find(g => g.assetId === assetId);
+                            return {
+                                type: 'missedManeuverCall',
+                                time: data.maneuverStartTime,
+                                groupName: groupInfo?.name || hostileAsset?.name || 'Unknown group',
+                                assetId: assetId
+                            };
+                        });
+
+                    // Check if TAC range was called (if there were TAC range calls)
+                    const tacRangeMissed = currentIntercept.tacRangeCalls.length === 0;
+
+                    // Capture radio log entries for this intercept
+                    const interceptRadioLog = radioLog.slice(currentIntercept.radioLogStartIndex || 0);
+
+                    // Build final debrief record
+                    const finalDebrief = {
+                        ...currentIntercept,
+                        endTime: missionTime,
+                        radioLog: interceptRadioLog, // Include radio log for this intercept
+                        missedEvents: [
+                            ...(currentIntercept.missedEvents || []),
+                            ...missedManeuvers,
+                            ...(tacRangeMissed ? [{ type: 'missedTacRange', time: null }] : [])
+                        ]
+                    };
+
+                    // Add to debrief history
+                    setDebriefData(prev => [...prev, finalDebrief]);
+                    setCurrentIntercept(null);
+                    setGroupManeuvers({});
+                    console.log(`[DEBRIEF] Intercept #${finalDebrief.interceptNumber} finalized`);
+                }
+
                 commandExecuted = true;
             } else {
                 // CAP station not found - asset responds "unable"
@@ -2663,6 +2972,39 @@ function AICSimulator() {
                         currentTargetGroupId: groupId,
                         engagingFighterId: targetAsset.id
                     }));
+
+                    // AIC DEBRIEF: Start tracking new intercept
+                    const fighterDistance = calculateDistance(
+                        targetAsset.lat, targetAsset.lon,
+                        targetGroup.lat, targetGroup.lon
+                    );
+                    const newInterceptNumber = debriefData.length + 1;
+                    setCurrentIntercept({
+                        interceptNumber: newInterceptNumber,
+                        startTime: missionTime,
+                        endTime: null,
+                        commitCall: {
+                            time: missionTime,
+                            transcript: text,
+                            fighterDistance: fighterDistance,
+                            priorityGroup: priorityGroupName,
+                            pictureType: null // Will be set by labeled picture
+                        },
+                        labeledPicture: null,
+                        tacRangeCalls: [],
+                        separationCalls: [],
+                        directiveTargeting: [],
+                        vanishAssessments: [],
+                        maneuverRecognition: [],
+                        threatCalls: [],
+                        missedEvents: [],
+                        radioLogStartIndex: radioLog.length // Capture starting index for radio log
+                    });
+                    // Reset maneuver tracking for new intercept
+                    setGroupManeuvers({});
+                    threatCallsMadeRef.current = new Set();
+                    console.log(`[DEBRIEF] Started tracking intercept #${newInterceptNumber}, fighter distance: ${fighterDistance.toFixed(1)} NM`);
+
                     commandExecuted = true;
                 }
             }
@@ -2798,6 +3140,28 @@ function AICSimulator() {
                 groups: newGroups,
                 currentTargetGroupId: newGroups[0]?.id || null
             }));
+
+            // AIC DEBRIEF: Log labeled picture and validate format
+            if (currentIntercept) {
+                const pictureValid = validateLabeledPicture(text, numGroups, detectedPictureType);
+                setCurrentIntercept(prev => ({
+                    ...prev,
+                    labeledPicture: {
+                        time: missionTime,
+                        transcript: text,
+                        groups: groupNames,
+                        pictureType: detectedPictureType,
+                        valid: pictureValid.valid,
+                        error: pictureValid.error
+                    },
+                    commitCall: {
+                        ...prev.commitCall,
+                        pictureType: detectedPictureType
+                    }
+                }));
+                console.log(`[DEBRIEF] Labeled picture logged: ${detectedPictureType}, valid: ${pictureValid.valid}`);
+            }
+
             commandExecuted = true;
         }
 
@@ -2811,6 +3175,29 @@ function AICSimulator() {
             const response = generateFighterReadback(targetAsset.name);
             speakResponse(response);
             addToRadioLog(targetAsset.name, response, 'incoming');
+
+            // AIC DEBRIEF: Log TAC range call and validate format
+            if (currentIntercept) {
+                const tacValid = validateTacRange(text);
+                const groupName = tacRangeMatch[1];
+                const distance = parseInt(tacRangeMatch[2]);
+                setCurrentIntercept(prev => ({
+                    ...prev,
+                    tacRangeCalls: [
+                        ...(prev.tacRangeCalls || []),
+                        {
+                            time: missionTime,
+                            transcript: text,
+                            groupName: groupName,
+                            distance: distance,
+                            valid: tacValid.valid,
+                            error: tacValid.error
+                        }
+                    ]
+                }));
+                console.log(`[DEBRIEF] TAC range logged: ${groupName} at ${distance} miles, valid: ${tacValid.valid}`);
+            }
+
             commandExecuted = true;
         }
 
@@ -2840,6 +3227,27 @@ function AICSimulator() {
             const response = generateFighterReadback(targetAsset.name);
             speakResponse(response);
             addToRadioLog(targetAsset.name, response, 'incoming');
+
+            // AIC DEBRIEF: Log separation call and validate format
+            if (currentIntercept) {
+                const sepValid = validateSeparation(text);
+                const groupName = separationMatch[1] + (text.includes('group') ? ' group' : '');
+                setCurrentIntercept(prev => ({
+                    ...prev,
+                    separationCalls: [
+                        ...(prev.separationCalls || []),
+                        {
+                            time: missionTime,
+                            transcript: text,
+                            groupName: groupName,
+                            valid: sepValid.valid,
+                            error: sepValid.error
+                        }
+                    ]
+                }));
+                console.log(`[DEBRIEF] Separation logged: ${groupName}, valid: ${sepValid.valid}`);
+            }
+
             commandExecuted = true;
         }
 
@@ -3002,6 +3410,55 @@ function AICSimulator() {
                     }
                 }, 2000);
             }
+
+            // AIC DEBRIEF: Log vanished assessment and validate format
+            if (currentIntercept) {
+                // Count remaining active groups AFTER this vanish
+                // We can't rely on interceptState.groups because React state updates are async
+                // Instead, count total groups minus groups already vanished minus this one
+                const totalGroups = interceptState.groups.length;
+                const alreadyVanished = currentIntercept.vanishAssessments?.length || 0;
+                const remainingActiveGroups = totalGroups - alreadyVanished - 1; // -1 for current vanish
+                console.log(`[DEBRIEF] Vanish count: total=${totalGroups}, alreadyVanished=${alreadyVanished}, remaining=${remainingActiveGroups}`);
+                const vanishValid = validateVanishAssessment(text, remainingActiveGroups);
+                const toGroup = directive?.groupName || null;
+
+                setCurrentIntercept(prev => ({
+                    ...prev,
+                    vanishAssessments: [
+                        ...(prev.vanishAssessments || []),
+                        {
+                            time: missionTime,
+                            transcript: text,
+                            fromGroup: vanishedGroupName,
+                            toGroup: toGroup,
+                            valid: vanishValid.valid,
+                            error: vanishValid.error
+                        }
+                    ]
+                }));
+                console.log(`[DEBRIEF] Vanished logged: ${vanishedGroupName} -> ${toGroup || 'none'}, valid: ${vanishValid.valid}`);
+
+                // Also log directive targeting if present
+                if (directive && directive.groupName) {
+                    const targetValid = validateDirectiveTargeting(text);
+                    setCurrentIntercept(prev => ({
+                        ...prev,
+                        directiveTargeting: [
+                            ...(prev.directiveTargeting || []),
+                            {
+                                time: missionTime,
+                                transcript: text,
+                                groupName: directive.groupName,
+                                valid: targetValid.valid,
+                                error: targetValid.error
+                            }
+                        ]
+                    }));
+                    console.log(`[DEBRIEF] Directive targeting logged: ${directive.groupName}, valid: ${targetValid.valid}`);
+                }
+            }
+
             commandExecuted = true;
         }
 
@@ -3095,6 +3552,33 @@ function AICSimulator() {
             commandExecuted = true;
         }
 
+        // INFORMATIONAL MANEUVER CALLS: Fighter rogers simple maneuver updates without directive targets
+        // Examples:
+        // - "Closeout single group maneuver" (simple maneuver announcement)
+        // - "Closeout south group track north" (track direction update)
+        // - "Closeout north group south group crossing" (crossing without new target directive)
+        // - "Closeout lead group trail group passing" (passing without new target directive)
+        // - "Closeout north group south group joined" (join without new target directive)
+        // - "Closeout south group track north, north group track south" (combination maneuver)
+        if (!commandExecuted) {
+            // Check for various maneuver call patterns
+            const isSimpleManeuver = /\bmaneuver\b/i.test(text) && !text.match(/maneuver\s*(azimuth|range)/i);
+            const isTrackCall = /\btrack\s*(north|south|east|west)\b/i.test(text);
+            const isCrossingPassing = /(crossing|passing)/i.test(text);
+            const isJoinCall = /\bjoined?\b/i.test(text);
+
+            // Only handle these if they don't have a directive target (those are handled above)
+            const hasDirectiveTarget = /\btarget\b/i.test(text) && /rock|bullseye/i.test(text);
+
+            if ((isSimpleManeuver || isTrackCall || isCrossingPassing || isJoinCall) && !hasDirectiveTarget) {
+                // Fighter simply rogers the maneuver call
+                const response = `${targetAsset.name}, roger`;
+                speakResponse(response);
+                addToRadioLog(targetAsset.name, response, 'incoming');
+                commandExecuted = true;
+            }
+        }
+
         // PICTURE CLEAN + RESET: "Closeout, picture clean. Heat one one, reset TAMPA, say state"
         const pictureCleanMatch = text.match(/picture\s*clean/i);
         const resetMatchInClean = text.match(/reset\s+(\w+)/i);
@@ -3131,13 +3615,59 @@ function AICSimulator() {
             commandExecuted = true;
         }
 
+        // AIC DEBRIEF: Check for maneuver recognition (any call mentioning a group)
+        // This tracks reaction time from when a group changed direction to when AIC made any call about it
+        if (currentIntercept && commandExecuted) {
+            const groupMentionMatch = text.match(/(north|south|lead|trail|single)\s*group/i);
+            if (groupMentionMatch) {
+                const mentionedGroupName = groupMentionMatch[0].toLowerCase();
+                // Find if any tracked group with unannounced maneuver matches this group name
+                const matchingGroupEntry = interceptState.groups.find(g =>
+                    g.name.toLowerCase().includes(mentionedGroupName) ||
+                    mentionedGroupName.includes(g.name.toLowerCase())
+                );
+
+                if (matchingGroupEntry && matchingGroupEntry.assetId) {
+                    const maneuverData = groupManeuvers[matchingGroupEntry.assetId];
+                    if (maneuverData && !maneuverData.announced && maneuverData.maneuverStartTime !== null) {
+                        const reactionTime = missionTime - maneuverData.maneuverStartTime;
+
+                        // Log the maneuver recognition
+                        setCurrentIntercept(prev => ({
+                            ...prev,
+                            maneuverRecognition: [
+                                ...(prev.maneuverRecognition || []),
+                                {
+                                    time: missionTime,
+                                    transcript: text,
+                                    groupName: matchingGroupEntry.name,
+                                    reactionTime: reactionTime
+                                }
+                            ]
+                        }));
+
+                        // Mark maneuver as announced
+                        setGroupManeuvers(prev => ({
+                            ...prev,
+                            [matchingGroupEntry.assetId]: {
+                                ...prev[matchingGroupEntry.assetId],
+                                announced: true
+                            }
+                        }));
+
+                        console.log(`[DEBRIEF] Maneuver recognition: ${matchingGroupEntry.name}, reaction time: ${reactionTime}s`);
+                    }
+                }
+            }
+        }
+
         // Unrecognized command
         if (!commandExecuted) {
             const readback = `${targetAsset.name}, say again`;
             speakResponse(readback);
             addToRadioLog(targetAsset.name, readback, 'incoming');
         }
-    }, [assets, geoPoints, findAssetByCallsign, findGeoPointByName, addToRadioLog, ownshipTacticalCallsign, speakResponse, updateAsset, addOrbitPoint, bullseyeName, containsBullseyeName, findAssetByBullseyeAnchor, bullseyePosition, interceptState, setInterceptState, parseBullseyeAnchor, extractGroupNames, parseDeclarationFromText, getTrackDirection, parseDirectiveTarget, generateFighterCommitResponse, generateFighterTargetAck, generateFighterReadback, generateFighterResetAck]);
+    }, [assets, geoPoints, findAssetByCallsign, findGeoPointByName, addToRadioLog, ownshipTacticalCallsign, speakResponse, updateAsset, addOrbitPoint, bullseyeName, containsBullseyeName, findAssetByBullseyeAnchor, bullseyePosition, interceptState, setInterceptState, parseBullseyeAnchor, extractGroupNames, parseDeclarationFromText, getTrackDirection, parseDirectiveTarget, generateFighterCommitResponse, generateFighterTargetAck, generateFighterReadback, generateFighterResetAck, currentIntercept, groupManeuvers, missionTime, debriefData]);
 
     // Keep a ref to the latest processVoiceCommand to avoid recreating speech recognition
     const processVoiceCommandRef = useRef(processVoiceCommand);
@@ -4025,6 +4555,109 @@ function AICSimulator() {
             }
         };
     }, [isRunning]);
+
+    // ============================================================================
+    // AIC Debrief: Maneuver Recognition Tracking
+    // ============================================================================
+    // Track hostile group heading changes >45° for maneuver recognition scoring
+    useEffect(() => {
+        if (!isRunning || !currentIntercept) return;
+
+        // Get all hostile assets that are part of the current intercept
+        const hostileAssets = assets.filter(a =>
+            a.affiliation === 'hostile' &&
+            !a.hidden &&
+            interceptState.groups.some(g => g.assetId === a.id && g.status === 'active')
+        );
+
+        setGroupManeuvers(prevManeuvers => {
+            const updated = { ...prevManeuvers };
+
+            hostileAssets.forEach(asset => {
+                const existing = updated[asset.id];
+
+                if (!existing) {
+                    // First time seeing this asset - initialize tracking
+                    updated[asset.id] = {
+                        lastHeading: asset.heading,
+                        maneuverStartTime: null,
+                        announced: true // Start as announced (no pending maneuver)
+                    };
+                } else {
+                    // Calculate heading difference
+                    let headingDiff = Math.abs(asset.heading - existing.lastHeading);
+                    if (headingDiff > 180) headingDiff = 360 - headingDiff;
+
+                    // If heading changed by more than 45°, this is a maneuver
+                    if (headingDiff > 45 && existing.announced) {
+                        // New maneuver detected - start tracking
+                        updated[asset.id] = {
+                            lastHeading: asset.heading,
+                            maneuverStartTime: missionTime,
+                            announced: false
+                        };
+                        console.log(`[DEBRIEF] Maneuver detected: Asset ${asset.name || asset.id} turned ${headingDiff.toFixed(0)}° at mission time ${missionTime}`);
+                    } else if (headingDiff > 5) {
+                        // Minor heading update - track but don't count as new maneuver
+                        updated[asset.id] = {
+                            ...existing,
+                            lastHeading: asset.heading
+                        };
+                    }
+                }
+            });
+
+            return updated;
+        });
+    }, [isRunning, currentIntercept, assets, interceptState.groups, missionTime]);
+
+    // ============================================================================
+    // AIC Debrief: Threat Proximity Tracking
+    // ============================================================================
+    // Track untargeted hostile groups entering 12nm of the engaging fighter
+    useEffect(() => {
+        if (!isRunning || !currentIntercept || interceptState.phase !== 'engagement') return;
+
+        const engagingFighter = assets.find(a => a.id === interceptState.engagingFighterId);
+        if (!engagingFighter) return;
+
+        // Check each active group that is NOT the current target
+        interceptState.groups.forEach(group => {
+            if (group.status !== 'active' || group.id === interceptState.currentTargetGroupId) return;
+
+            const groupAsset = assets.find(a => a.id === group.assetId);
+            if (!groupAsset || groupAsset.hidden) return;
+
+            const distance = calculateDistance(
+                engagingFighter.lat, engagingFighter.lon,
+                groupAsset.lat, groupAsset.lon
+            );
+
+            // If untargeted group is within 12nm and we haven't logged this threat yet
+            const threatKey = `${currentIntercept.interceptNumber}-${group.id}`;
+            if (distance <= 12 && !threatCallsMadeRef.current.has(threatKey)) {
+                threatCallsMadeRef.current.add(threatKey);
+
+                // Log missed threat call to current intercept
+                setCurrentIntercept(prev => {
+                    if (!prev) return prev;
+                    return {
+                        ...prev,
+                        missedEvents: [
+                            ...(prev.missedEvents || []),
+                            {
+                                type: 'missedThreatCall',
+                                time: missionTime,
+                                groupName: group.name,
+                                distance: distance
+                            }
+                        ]
+                    };
+                });
+                console.log(`[DEBRIEF] Missed threat call: ${group.name} entered 12nm at ${distance.toFixed(1)}nm`);
+            }
+        });
+    }, [isRunning, currentIntercept, interceptState, assets, missionTime]);
 
     // ============================================================================
     // Operator Track Dead Reckoning Movement
@@ -7200,13 +7833,19 @@ function AICSimulator() {
                 if (isTransmitting && speechRecognitionRef.current) {
                     // Process the accumulated transcript before stopping
                     if (lastTranscriptRef.current.trim()) {
-                        processVoiceCommandRef.current(lastTranscriptRef.current);
+                        try {
+                            processVoiceCommandRef.current(lastTranscriptRef.current);
+                        } catch (err) {
+                            console.error('Error processing voice command:', err);
+                        }
                     }
                     lastTranscriptRef.current = ''; // Clear for next transmission
                     try {
                         speechRecognitionRef.current.stop();
                     } catch (err) {
                         console.error('Failed to stop recognition:', err);
+                        // Ensure TX state is cleared even if stop fails
+                        setIsTransmitting(false);
                     }
                     // isTransmitting will be set to false by onend handler
                 }
@@ -10106,6 +10745,18 @@ function AICSimulator() {
                         setShowPauseMenu(false);
                         setShowMissionProductsDialog(true);
                     }}
+                    onDebrief={() => {
+                        setShowPauseMenu(false);
+                        setShowDebriefDialog(true);
+                    }}
+                />
+            )}
+
+            {/* AIC Debrief Dialog */}
+            {showDebriefDialog && (
+                <DebriefDialog
+                    debriefData={debriefData}
+                    onClose={() => setShowDebriefDialog(false)}
                 />
             )}
 
@@ -16294,7 +16945,295 @@ function MissionProductsDialog({ missionProducts, setMissionProducts, onClose })
     );
 }
 
-function PauseMenu({ onResume, onSave, onLoad, onControls, onSound, onMissionProducts }) {
+// ============================================================================
+// AIC DEBRIEF DIALOG COMPONENTS
+// ============================================================================
+
+function DebriefDialog({ debriefData, onClose }) {
+    const [selectedIntercept, setSelectedIntercept] = useState(
+        debriefData.length > 0 ? debriefData.length - 1 : null
+    );
+    const [activeTab, setActiveTab] = useState('scorecard'); // 'scorecard' or 'radioLog'
+
+    return (
+        <div className="modal-overlay">
+            <div className="debrief-dialog">
+                <div className="debrief-header">
+                    <h2>AIC DEBRIEF</h2>
+                    <button className="close-btn" onClick={onClose}>&times;</button>
+                </div>
+
+                {debriefData.length === 0 ? (
+                    <div className="debrief-no-data">No intercepts completed yet.</div>
+                ) : (
+                    <>
+                        <div className="intercept-selector">
+                            {debriefData.map((d, i) => (
+                                <button
+                                    key={i}
+                                    className={`intercept-btn ${selectedIntercept === i ? 'selected' : ''}`}
+                                    onClick={() => setSelectedIntercept(i)}
+                                >
+                                    Intercept #{d.interceptNumber}
+                                </button>
+                            ))}
+                        </div>
+
+                        {selectedIntercept !== null && (
+                            <>
+                                <div className="debrief-tabs">
+                                    <button
+                                        className={`debrief-tab ${activeTab === 'scorecard' ? 'active' : ''}`}
+                                        onClick={() => setActiveTab('scorecard')}
+                                    >
+                                        Scorecard
+                                    </button>
+                                    <button
+                                        className={`debrief-tab ${activeTab === 'radioLog' ? 'active' : ''}`}
+                                        onClick={() => setActiveTab('radioLog')}
+                                    >
+                                        Radio Log
+                                    </button>
+                                </div>
+
+                                {activeTab === 'scorecard' ? (
+                                    <InterceptScorecard data={debriefData[selectedIntercept]} />
+                                ) : (
+                                    <InterceptRadioLog data={debriefData[selectedIntercept]} />
+                                )}
+                            </>
+                        )}
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function InterceptScorecard({ data }) {
+    // Helper to format time
+    const formatTime = (seconds) => {
+        if (seconds === null || seconds === undefined) return 'N/A';
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Helper to get reaction time class
+    const getReactionClass = (time) => {
+        if (time < 5) return 'good';
+        if (time < 10) return 'acceptable';
+        return 'slow';
+    };
+
+    return (
+        <div className="scorecard">
+            <div className="scorecard-row">
+                <label>Intercept #:</label>
+                <span>{data.interceptNumber}</span>
+            </div>
+
+            <div className="scorecard-row">
+                <label>Initial Picture:</label>
+                <span className={data.labeledPicture?.valid ? 'success' : 'error'}>
+                    {data.labeledPicture?.transcript || 'N/A'}
+                    {data.labeledPicture && !data.labeledPicture.valid && (
+                        <div className="error-detail">Improper format: {data.labeledPicture.error}</div>
+                    )}
+                </span>
+            </div>
+
+            <div className="scorecard-row">
+                <label>Commit Distance:</label>
+                <span>{data.commitCall?.fighterDistance?.toFixed(1) || 'N/A'} NM</span>
+            </div>
+
+            <div className="scorecard-row">
+                <label>TAC Range:</label>
+                <TacRangeResult calls={data.tacRangeCalls} missedEvents={data.missedEvents} />
+            </div>
+
+            <div className="scorecard-row">
+                <label>Separation Call:</label>
+                <SeparationResult calls={data.separationCalls} />
+            </div>
+
+            <div className="scorecard-row">
+                <label>Directive Targeting:</label>
+                <DirectiveResult calls={data.directiveTargeting} />
+            </div>
+
+            <div className="scorecard-row">
+                <label>Vanish Assessments:</label>
+                <VanishResult calls={data.vanishAssessments} />
+            </div>
+
+            <div className="scorecard-row">
+                <label>Maneuver Recognition:</label>
+                <ManeuverResult calls={data.maneuverRecognition} missedEvents={data.missedEvents} />
+            </div>
+
+            <div className="scorecard-row">
+                <label>Threat Calls:</label>
+                <ThreatResult missedEvents={data.missedEvents} />
+            </div>
+        </div>
+    );
+}
+
+function InterceptRadioLog({ data }) {
+    const formatTime = (seconds) => {
+        if (seconds === null || seconds === undefined) return '';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    if (!data.radioLog || data.radioLog.length === 0) {
+        return (
+            <div className="radio-log-tab">
+                <div className="debrief-no-data">No radio communications recorded for this intercept.</div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="radio-log-tab">
+            <div className="radio-log-entries">
+                {data.radioLog.map((entry, i) => (
+                    <div key={i} className={`radio-log-entry ${entry.type}`}>
+                        <span className="radio-log-time">{formatTime(entry.time)}</span>
+                        <span className="radio-log-callsign">{entry.callsign}:</span>
+                        <span className="radio-log-message">{entry.message}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function TacRangeResult({ calls, missedEvents }) {
+    const missed = missedEvents?.some(e => e.type === 'missedTacRange');
+
+    if (missed && (!calls || calls.length === 0)) {
+        return <span className="missed">Missed TAC RANGE call</span>;
+    }
+
+    if (!calls || calls.length === 0) {
+        return <span className="na">No TAC range calls</span>;
+    }
+
+    return (
+        <div className="result-list">
+            {calls.map((call, i) => (
+                <div key={i} className={call.valid ? 'success' : 'error'}>
+                    {call.groupName} at {call.distance} miles
+                    {!call.valid && <span className="error-detail"> - {call.error}</span>}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function SeparationResult({ calls }) {
+    if (!calls || calls.length === 0) {
+        return <span className="na">No separation calls</span>;
+    }
+
+    return (
+        <div className="result-list">
+            {calls.map((call, i) => (
+                <div key={i} className={call.valid ? 'success' : 'error'}>
+                    {call.valid ? 'Complete' : 'Improper format'}
+                    {!call.valid && <span className="error-detail"> - {call.error}</span>}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function DirectiveResult({ calls }) {
+    if (!calls || calls.length === 0) {
+        return <span className="na">No directive targeting</span>;
+    }
+
+    return (
+        <div className="result-list">
+            {calls.map((call, i) => (
+                <div key={i} className={call.valid ? 'success' : 'error'}>
+                    {call.valid ? `Completed to ${call.groupName}` : 'Improper format'}
+                    {!call.valid && <span className="error-detail"> - {call.error}</span>}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function VanishResult({ calls }) {
+    if (!calls || calls.length === 0) {
+        return <span className="na">No vanish assessments</span>;
+    }
+
+    return (
+        <div className="result-list">
+            {calls.map((call, i) => (
+                <div key={i} className={call.valid ? 'success' : 'error'}>
+                    {call.fromGroup} vanished{call.toGroup ? ` → ${call.toGroup}` : ''}
+                    {!call.valid && <span className="error-detail"> - {call.error}</span>}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function ManeuverResult({ calls, missedEvents }) {
+    const missedManeuvers = missedEvents?.filter(e => e.type === 'missedManeuverCall') || [];
+
+    if ((!calls || calls.length === 0) && missedManeuvers.length === 0) {
+        return <span className="na">No maneuvers detected</span>;
+    }
+
+    const getReactionClass = (time) => {
+        if (time < 5) return 'good';
+        if (time < 10) return 'acceptable';
+        return 'slow';
+    };
+
+    return (
+        <div className="result-list">
+            {calls?.map((call, i) => (
+                <div key={i} className={getReactionClass(call.reactionTime)}>
+                    {call.groupName} - "{call.transcript.substring(0, 50)}..." - {call.reactionTime.toFixed(1)}s
+                </div>
+            ))}
+            {missedManeuvers.map((missed, i) => (
+                <div key={`missed-${i}`} className="missed">
+                    {missed.groupName} - NO CALL MADE
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function ThreatResult({ missedEvents }) {
+    const missedThreats = missedEvents?.filter(e => e.type === 'missedThreatCall') || [];
+
+    if (missedThreats.length === 0) {
+        return <span className="success">No missed threat calls</span>;
+    }
+
+    return (
+        <div className="result-list">
+            {missedThreats.map((missed, i) => (
+                <div key={i} className="missed">
+                    Missed threat call to {missed.groupName} (entered at {missed.distance?.toFixed(1)} nm)
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function PauseMenu({ onResume, onSave, onLoad, onControls, onSound, onMissionProducts, onDebrief }) {
     return (
         <div className="modal-overlay">
             <div className="pause-menu">
@@ -16304,6 +17243,7 @@ function PauseMenu({ onResume, onSave, onLoad, onControls, onSound, onMissionPro
                     <button className="control-btn" onClick={onSave}>SAVE FILE</button>
                     <button className="control-btn" onClick={onLoad}>LOAD FILE</button>
                     <button className="control-btn" onClick={onMissionProducts}>MISSION PRODUCTS</button>
+                    <button className="control-btn" onClick={onDebrief}>AIC DEBRIEF</button>
                     <button className="control-btn" onClick={onSound}>SOUND</button>
                     <button className="control-btn" onClick={onControls}>CONTROLS</button>
                     <button className="control-btn danger" onClick={() => {
