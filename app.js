@@ -1458,9 +1458,12 @@ function AICSimulator() {
         const tacticalCorrections = {
             'asthma': 'azimuth',
             'asma': 'azimuth',
+            'azma': 'azimuth',
             'as a math': 'azimuth',
             'as a meth': 'azimuth',
             'as smith': 'azimuth',
+            'as with': 'azimuth',
+            'aswith': 'azimuth',
             'hostel': 'hostile',
             'hostels': 'hostile',
             'hospital': 'hostile',
@@ -1495,6 +1498,10 @@ function AICSimulator() {
         Object.entries(tacticalCorrections).forEach(([wrong, correct]) => {
             normalized = normalized.replace(new RegExp('\\b' + wrong + '\\b', 'gi'), correct);
         });
+
+        // Special case: "wall" mishearings in picture context (e.g., "3 groups all 20 wide")
+        // These words sound like "wall" and appear before a number in picture calls
+        normalized = normalized.replace(/\bgroups?\s+(all|ball|fall|doll|mall|call)\s+(\d+)/gi, 'groups wall $2');
 
         return normalized;
     };
@@ -1936,6 +1943,256 @@ function AICSimulator() {
 
         return null; // No match found
     }, [assets, bullseyePosition]);
+
+    // Associate groups with assets based on picture geometry when bullseye anchors are missing
+    // Uses a bubble around the anchored group to find nearby hostiles
+    // Then applies picture-type-specific logic to determine which asset is which group
+    const associateGroupsWithAssets = useCallback((groups, pictureType, anchoredAsset) => {
+        if (!anchoredAsset || groups.length <= 1) return groups;
+
+        const SEARCH_RADIUS = 40; // nm bubble around anchored asset
+
+        // Find all hostile assets within search radius (excluding already-associated ones)
+        const associatedAssetIds = new Set(groups.filter(g => g.assetId).map(g => g.assetId));
+
+        // Debug: show all potential hostiles and their distances
+        const allPotentialHostiles = assets.filter(a =>
+            a.identity !== 'friendly' &&
+            a.type !== 'ownship' &&
+            !a.hidden &&
+            a.domain === 'air' &&
+            !associatedAssetIds.has(a.id)
+        );
+        console.log(`[GROUP ASSOCIATION] All potential hostiles (not already associated):`,
+            allPotentialHostiles.map(a => ({
+                id: a.id,
+                name: a.name,
+                distance: calculateDistance(anchoredAsset.lat, anchoredAsset.lon, a.lat, a.lon).toFixed(1)
+            }))
+        );
+
+        const nearbyHostiles = allPotentialHostiles.filter(a =>
+            calculateDistance(anchoredAsset.lat, anchoredAsset.lon, a.lat, a.lon) <= SEARCH_RADIUS
+        );
+
+        if (nearbyHostiles.length === 0) return groups;
+
+        console.log(`[GROUP ASSOCIATION] Found ${nearbyHostiles.length} nearby hostiles within ${SEARCH_RADIUS}nm`);
+        console.log(`[GROUP ASSOCIATION] Picture type: ${pictureType}, Groups to associate:`, groups.filter(g => !g.assetId).map(g => g.name));
+
+        // Calculate relative positions of nearby hostiles to the anchored asset
+        const hostilesWithRelativePos = nearbyHostiles.map(hostile => {
+            const bearing = calculateBearing(anchoredAsset.lat, anchoredAsset.lon, hostile.lat, hostile.lon);
+            const distance = calculateDistance(anchoredAsset.lat, anchoredAsset.lon, hostile.lat, hostile.lon);
+            // Determine cardinal direction from anchored asset
+            const normalizedBearing = ((bearing % 360) + 360) % 360;
+            let cardinalDir;
+            if (normalizedBearing >= 315 || normalizedBearing < 45) cardinalDir = 'north';
+            else if (normalizedBearing >= 45 && normalizedBearing < 135) cardinalDir = 'east';
+            else if (normalizedBearing >= 135 && normalizedBearing < 225) cardinalDir = 'south';
+            else cardinalDir = 'west';
+
+            // Determine if it's ahead (lead) or behind (trail) based on anchored asset's heading
+            const anchoredHeading = anchoredAsset.heading || 0;
+            const relativeBearing = ((bearing - anchoredHeading + 360) % 360);
+            const isAhead = relativeBearing < 90 || relativeBearing > 270; // Within 90° of nose
+
+            return {
+                asset: hostile,
+                bearing,
+                distance,
+                cardinalDir,
+                isAhead,
+                // For range/ladder: track direction relative to fighter (negative = behind/trail)
+                rangeOffset: Math.cos((bearing - anchoredHeading) * Math.PI / 180) * distance
+            };
+        });
+
+        // Sort by distance for proximity-based association
+        hostilesWithRelativePos.sort((a, b) => a.distance - b.distance);
+
+        // Associate unassociated groups based on picture type
+        const updatedGroups = [...groups];
+
+        for (const group of updatedGroups) {
+            if (group.assetId) continue; // Already associated
+
+            const groupNameLower = group.name.toLowerCase();
+            let matchedHostile = null;
+
+            switch (pictureType) {
+                case 'range':
+                    // Range: 2 groups only - lead (ahead) and trail (behind)
+                    if (groupNameLower.includes('trail')) {
+                        const trailCandidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
+                        trailCandidates.sort((a, b) => a.rangeOffset - b.rangeOffset); // Most behind first
+                        matchedHostile = trailCandidates[0];
+                    } else if (groupNameLower.includes('lead')) {
+                        const leadCandidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
+                        leadCandidates.sort((a, b) => b.rangeOffset - a.rangeOffset); // Most ahead first
+                        matchedHostile = leadCandidates[0];
+                    }
+                    break;
+
+                case 'ladder':
+                    // Ladder: 3+ groups - lead (most ahead), middle (center), trail (most behind)
+                    // Simple logic: middle = closest to anchored, trail = farthest
+                    {
+                        const ladderCandidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
+
+                        if (groupNameLower.includes('lead')) {
+                            // Lead = most ahead (highest rangeOffset)
+                            ladderCandidates.sort((a, b) => b.rangeOffset - a.rangeOffset);
+                            matchedHostile = ladderCandidates[0];
+                        } else if (groupNameLower.includes('middle')) {
+                            // Middle = closest to the anchored (lead) group
+                            ladderCandidates.sort((a, b) => a.distance - b.distance);
+                            if (ladderCandidates.length >= 1) {
+                                matchedHostile = ladderCandidates[0];
+                            }
+                        } else if (groupNameLower.includes('trail')) {
+                            // Trail = farthest from the anchored (lead) group
+                            ladderCandidates.sort((a, b) => b.distance - a.distance);
+                            if (ladderCandidates.length >= 1) {
+                                matchedHostile = ladderCandidates[0];
+                            }
+                        }
+                    }
+                    break;
+
+                case 'azimuth':
+                    // Azimuth: 2 groups - north/south facing uses north/south, east/west facing uses east/west
+                    {
+                        const azCandidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
+                        if (groupNameLower.includes('north')) {
+                            azCandidates.sort((a, b) => b.asset.lat - a.asset.lat);
+                            matchedHostile = azCandidates[0];
+                        } else if (groupNameLower.includes('south')) {
+                            azCandidates.sort((a, b) => a.asset.lat - b.asset.lat);
+                            matchedHostile = azCandidates[0];
+                        } else if (groupNameLower.includes('east')) {
+                            azCandidates.sort((a, b) => b.asset.lon - a.asset.lon);
+                            matchedHostile = azCandidates[0];
+                        } else if (groupNameLower.includes('west')) {
+                            azCandidates.sort((a, b) => a.asset.lon - b.asset.lon);
+                            matchedHostile = azCandidates[0];
+                        }
+                    }
+                    break;
+
+                case 'wall':
+                    // Wall: 3+ groups - outer groups based on facing (n/s or e/w), plus middle
+                    // Simple logic: middle = closest to anchored, outer = farthest
+                    {
+                        const wallCandidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
+                        // Determine facing based on group names used
+                        const allGroupNames = groups.map(g => g.name.toLowerCase()).join(' ');
+                        const isNorthSouthFacing = allGroupNames.includes('north') || allGroupNames.includes('south');
+
+                        if (isNorthSouthFacing) {
+                            // North/South facing
+                            if (groupNameLower.includes('north')) {
+                                // North = highest latitude
+                                wallCandidates.sort((a, b) => b.asset.lat - a.asset.lat);
+                                matchedHostile = wallCandidates[0];
+                            } else if (groupNameLower.includes('south')) {
+                                // South = farthest from anchored (outer group)
+                                wallCandidates.sort((a, b) => b.distance - a.distance);
+                                if (wallCandidates.length >= 1) {
+                                    matchedHostile = wallCandidates[0];
+                                }
+                            } else if (groupNameLower.includes('middle')) {
+                                // Middle = closest to anchored
+                                wallCandidates.sort((a, b) => a.distance - b.distance);
+                                if (wallCandidates.length >= 1) {
+                                    matchedHostile = wallCandidates[0];
+                                }
+                            }
+                        } else {
+                            // East/West facing
+                            if (groupNameLower.includes('east')) {
+                                // East = highest longitude
+                                wallCandidates.sort((a, b) => b.asset.lon - a.asset.lon);
+                                matchedHostile = wallCandidates[0];
+                            } else if (groupNameLower.includes('west')) {
+                                // West = farthest from anchored (outer group)
+                                wallCandidates.sort((a, b) => b.distance - a.distance);
+                                if (wallCandidates.length >= 1) {
+                                    matchedHostile = wallCandidates[0];
+                                }
+                            } else if (groupNameLower.includes('middle')) {
+                                // Middle = closest to anchored
+                                wallCandidates.sort((a, b) => a.distance - b.distance);
+                                if (wallCandidates.length >= 1) {
+                                    matchedHostile = wallCandidates[0];
+                                }
+                            }
+                        }
+                    }
+                    break;
+
+                case 'vic':
+                    // Vic: lead group in front, flanking groups on sides (north/south or east/west)
+                    if (groupNameLower.includes('lead')) {
+                        // Lead is the one most ahead
+                        const leadCandidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
+                        leadCandidates.sort((a, b) => b.rangeOffset - a.rangeOffset);
+                        matchedHostile = leadCandidates[0];
+                    } else if (groupNameLower.includes('north')) {
+                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
+                        candidates.sort((a, b) => b.asset.lat - a.asset.lat);
+                        matchedHostile = candidates[0];
+                    } else if (groupNameLower.includes('south')) {
+                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
+                        candidates.sort((a, b) => a.asset.lat - b.asset.lat);
+                        matchedHostile = candidates[0];
+                    }
+                    break;
+
+                case 'champagne':
+                    // Champagne: combination of range and azimuth
+                    // Lead/trail for range axis, north/south or east/west for azimuth axis
+                    if (groupNameLower.includes('lead') && groupNameLower.includes('north')) {
+                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id) && h.isAhead);
+                        candidates.sort((a, b) => b.asset.lat - a.asset.lat);
+                        matchedHostile = candidates[0];
+                    } else if (groupNameLower.includes('lead') && groupNameLower.includes('south')) {
+                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id) && h.isAhead);
+                        candidates.sort((a, b) => a.asset.lat - b.asset.lat);
+                        matchedHostile = candidates[0];
+                    } else if (groupNameLower.includes('trail') && groupNameLower.includes('north')) {
+                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id) && !h.isAhead);
+                        candidates.sort((a, b) => b.asset.lat - a.asset.lat);
+                        matchedHostile = candidates[0];
+                    } else if (groupNameLower.includes('trail') && groupNameLower.includes('south')) {
+                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id) && !h.isAhead);
+                        candidates.sort((a, b) => a.asset.lat - b.asset.lat);
+                        matchedHostile = candidates[0];
+                    } else if (groupNameLower.includes('lead')) {
+                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
+                        candidates.sort((a, b) => b.rangeOffset - a.rangeOffset);
+                        matchedHostile = candidates[0];
+                    } else if (groupNameLower.includes('trail')) {
+                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
+                        candidates.sort((a, b) => a.rangeOffset - b.rangeOffset);
+                        matchedHostile = candidates[0];
+                    }
+                    break;
+
+                default:
+                    // For unknown picture types, just use closest unassociated hostile
+                    matchedHostile = hostilesWithRelativePos.find(h => !associatedAssetIds.has(h.asset.id));
+            }
+
+            if (matchedHostile) {
+                group.assetId = matchedHostile.asset.id;
+                associatedAssetIds.add(matchedHostile.asset.id);
+                console.log(`[GROUP ASSOCIATION] Associated "${group.name}" with asset ${matchedHostile.asset.id} (${matchedHostile.asset.name || 'unnamed'})`);
+            }
+        }
+
+        return updatedGroups;
+    }, [assets]);
 
     // Helper: Spell out callsign with numbers as individual digits
     // "Heat 11" → "Heat one one" (used for radio communications)
@@ -3021,29 +3278,39 @@ function AICSimulator() {
 
             // Detect picture type from the call:
             // - "range X" = range picture (lead/trail groups)
-            // - "azimuth X" = azimuth picture (north/south groups)
-            // - "ladder" = ladder formation
+            // - "azimuth X" = azimuth picture (north/south groups) - 2 groups
+            // - "wall X" = wall formation - 3+ groups lateral
+            // - "range X" = range picture (lead/trail groups) - 2 groups
+            // - "ladder" = ladder formation - 3+ groups in depth
             // - "vic" = vic formation
-            // - 3+ groups = champagne (cardinal + lead/trail)
+            // - "champagne" = champagne formation (3+ groups with both azimuth and range separation)
             let detectedPictureType = 'azimuth'; // default
             const isRangePicture = /\brange\s+\d+/i.test(text);
             const isLadder = /\bladder\b/i.test(text);
             const isVic = /\bvic\b/i.test(text);
+            const isWall = /\bwall\s+\d+/i.test(text);
+            const isChampagne = /\bchampagne\b/i.test(text);
 
-            if (isRangePicture) {
-                detectedPictureType = 'range';
-            } else if (/\bazimuth\s+\d+/i.test(text) || /\bazma\s+\d+/i.test(text)) {
-                detectedPictureType = 'azimuth';
-            }
             // Check for number of groups (including "single" = 1)
             const numGroupsMatch = pictureMatch[1];
             const numGroups = parseInt(numGroupsMatch) ||
                 {'single':1,'one':1,'two':2,'to':2,'three':3,'free':3,'four':4,'for':4,'five':5,'six':6,'seven':7,'eight':8,'nine':9,'ten':10}[numGroupsMatch.toLowerCase()] || 2;
 
-            // 3+ groups = champagne
-            if (numGroups >= 3) {
+            // Determine picture type - explicit keywords take priority
+            if (isRangePicture) {
+                detectedPictureType = 'range';
+            } else if (isLadder) {
+                detectedPictureType = 'ladder';
+            } else if (isWall) {
+                detectedPictureType = 'wall';
+            } else if (isVic) {
+                detectedPictureType = 'vic';
+            } else if (isChampagne) {
                 detectedPictureType = 'champagne';
+            } else if (/\bazimuth\s+\d+/i.test(text) || /\bazma\s+\d+/i.test(text)) {
+                detectedPictureType = 'azimuth';
             }
+
             // Single group = single (no picture type complexity)
             const isSingleGroup = numGroups === 1;
             if (isSingleGroup) {
@@ -3070,7 +3337,7 @@ function AICSimulator() {
                 priorityGroup = groupNames[0] || interceptState.groups[0]?.name || 'group';
             }
 
-            console.log('[LABELED PICTURE] Picture type:', detectedPictureType, 'isRange:', isRangePicture, 'isLadder:', isLadder, 'isVic:', isVic);
+            console.log('[LABELED PICTURE] Picture type:', detectedPictureType, 'isRange:', isRangePicture, 'isLadder:', isLadder, 'isWall:', isWall, 'isVic:', isVic);
             console.log('[LABELED PICTURE] Group names from text:', groupNames);
             console.log('[LABELED PICTURE] Selected priority group:', priorityGroup);
 
@@ -3129,6 +3396,21 @@ function AICSimulator() {
             // Associate the first group with the current target asset
             if (newGroups.length > 0 && targetAsset.targetedAssetId) {
                 newGroups[0].assetId = targetAsset.targetedAssetId;
+            }
+
+            // Try to associate remaining groups with assets based on picture geometry
+            // This helps when AIC doesn't give bullseye anchors for all groups
+            if (newGroups.length > 1 && newGroups[0].assetId) {
+                const anchoredAsset = assets.find(a => a.id === newGroups[0].assetId);
+                if (anchoredAsset) {
+                    const associatedGroups = associateGroupsWithAssets(newGroups, detectedPictureType, anchoredAsset);
+                    // Update newGroups with associated asset IDs
+                    associatedGroups.forEach((ag, idx) => {
+                        if (ag.assetId) {
+                            newGroups[idx].assetId = ag.assetId;
+                        }
+                    });
+                }
             }
 
             console.log('[LABELED PICTURE] Created groups:', newGroups);
@@ -3571,8 +3853,8 @@ function AICSimulator() {
             const hasDirectiveTarget = /\btarget\b/i.test(text) && /rock|bullseye/i.test(text);
 
             if ((isSimpleManeuver || isTrackCall || isCrossingPassing || isJoinCall) && !hasDirectiveTarget) {
-                // Fighter simply rogers the maneuver call
-                const response = `${targetAsset.name}, roger`;
+                // Fighter acknowledges maneuver call with just callsign (no "roger")
+                const response = targetAsset.name;
                 speakResponse(response);
                 addToRadioLog(targetAsset.name, response, 'incoming');
                 commandExecuted = true;
@@ -8866,6 +9148,32 @@ function AICSimulator() {
                       textAnchor="middle" fontWeight="700">
                     {asset.name}
                 </text>
+
+                {/* Group classification label - shown after labeled picture call (debug tool) */}
+                {(() => {
+                    // Show after the labeled picture has been given (engagement phase)
+                    // This is a debug tool to verify group-to-asset association logic
+                    if (interceptState.phase !== 'engagement' && interceptState.phase !== 'post-merge') return null;
+
+                    // Find if this asset is associated with a group in the current intercept
+                    const group = interceptState.groups?.find(g => g.assetId === asset.id);
+
+                    // Debug logging
+                    if (asset.identity === 'hostile') {
+                        console.log(`[GROUP LABEL DEBUG] Asset ${asset.id} (${asset.name}): phase=${interceptState.phase}, groups=`, interceptState.groups, `found group=`, group);
+                    }
+
+                    if (group) {
+                        return (
+                            <text x={pos.x} y={pos.y-size-17} fill="#FFFF00" fontSize="11"
+                                  textAnchor="middle" fontWeight="bold"
+                                  style={{ textShadow: '1px 1px 2px black' }}>
+                                [{group.name.toUpperCase()}]
+                            </text>
+                        );
+                    }
+                    return null;
+                })()}
 
                 {/* Labels below asset - dynamically positioned */}
                 {(() => {
