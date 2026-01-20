@@ -2154,32 +2154,53 @@ function AICSimulator() {
                     break;
 
                 case 'champagne':
-                    // Champagne: combination of range and azimuth
-                    // Lead/trail for range axis, north/south or east/west for azimuth axis
-                    if (groupNameLower.includes('lead') && groupNameLower.includes('north')) {
-                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id) && h.isAhead);
-                        candidates.sort((a, b) => b.asset.lat - a.asset.lat);
-                        matchedHostile = candidates[0];
-                    } else if (groupNameLower.includes('lead') && groupNameLower.includes('south')) {
-                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id) && h.isAhead);
-                        candidates.sort((a, b) => a.asset.lat - b.asset.lat);
-                        matchedHostile = candidates[0];
-                    } else if (groupNameLower.includes('trail') && groupNameLower.includes('north')) {
-                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id) && !h.isAhead);
-                        candidates.sort((a, b) => b.asset.lat - a.asset.lat);
-                        matchedHostile = candidates[0];
-                    } else if (groupNameLower.includes('trail') && groupNameLower.includes('south')) {
-                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id) && !h.isAhead);
-                        candidates.sort((a, b) => a.asset.lat - b.asset.lat);
-                        matchedHostile = candidates[0];
-                    } else if (groupNameLower.includes('lead')) {
-                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
-                        candidates.sort((a, b) => b.rangeOffset - a.rangeOffset);
-                        matchedHostile = candidates[0];
-                    } else if (groupNameLower.includes('trail')) {
-                        const candidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
-                        candidates.sort((a, b) => a.rangeOffset - b.rangeOffset);
-                        matchedHostile = candidates[0];
+                    // Champagne: combination of range and azimuth separation
+                    // Groups can be: "north lead group", "south lead group", "trail group", etc.
+                    // Simple logic: use cardinal direction for N/S or E/W, use distance for lead/trail
+                    {
+                        const champagneCandidates = hostilesWithRelativePos.filter(h => !associatedAssetIds.has(h.asset.id));
+
+                        if (groupNameLower.includes('north') && groupNameLower.includes('lead')) {
+                            // North lead: closest to anchored, northernmost
+                            champagneCandidates.sort((a, b) => b.asset.lat - a.asset.lat);
+                            matchedHostile = champagneCandidates[0];
+                        } else if (groupNameLower.includes('south') && groupNameLower.includes('lead')) {
+                            // South lead: closest to anchored, southernmost
+                            champagneCandidates.sort((a, b) => a.asset.lat - b.asset.lat);
+                            matchedHostile = champagneCandidates[0];
+                        } else if (groupNameLower.includes('east') && groupNameLower.includes('lead')) {
+                            // East lead: closest to anchored, easternmost
+                            champagneCandidates.sort((a, b) => b.asset.lon - a.asset.lon);
+                            matchedHostile = champagneCandidates[0];
+                        } else if (groupNameLower.includes('west') && groupNameLower.includes('lead')) {
+                            // West lead: closest to anchored, westernmost
+                            champagneCandidates.sort((a, b) => a.asset.lon - b.asset.lon);
+                            matchedHostile = champagneCandidates[0];
+                        } else if (groupNameLower.includes('north') && groupNameLower.includes('trail')) {
+                            // North trail: farthest from anchored, northernmost
+                            champagneCandidates.sort((a, b) => b.asset.lat - a.asset.lat);
+                            matchedHostile = champagneCandidates[0];
+                        } else if (groupNameLower.includes('south') && groupNameLower.includes('trail')) {
+                            // South trail: farthest from anchored, southernmost
+                            champagneCandidates.sort((a, b) => a.asset.lat - b.asset.lat);
+                            matchedHostile = champagneCandidates[0];
+                        } else if (groupNameLower.includes('east') && groupNameLower.includes('trail')) {
+                            // East trail: farthest from anchored, easternmost
+                            champagneCandidates.sort((a, b) => b.asset.lon - a.asset.lon);
+                            matchedHostile = champagneCandidates[0];
+                        } else if (groupNameLower.includes('west') && groupNameLower.includes('trail')) {
+                            // West trail: farthest from anchored, westernmost
+                            champagneCandidates.sort((a, b) => a.asset.lon - b.asset.lon);
+                            matchedHostile = champagneCandidates[0];
+                        } else if (groupNameLower.includes('lead')) {
+                            // Standalone lead: closest to anchored asset
+                            champagneCandidates.sort((a, b) => a.distance - b.distance);
+                            matchedHostile = champagneCandidates[0];
+                        } else if (groupNameLower.includes('trail')) {
+                            // Standalone trail: farthest from anchored asset
+                            champagneCandidates.sort((a, b) => b.distance - a.distance);
+                            matchedHostile = champagneCandidates[0];
+                        }
                     }
                     break;
 
