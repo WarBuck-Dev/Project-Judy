@@ -3906,7 +3906,7 @@ function AICSimulator() {
 
             if ((isSimpleManeuver || isTrackCall || isCrossingPassing || isJoinCall) && !hasDirectiveTarget) {
                 // Fighter acknowledges maneuver call with just callsign (no "roger")
-                const response = targetAsset.name;
+                const response = formatCallsignForRadio(targetAsset.name);
                 speakResponse(response);
                 addToRadioLog(targetAsset.name, response, 'incoming');
                 commandExecuted = true;
@@ -3952,9 +3952,22 @@ function AICSimulator() {
         // AIC DEBRIEF: Check for maneuver recognition (any call mentioning a group)
         // This tracks reaction time from when a group changed direction to when AIC made any call about it
         if (currentIntercept && commandExecuted) {
-            const groupMentionMatch = text.match(/(north|south|lead|trail|single)\s*group/i);
-            if (groupMentionMatch) {
-                const mentionedGroupName = groupMentionMatch[0].toLowerCase();
+            // Match various group name patterns including champagne/vic compound names
+            const groupPatterns = [
+                /(?:north|south|east|west)\s+(?:lead|trail)\s*group/i,  // champagne/vic: "north lead group"
+                /(north|south|east|west|lead|trail|middle|single)\s*group/i  // standard: "lead group", "north group"
+            ];
+
+            let mentionedGroupName = null;
+            for (const pattern of groupPatterns) {
+                const match = text.match(pattern);
+                if (match) {
+                    mentionedGroupName = match[0].toLowerCase();
+                    break;
+                }
+            }
+
+            if (mentionedGroupName) {
                 // Find if any tracked group with unannounced maneuver matches this group name
                 const matchingGroupEntry = interceptState.groups.find(g =>
                     g.name.toLowerCase().includes(mentionedGroupName) ||
@@ -3989,7 +4002,41 @@ function AICSimulator() {
                             }
                         }));
 
-                        console.log(`[DEBRIEF] Maneuver recognition: ${matchingGroupEntry.name}, reaction time: ${reactionTime}s`);
+                        console.log(`[DEBRIEF] Maneuver recognition: ${matchingGroupEntry.name}, reaction time: ${reactionTime.toFixed(1)}s`);
+                    }
+                } else {
+                    // Group not in interceptState.groups yet - check if any unannounced maneuver exists
+                    // This handles cases where AIC calls maneuver before labeled picture
+                    const unannounced = Object.entries(groupManeuvers).find(([assetId, data]) =>
+                        !data.announced && data.maneuverStartTime !== null
+                    );
+                    if (unannounced) {
+                        const [assetId, maneuverData] = unannounced;
+                        const reactionTime = missionTime - maneuverData.maneuverStartTime;
+                        const hostileAsset = assets.find(a => a.id === assetId);
+
+                        setCurrentIntercept(prev => ({
+                            ...prev,
+                            maneuverRecognition: [
+                                ...(prev.maneuverRecognition || []),
+                                {
+                                    time: missionTime,
+                                    transcript: text,
+                                    groupName: mentionedGroupName,
+                                    reactionTime: reactionTime
+                                }
+                            ]
+                        }));
+
+                        setGroupManeuvers(prev => ({
+                            ...prev,
+                            [assetId]: {
+                                ...prev[assetId],
+                                announced: true
+                            }
+                        }));
+
+                        console.log(`[DEBRIEF] Maneuver recognition (pre-association): ${mentionedGroupName}, reaction time: ${reactionTime.toFixed(1)}s`);
                     }
                 }
             }
@@ -4897,12 +4944,14 @@ function AICSimulator() {
     useEffect(() => {
         if (!isRunning || !currentIntercept) return;
 
-        // Get all hostile assets that are part of the current intercept
+        // Get all hostile assets (track all of them for maneuver detection)
+        // We track all hostiles because groups may not have assetId assigned until labeled picture
         const hostileAssets = assets.filter(a =>
             a.affiliation === 'hostile' &&
-            !a.hidden &&
-            interceptState.groups.some(g => g.assetId === a.id && g.status === 'active')
+            !a.hidden
         );
+
+        if (hostileAssets.length === 0) return;
 
         setGroupManeuvers(prevManeuvers => {
             const updated = { ...prevManeuvers };
@@ -4917,6 +4966,7 @@ function AICSimulator() {
                         maneuverStartTime: null,
                         announced: true // Start as announced (no pending maneuver)
                     };
+                    console.log(`[DEBRIEF] Tracking maneuvers for hostile: ${asset.name || asset.id}, heading ${asset.heading}`);
                 } else {
                     // Calculate heading difference
                     let headingDiff = Math.abs(asset.heading - existing.lastHeading);
@@ -4930,7 +4980,7 @@ function AICSimulator() {
                             maneuverStartTime: missionTime,
                             announced: false
                         };
-                        console.log(`[DEBRIEF] Maneuver detected: Asset ${asset.name || asset.id} turned ${headingDiff.toFixed(0)}° at mission time ${missionTime}`);
+                        console.log(`[DEBRIEF] Maneuver detected: Asset ${asset.name || asset.id} turned ${headingDiff.toFixed(0)}° at mission time ${missionTime.toFixed(1)}s`);
                     } else if (headingDiff > 5) {
                         // Minor heading update - track but don't count as new maneuver
                         updated[asset.id] = {
@@ -4943,7 +4993,7 @@ function AICSimulator() {
 
             return updated;
         });
-    }, [isRunning, currentIntercept, assets, interceptState.groups, missionTime]);
+    }, [isRunning, currentIntercept, assets, missionTime]);
 
     // ============================================================================
     // AIC Debrief: Threat Proximity Tracking
