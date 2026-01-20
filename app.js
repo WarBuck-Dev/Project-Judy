@@ -2243,21 +2243,38 @@ function AICSimulator() {
             if (matches) names.push(...matches);
         } else {
             // Azimuth picture or champagne: cardinal directions are part of group name
-            const patterns = [
-                // Champagne: cardinal + lead/trail + group (must match this first)
-                /(?:north|south|east|west)\s+(?:lead|trail)\s*group/gi,
-                // Azimuth: cardinal + group (no lead/trail)
-                /(?:north|south|east|west)\s*group/gi,
-                // Standalone lead/trail/middle group
-                /\b(?:lead|trail|middle)\s*group/gi,
-                // Single group
-                /single\s*group/gi,
-            ];
+            // IMPORTANT: Use a single pass approach to avoid duplicate matching
+            // For example, "south lead group" should match as ONE group, not also match "lead group" separately
 
-            patterns.forEach(p => {
-                const matches = text.match(p);
-                if (matches) names.push(...matches);
+            // First, find all champagne-style groups (cardinal + lead/trail + group)
+            const champagnePattern = /(?:north|south|east|west)\s+(?:lead|trail)\s*group/gi;
+            const champagneMatches = text.match(champagnePattern) || [];
+            names.push(...champagneMatches);
+
+            // Create a modified text with champagne matches removed to avoid double-matching
+            let remainingText = text;
+            champagneMatches.forEach(m => {
+                remainingText = remainingText.replace(new RegExp(m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '###MATCHED###');
             });
+
+            // Now find azimuth-style groups (cardinal + group) in remaining text
+            const azimuthPattern = /(?:north|south|east|west)\s*group/gi;
+            const azimuthMatches = remainingText.match(azimuthPattern) || [];
+            names.push(...azimuthMatches);
+
+            // Remove azimuth matches from remaining text
+            azimuthMatches.forEach(m => {
+                remainingText = remainingText.replace(new RegExp(m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '###MATCHED###');
+            });
+
+            // Now find standalone lead/trail/middle group in remaining text
+            const leadTrailPattern = /\b(?:lead|trail|middle)\s*group/gi;
+            const leadTrailMatches = remainingText.match(leadTrailPattern) || [];
+            names.push(...leadTrailMatches);
+
+            // Single group
+            const singleMatches = text.match(/single\s*group/gi) || [];
+            names.push(...singleMatches);
         }
 
         // Also check for arms (after maneuver calls)
