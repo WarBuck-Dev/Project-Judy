@@ -379,6 +379,221 @@ function parseTimeToSeconds(timeString) {
 }
 
 // ============================================================================
+// MANEUVER TRACKING - CONTACT CLUSTERING AND LABELING
+// ============================================================================
+
+// Cluster hostile contacts into groups (contacts within 3nm of each other)
+// Returns array of clusters, each cluster is an array of asset IDs
+function clusterContactsIntoGroups(hostileAssets) {
+    if (hostileAssets.length === 0) return [];
+
+    const visited = new Set();
+    const clusters = [];
+
+    // BFS to find all connected contacts within 3nm
+    function findCluster(startAsset) {
+        const cluster = [];
+        const queue = [startAsset];
+
+        while (queue.length > 0) {
+            const current = queue.shift();
+            if (visited.has(current.id)) continue;
+
+            visited.add(current.id);
+            cluster.push(current);
+
+            // Find all unvisited assets within 3nm of current
+            hostileAssets.forEach(other => {
+                if (!visited.has(other.id)) {
+                    const distance = calculateDistance(current.lat, current.lon, other.lat, other.lon);
+                    if (distance <= 3) {
+                        queue.push(other);
+                    }
+                }
+            });
+        }
+
+        return cluster;
+    }
+
+    // Process all assets
+    hostileAssets.forEach(asset => {
+        if (!visited.has(asset.id)) {
+            const cluster = findCluster(asset);
+            if (cluster.length > 0) {
+                clusters.push(cluster);
+            }
+        }
+    });
+
+    return clusters;
+}
+
+// Determine contact labels within a multi-contact group
+// Returns labeled contacts with contactLabel field
+function labelContactsInGroup(contacts, fighterLat, fighterLon) {
+    if (contacts.length === 0) return [];
+    if (contacts.length === 1) {
+        // Single contact - no label needed
+        return [{
+            assetId: contacts[0].id,
+            contactLabel: null,
+            savedHeading: contacts[0].heading
+        }];
+    }
+
+    // For 2 contacts, determine labeling based on their relative positions
+    if (contacts.length === 2) {
+        const c1 = contacts[0];
+        const c2 = contacts[1];
+
+        // Calculate bearing from contact1 to contact2
+        const bearing = calculateBearing(c1.lat, c1.lon, c2.lat, c2.lon);
+
+        // Determine if N/S or E/W separation based on bearing
+        // N/S: bearing is roughly 0° or 180° (315-45 or 135-225)
+        // E/W: bearing is roughly 90° or 270° (45-135 or 225-315)
+        const isNorthSouth = (bearing >= 315 || bearing < 45) || (bearing >= 135 && bearing < 225);
+
+        // Also check range separation - calculate range from fighter to each contact
+        const range1 = calculateDistance(fighterLat, fighterLon, c1.lat, c1.lon);
+        const range2 = calculateDistance(fighterLat, fighterLon, c2.lat, c2.lon);
+        const rangesDifferSignificantly = Math.abs(range1 - range2) > 2; // More than 2nm difference
+
+        if (rangesDifferSignificantly) {
+            // Use Lead/Trail based on range from fighter
+            const leadContact = range1 < range2 ? c1 : c2;
+            const trailContact = range1 < range2 ? c2 : c1;
+
+            return [
+                { assetId: leadContact.id, contactLabel: 'Lead Contact', savedHeading: leadContact.heading },
+                { assetId: trailContact.id, contactLabel: 'Trail Contact', savedHeading: trailContact.heading }
+            ];
+        } else if (isNorthSouth) {
+            // Use North/South based on latitude
+            const northContact = c1.lat > c2.lat ? c1 : c2;
+            const southContact = c1.lat > c2.lat ? c2 : c1;
+
+            return [
+                { assetId: northContact.id, contactLabel: 'North Contact', savedHeading: northContact.heading },
+                { assetId: southContact.id, contactLabel: 'South Contact', savedHeading: southContact.heading }
+            ];
+        } else {
+            // Use East/West based on longitude
+            const eastContact = c1.lon > c2.lon ? c1 : c2;
+            const westContact = c1.lon > c2.lon ? c2 : c1;
+
+            return [
+                { assetId: eastContact.id, contactLabel: 'East Contact', savedHeading: eastContact.heading },
+                { assetId: westContact.id, contactLabel: 'West Contact', savedHeading: westContact.heading }
+            ];
+        }
+    }
+
+    // For 3+ contacts, just label by range from fighter
+    const sortedByRange = [...contacts].sort((a, b) => {
+        const rangeA = calculateDistance(fighterLat, fighterLon, a.lat, a.lon);
+        const rangeB = calculateDistance(fighterLat, fighterLon, b.lat, b.lon);
+        return rangeA - rangeB;
+    });
+
+    return sortedByRange.map((c, idx) => ({
+        assetId: c.id,
+        contactLabel: `Contact ${idx + 1}`,
+        savedHeading: c.heading
+    }));
+}
+
+// Calculate heading difference with 360° wraparound handling
+function calculateHeadingDifference(heading1, heading2) {
+    let diff = Math.abs(heading1 - heading2);
+    if (diff > 180) diff = 360 - diff;
+    return diff;
+}
+
+// Detect maneuver type for a group based on contact heading changes
+// Returns maneuverType and description
+function detectGroupManeuverType(contacts, assets) {
+    if (contacts.length === 0) return null;
+
+    // Get current headings for all contacts
+    const contactDetails = contacts.map(contact => {
+        const asset = assets.find(a => a.id === contact.assetId);
+        if (!asset) return null;
+
+        const currentHeading = asset.heading;
+        const headingDiff = calculateHeadingDifference(contact.savedHeading, currentHeading);
+        const turned = headingDiff > 44; // >44° threshold for maneuver
+
+        return {
+            contactLabel: contact.contactLabel,
+            oldHeading: contact.savedHeading,
+            newHeading: currentHeading,
+            turned: turned,
+            headingDiff: headingDiff
+        };
+    }).filter(c => c !== null);
+
+    if (contactDetails.length === 0) return null;
+
+    // Count how many contacts turned
+    const turnedCount = contactDetails.filter(c => c.turned).length;
+
+    // Single contact group - simple maneuver detection
+    if (contactDetails.length === 1) {
+        if (contactDetails[0].turned) {
+            return {
+                maneuverType: 'group maneuver',
+                description: `Turned to heading ${Math.round(contactDetails[0].newHeading)}`,
+                contactDetails: contactDetails
+            };
+        }
+        return null;
+    }
+
+    // Multi-contact group maneuver detection
+    if (contactDetails.length === 2) {
+        if (turnedCount === 1) {
+            // One contact turned, other maintained - "single group maneuver range"
+            const turnedContact = contactDetails.find(c => c.turned);
+            const maintainedContact = contactDetails.find(c => !c.turned);
+            return {
+                maneuverType: 'single group maneuver range',
+                description: `${turnedContact.contactLabel} turned to heading ${Math.round(turnedContact.newHeading)}, ${maintainedContact.contactLabel} maintained heading ${Math.round(maintainedContact.oldHeading)}`,
+                contactDetails: contactDetails
+            };
+        } else if (turnedCount === 2) {
+            // Both contacts turned - "single group maneuver azimuth"
+            return {
+                maneuverType: 'single group maneuver azimuth',
+                description: `${contactDetails[0].contactLabel} turned to heading ${Math.round(contactDetails[0].newHeading)}, ${contactDetails[1].contactLabel} turned to heading ${Math.round(contactDetails[1].newHeading)}`,
+                contactDetails: contactDetails
+            };
+        }
+    }
+
+    // For larger groups or if all turned together
+    if (turnedCount === contactDetails.length && turnedCount > 0) {
+        // All contacts turned - group maneuver
+        const avgHeading = contactDetails.reduce((sum, c) => sum + c.newHeading, 0) / contactDetails.length;
+        return {
+            maneuverType: 'group maneuver',
+            description: `All contacts turned to approximately heading ${Math.round(avgHeading)}`,
+            contactDetails: contactDetails
+        };
+    } else if (turnedCount > 0) {
+        // Mixed - some turned, some didn't
+        return {
+            maneuverType: 'single group maneuver',
+            description: `${turnedCount} of ${contactDetails.length} contacts maneuvered`,
+            contactDetails: contactDetails
+        };
+    }
+
+    return null; // No maneuver detected
+}
+
+// ============================================================================
 // BEHAVIORS TAB COMPONENT
 // ============================================================================
 
@@ -1279,8 +1494,41 @@ function AICSimulator() {
     const [debriefData, setDebriefData] = useState([]);  // Array of completed intercept debriefs
     const [currentIntercept, setCurrentIntercept] = useState(null);  // Active intercept being tracked
     const [showDebriefDialog, setShowDebriefDialog] = useState(false);
-    const [groupManeuvers, setGroupManeuvers] = useState({});  // Track group heading changes for maneuver recognition
-    // groupManeuvers structure: { [assetId]: { lastHeading, maneuverStartTime, announced } }
+    // Maneuver tracking state - tracks both groups AND individual contacts within groups
+    const [maneuverTracking, setManeuverTracking] = useState({
+        groups: [],      // Array of tracked groups with their contacts
+        maneuvers: [],   // Array of detected maneuvers (for debrief)
+        lastCheckTime: 0 // Mission time of last check (throttle to every ~10 seconds)
+    });
+    // maneuverTracking.groups structure: [
+    //   {
+    //     groupName: "Lead Group",
+    //     contacts: [
+    //       { assetId: 123, contactLabel: null, savedHeading: 270 },  // Single contact
+    //     ]
+    //   },
+    //   {
+    //     groupName: "Trail Group",
+    //     contacts: [
+    //       { assetId: 456, contactLabel: "North Contact", savedHeading: 180 },
+    //       { assetId: 789, contactLabel: "South Contact", savedHeading: 180 },
+    //     ]
+    //   }
+    // ]
+    // maneuverTracking.maneuvers structure: [
+    //   {
+    //     time: missionTime,
+    //     groupName: "Trail Group",
+    //     maneuverType: "single group maneuver range" | "group maneuver" | etc,
+    //     description: "North Contact turned to heading 360, South Contact maintained 180",
+    //     contactDetails: [ { contactLabel, oldHeading, newHeading, turned: true/false } ],
+    //     aicCalled: false,
+    //     aicTime: null,
+    //     aicTranscript: null,
+    //     responseTime: null
+    //   }
+    // ]
+    const [groupManeuvers, setGroupManeuvers] = useState({});  // Legacy - keep for backwards compatibility
 
     // Radio log window position and size (draggable/resizable)
     // Default position: top of screen, to the right of the TX indicator box
@@ -1610,17 +1858,16 @@ function AICSimulator() {
 
     // Validate Labeled Picture format: group count + picture type + individual group callouts with bullseye
     const validateLabeledPicture = (transcript, numGroups, pictureType) => {
-        // Single group has simpler requirements
+        // Single group has simpler requirements - NO bullseye required
+        // Valid formats: "single group track west", "single group hostile", etc.
         if (numGroups === 1 || pictureType === 'single') {
             const hasSingleGroup = /single\s*group/i.test(transcript);
-            const hasBullseye = /rock|bullseye/i.test(transcript);
-            if (hasSingleGroup && hasBullseye) {
+            // Single group post-commit just needs "single group" - bullseye NOT required
+            // Track direction or declaration is helpful but not strictly required
+            if (hasSingleGroup) {
                 return { valid: true, error: null };
             }
-            const missing = [];
-            if (!hasSingleGroup) missing.push('"single group"');
-            if (!hasBullseye) missing.push('bullseye anchor');
-            return { valid: false, error: `Missing: ${missing.join(', ')}` };
+            return { valid: false, error: 'Missing: "single group"' };
         }
 
         // Multi-group picture
@@ -3494,6 +3741,56 @@ function AICSimulator() {
                     }
                 }));
                 console.log(`[DEBRIEF] Labeled picture logged: ${detectedPictureType}, valid: ${pictureValid.valid}`);
+
+                // AIC DEBRIEF: Initialize maneuver tracking after labeled picture
+                // Use the groups from newGroups which were just established by the AIC's picture call
+                // Each group has an assetId that links to the actual asset
+                const fighterPos = targetAsset ? { lat: targetAsset.lat, lon: targetAsset.lon } : null;
+
+                // Build tracked groups from the AIC's declared groups (not from asset identity)
+                const trackedGroups = [];
+                const effectiveGroupNames = isSingleGroup ? ['single group'] : groupNames;
+
+                // For each group the AIC declared, get its associated asset(s)
+                newGroups.forEach((group, groupIdx) => {
+                    const groupName = group.name || effectiveGroupNames[groupIdx] || `group ${groupIdx + 1}`;
+
+                    // Get the asset associated with this group
+                    const groupAsset = assets.find(a => a.id === group.assetId);
+                    if (!groupAsset) {
+                        console.log(`[DEBRIEF MANEUVER] Warning: No asset found for group "${groupName}" (assetId: ${group.assetId})`);
+                        return;
+                    }
+
+                    // Find all contacts within 3nm of this group's asset (for multi-contact groups)
+                    const nearbyAssets = assets.filter(a => {
+                        if (a.id === group.assetId) return true;
+                        if (a.hidden) return false;
+                        const dist = calculateDistance(groupAsset.lat, groupAsset.lon, a.lat, a.lon);
+                        return dist <= 3 && a.type !== 'airbase' && a.type !== 'carrier' && a.type !== 'awacs';
+                    });
+
+                    // Label contacts within this group
+                    const labeledContacts = fighterPos
+                        ? labelContactsInGroup(nearbyAssets, fighterPos.lat, fighterPos.lon)
+                        : nearbyAssets.map(c => ({ assetId: c.id, contactLabel: null, savedHeading: c.heading }));
+
+                    trackedGroups.push({
+                        groupName: groupName,
+                        contacts: labeledContacts
+                    });
+
+                    console.log(`[DEBRIEF MANEUVER] Initialized group "${groupName}" with ${labeledContacts.length} contact(s):`,
+                        labeledContacts.map(c => `${c.contactLabel || 'single'} (heading ${c.savedHeading})`).join(', '));
+                });
+
+                // Initialize maneuver tracking state
+                setManeuverTracking({
+                    groups: trackedGroups,
+                    maneuvers: [],
+                    lastCheckTime: missionTime
+                });
+                console.log(`[DEBRIEF MANEUVER] Maneuver tracking initialized with ${trackedGroups.length} group(s)`);
             }
 
             commandExecuted = true;
@@ -3913,6 +4210,84 @@ function AICSimulator() {
             }
         }
 
+        // NEW PICTURE: "Closeout, single group maneuver range, new picture two groups range..."
+        // When AIC calls "new picture", re-label groups and contacts based on new group names
+        const newPictureMatch = text.match(/new\s*picture\s*((?:two|2|three|3|four|4)\s*groups?\s*(?:range|azimuth|ladder|wall|vic|champagne)?)/i);
+        if (!commandExecuted && newPictureMatch && currentIntercept) {
+            console.log('[NEW PICTURE] Detected new picture call:', text);
+
+            // Extract new group names from the call
+            const newGroupNames = [];
+            const compoundGroupMatch = text.match(/(?:north|south|east|west)\s+(?:lead|trail)\s*group/gi);
+            if (compoundGroupMatch) {
+                newGroupNames.push(...compoundGroupMatch.map(n => n.toLowerCase()));
+            }
+            const standardGroupMatch = text.match(/(north|south|east|west|lead|trail|middle)\s*group/gi);
+            if (standardGroupMatch) {
+                standardGroupMatch.forEach(m => {
+                    const lower = m.toLowerCase();
+                    // Avoid duplicates from compound matches
+                    if (!newGroupNames.some(n => n.includes(lower) || lower.includes(n.split(' ')[0]))) {
+                        newGroupNames.push(lower);
+                    }
+                });
+            }
+
+            console.log('[NEW PICTURE] New group names:', newGroupNames);
+
+            // Re-label contacts using existing interceptState.groups (which have assetId associations)
+            // This ensures we track what the AIC has declared, not filter by asset identity
+            const fighterPos = targetAsset ? { lat: targetAsset.lat, lon: targetAsset.lon } : null;
+
+            const trackedGroups = [];
+            // Use existing groups from interceptState for asset associations
+            const existingGroups = interceptState.groups || [];
+
+            existingGroups.forEach((group, groupIdx) => {
+                // Use new group name if provided, otherwise keep existing
+                const groupName = newGroupNames[groupIdx] || group.name || `group ${groupIdx + 1}`;
+
+                // Get the asset associated with this group
+                const groupAsset = assets.find(a => a.id === group.assetId);
+                if (!groupAsset) {
+                    console.log(`[NEW PICTURE] Warning: No asset found for group "${groupName}" (assetId: ${group.assetId})`);
+                    return;
+                }
+
+                // Find all contacts within 3nm of this group's asset
+                const nearbyAssets = assets.filter(a => {
+                    if (a.id === group.assetId) return true;
+                    if (a.hidden) return false;
+                    const dist = calculateDistance(groupAsset.lat, groupAsset.lon, a.lat, a.lon);
+                    return dist <= 3 && a.type !== 'airbase' && a.type !== 'carrier' && a.type !== 'awacs';
+                });
+
+                const labeledContacts = fighterPos
+                    ? labelContactsInGroup(nearbyAssets, fighterPos.lat, fighterPos.lon)
+                    : nearbyAssets.map(c => ({ assetId: c.id, contactLabel: null, savedHeading: c.heading }));
+
+                trackedGroups.push({
+                    groupName: groupName,
+                    contacts: labeledContacts
+                });
+
+                console.log(`[NEW PICTURE] Re-labeled group "${groupName}" with ${labeledContacts.length} contact(s)`);
+            });
+
+            // Update maneuver tracking with new groups (keep existing maneuvers)
+            setManeuverTracking(prev => ({
+                ...prev,
+                groups: trackedGroups,
+                lastCheckTime: missionTime
+            }));
+
+            // Fighter acknowledges
+            const response = formatCallsignForRadio(targetAsset.name);
+            speakResponse(response);
+            addToRadioLog(targetAsset.name, response, 'incoming');
+            commandExecuted = true;
+        }
+
         // PICTURE CLEAN + RESET: "Closeout, picture clean. Heat one one, reset TAMPA, say state"
         const pictureCleanMatch = text.match(/picture\s*clean/i);
         const resetMatchInClean = text.match(/reset\s+(\w+)/i);
@@ -3949,26 +4324,75 @@ function AICSimulator() {
             commandExecuted = true;
         }
 
-        // AIC DEBRIEF: Check for maneuver recognition (any call mentioning a group)
-        // This tracks reaction time from when a group changed direction to when AIC made any call about it
+        // AIC DEBRIEF: Check for maneuver recognition (calls mentioning group + maneuver keywords)
+        // This tracks reaction time from when a group changed direction to when AIC called the maneuver
+        // Only count calls with maneuver-related keywords, NOT TAC range calls
         if (currentIntercept && commandExecuted) {
-            // Match various group name patterns including champagne/vic compound names
-            const groupPatterns = [
-                /(?:north|south|east|west)\s+(?:lead|trail)\s*group/i,  // champagne/vic: "north lead group"
-                /(north|south|east|west|lead|trail|middle|single)\s*group/i  // standard: "lead group", "north group"
-            ];
+            // Only match calls that contain maneuver-related keywords
+            const isManeuverCall = /\b(track|maneuver|maneuvering|turned?|turning|heading)\b/i.test(text);
+            // Exclude TAC range calls (e.g., "single group 30 miles")
+            const isTacRangeCall = /\d+\s*miles/i.test(text);
 
-            let mentionedGroupName = null;
-            for (const pattern of groupPatterns) {
-                const match = text.match(pattern);
-                if (match) {
-                    mentionedGroupName = match[0].toLowerCase();
-                    break;
+            if (!isManeuverCall || isTacRangeCall) {
+                // Skip - this is not a maneuver call
+            } else {
+                // Match various group name patterns including champagne/vic compound names
+                const groupPatterns = [
+                    /(?:north|south|east|west)\s+(?:lead|trail)\s*group/i,  // champagne/vic: "north lead group"
+                    /(north|south|east|west|lead|trail|middle|single)\s*group/i  // standard: "lead group", "north group"
+                ];
+
+                let mentionedGroupName = null;
+                for (const pattern of groupPatterns) {
+                    const match = text.match(pattern);
+                    if (match) {
+                        mentionedGroupName = match[0].toLowerCase();
+                        break;
+                    }
                 }
-            }
 
-            if (mentionedGroupName) {
-                // Find if any tracked group with unannounced maneuver matches this group name
+                if (mentionedGroupName) {
+                // NEW: Check maneuverTracking for uncalled maneuvers matching this group
+                const uncalledManeuverIdx = maneuverTracking.maneuvers.findIndex(m =>
+                    !m.aicCalled &&
+                    (m.groupName.toLowerCase().includes(mentionedGroupName) ||
+                     mentionedGroupName.includes(m.groupName.toLowerCase()))
+                );
+
+                if (uncalledManeuverIdx >= 0) {
+                    const uncalledManeuver = maneuverTracking.maneuvers[uncalledManeuverIdx];
+                    const reactionTime = missionTime - uncalledManeuver.time;
+
+                    // Log the maneuver recognition to currentIntercept
+                    setCurrentIntercept(prev => ({
+                        ...prev,
+                        maneuverRecognition: [
+                            ...(prev.maneuverRecognition || []),
+                            {
+                                time: missionTime,
+                                transcript: text,
+                                groupName: uncalledManeuver.groupName,
+                                maneuverType: uncalledManeuver.maneuverType,
+                                description: uncalledManeuver.description,
+                                reactionTime: reactionTime
+                            }
+                        ]
+                    }));
+
+                    // Mark maneuver as called in maneuverTracking
+                    setManeuverTracking(prev => ({
+                        ...prev,
+                        maneuvers: prev.maneuvers.map((m, idx) =>
+                            idx === uncalledManeuverIdx
+                                ? { ...m, aicCalled: true, aicTime: missionTime, aicTranscript: text, responseTime: reactionTime }
+                                : m
+                        )
+                    }));
+
+                    console.log(`[DEBRIEF MANEUVER] AIC called "${uncalledManeuver.maneuverType}" for "${uncalledManeuver.groupName}", response time: ${reactionTime.toFixed(1)}s`);
+                }
+
+                // Also check legacy groupManeuvers for backwards compatibility
                 const matchingGroupEntry = interceptState.groups.find(g =>
                     g.name.toLowerCase().includes(mentionedGroupName) ||
                     mentionedGroupName.includes(g.name.toLowerCase())
@@ -3979,21 +4403,7 @@ function AICSimulator() {
                     if (maneuverData && !maneuverData.announced && maneuverData.maneuverStartTime !== null) {
                         const reactionTime = missionTime - maneuverData.maneuverStartTime;
 
-                        // Log the maneuver recognition
-                        setCurrentIntercept(prev => ({
-                            ...prev,
-                            maneuverRecognition: [
-                                ...(prev.maneuverRecognition || []),
-                                {
-                                    time: missionTime,
-                                    transcript: text,
-                                    groupName: matchingGroupEntry.name,
-                                    reactionTime: reactionTime
-                                }
-                            ]
-                        }));
-
-                        // Mark maneuver as announced
+                        // Mark maneuver as announced in legacy tracking
                         setGroupManeuvers(prev => ({
                             ...prev,
                             [matchingGroupEntry.assetId]: {
@@ -4002,7 +4412,7 @@ function AICSimulator() {
                             }
                         }));
 
-                        console.log(`[DEBRIEF] Maneuver recognition: ${matchingGroupEntry.name}, reaction time: ${reactionTime.toFixed(1)}s`);
+                        console.log(`[DEBRIEF] Legacy maneuver recognition: ${matchingGroupEntry.name}, reaction time: ${reactionTime.toFixed(1)}s`);
                     }
                 } else {
                     // Group not in interceptState.groups yet - check if any unannounced maneuver exists
@@ -4012,21 +4422,6 @@ function AICSimulator() {
                     );
                     if (unannounced) {
                         const [assetId, maneuverData] = unannounced;
-                        const reactionTime = missionTime - maneuverData.maneuverStartTime;
-                        const hostileAsset = assets.find(a => a.id === assetId);
-
-                        setCurrentIntercept(prev => ({
-                            ...prev,
-                            maneuverRecognition: [
-                                ...(prev.maneuverRecognition || []),
-                                {
-                                    time: missionTime,
-                                    transcript: text,
-                                    groupName: mentionedGroupName,
-                                    reactionTime: reactionTime
-                                }
-                            ]
-                        }));
 
                         setGroupManeuvers(prev => ({
                             ...prev,
@@ -4036,8 +4431,9 @@ function AICSimulator() {
                             }
                         }));
 
-                        console.log(`[DEBRIEF] Maneuver recognition (pre-association): ${mentionedGroupName}, reaction time: ${reactionTime.toFixed(1)}s`);
+                        console.log(`[DEBRIEF] Legacy maneuver recognition (pre-association): ${mentionedGroupName}`);
                     }
+                }
                 }
             }
         }
@@ -4938,62 +5334,93 @@ function AICSimulator() {
     }, [isRunning]);
 
     // ============================================================================
-    // AIC Debrief: Maneuver Recognition Tracking
+    // AIC Debrief: Maneuver Recognition Tracking (NEW - Contact-Level)
     // ============================================================================
-    // Track hostile group heading changes >45° for maneuver recognition scoring
+    // Track hostile group/contact heading changes >44° for maneuver recognition scoring
+    // Checks every ~3 seconds (throttled) to minimize performance impact
     useEffect(() => {
         if (!isRunning || !currentIntercept) return;
 
-        // Get all hostile assets (track all of them for maneuver detection)
-        // We track all hostiles because groups may not have assetId assigned until labeled picture
-        const hostileAssets = assets.filter(a =>
-            a.affiliation === 'hostile' &&
-            !a.hidden
-        );
+        // Only check if maneuver tracking has been initialized (after labeled picture)
+        if (maneuverTracking.groups.length === 0) {
+            return;
+        }
 
-        if (hostileAssets.length === 0) return;
+        // Throttle: only check every 3 seconds (reduced from 10 for better response time tracking)
+        if (missionTime - maneuverTracking.lastCheckTime < 3) return;
 
-        setGroupManeuvers(prevManeuvers => {
-            const updated = { ...prevManeuvers };
+        // Check each group for maneuvers
+        const newManeuvers = [];
+        const updatedGroups = maneuverTracking.groups.map(group => {
 
-            hostileAssets.forEach(asset => {
-                const existing = updated[asset.id];
+            // Use the helper function to detect maneuvers for this group
+            const maneuverResult = detectGroupManeuverType(group.contacts, assets);
 
-                if (!existing) {
-                    // First time seeing this asset - initialize tracking
-                    updated[asset.id] = {
-                        lastHeading: asset.heading,
-                        maneuverStartTime: null,
-                        announced: true // Start as announced (no pending maneuver)
-                    };
-                    console.log(`[DEBRIEF] Tracking maneuvers for hostile: ${asset.name || asset.id}, heading ${asset.heading}`);
-                } else {
-                    // Calculate heading difference
-                    let headingDiff = Math.abs(asset.heading - existing.lastHeading);
-                    if (headingDiff > 180) headingDiff = 360 - headingDiff;
+            if (maneuverResult) {
+                // Maneuver detected!
+                console.log(`[DEBRIEF MANEUVER] Detected ${maneuverResult.maneuverType} in "${group.groupName}": ${maneuverResult.description}`);
 
-                    // If heading changed by more than 45°, this is a maneuver
-                    if (headingDiff > 45 && existing.announced) {
-                        // New maneuver detected - start tracking
-                        updated[asset.id] = {
-                            lastHeading: asset.heading,
+                // Record the maneuver
+                newManeuvers.push({
+                    time: missionTime,
+                    groupName: group.groupName,
+                    maneuverType: maneuverResult.maneuverType,
+                    description: maneuverResult.description,
+                    contactDetails: maneuverResult.contactDetails,
+                    aicCalled: false,
+                    aicTime: null,
+                    aicTranscript: null,
+                    responseTime: null
+                });
+
+                // Update savedHeadings to current headings so we can detect future maneuvers
+                return {
+                    ...group,
+                    contacts: group.contacts.map(contact => {
+                        const asset = assets.find(a => a.id === contact.assetId);
+                        return {
+                            ...contact,
+                            savedHeading: asset ? asset.heading : contact.savedHeading
+                        };
+                    })
+                };
+            }
+
+            return group;
+        });
+
+        // Update state with new maneuvers and updated check time
+        if (newManeuvers.length > 0) {
+            setManeuverTracking(prev => ({
+                groups: updatedGroups,
+                maneuvers: [...prev.maneuvers, ...newManeuvers],
+                lastCheckTime: missionTime
+            }));
+
+            // Also update the legacy groupManeuvers for backwards compatibility
+            // This is used by the AIC maneuver call handler
+            newManeuvers.forEach(maneuver => {
+                const group = maneuverTracking.groups.find(g => g.groupName === maneuver.groupName);
+                if (group && group.contacts.length > 0) {
+                    const primaryAssetId = group.contacts[0].assetId;
+                    setGroupManeuvers(prev => ({
+                        ...prev,
+                        [primaryAssetId]: {
+                            lastHeading: maneuver.contactDetails[0]?.newHeading || 0,
                             maneuverStartTime: missionTime,
                             announced: false
-                        };
-                        console.log(`[DEBRIEF] Maneuver detected: Asset ${asset.name || asset.id} turned ${headingDiff.toFixed(0)}° at mission time ${missionTime.toFixed(1)}s`);
-                    } else if (headingDiff > 5) {
-                        // Minor heading update - track but don't count as new maneuver
-                        updated[asset.id] = {
-                            ...existing,
-                            lastHeading: asset.heading
-                        };
-                    }
+                        }
+                    }));
                 }
             });
-
-            return updated;
-        });
-    }, [isRunning, currentIntercept, assets, missionTime]);
+        } else {
+            // Just update the check time
+            setManeuverTracking(prev => ({
+                ...prev,
+                lastCheckTime: missionTime
+            }));
+        }
+    }, [isRunning, currentIntercept, assets, missionTime, maneuverTracking.groups, maneuverTracking.lastCheckTime]);
 
     // ============================================================================
     // AIC Debrief: Threat Proximity Tracking
@@ -9259,11 +9686,6 @@ function AICSimulator() {
 
                     // Find if this asset is associated with a group in the current intercept
                     const group = interceptState.groups?.find(g => g.assetId === asset.id);
-
-                    // Debug logging
-                    if (asset.identity === 'hostile') {
-                        console.log(`[GROUP LABEL DEBUG] Asset ${asset.id} (${asset.name}): phase=${interceptState.phase}, groups=`, interceptState.groups, `found group=`, group);
-                    }
 
                     if (group) {
                         return (
@@ -17609,16 +18031,57 @@ function ManeuverResult({ calls, missedEvents }) {
         return 'slow';
     };
 
+    const getReactionSymbol = (time) => {
+        if (time < 5) return '✓';
+        if (time < 10) return '•';
+        return '⚠';
+    };
+
     return (
-        <div className="result-list">
+        <div className="result-list maneuver-list">
             {calls?.map((call, i) => (
-                <div key={i} className={getReactionClass(call.reactionTime)}>
-                    {call.groupName} - "{call.transcript.substring(0, 50)}..." - {call.reactionTime.toFixed(1)}s
+                <div key={i} className={`maneuver-entry ${getReactionClass(call.reactionTime)}`}>
+                    <div className="maneuver-header">
+                        <span className="maneuver-time">{formatMissionTime(call.time || 0)}</span>
+                        <span className="maneuver-group">{call.groupName}</span>
+                        {call.maneuverType && (
+                            <span className="maneuver-type">{call.maneuverType}</span>
+                        )}
+                    </div>
+                    {call.description && (
+                        <div className="maneuver-description">{call.description}</div>
+                    )}
+                    <div className="maneuver-response">
+                        <span className="response-label">Detected by AIC:</span>
+                        <span className="response-value">YES</span>
+                        <span className="response-time">
+                            Response Time: {call.reactionTime.toFixed(1)}s {getReactionSymbol(call.reactionTime)}
+                        </span>
+                    </div>
+                    {call.transcript && (
+                        <div className="maneuver-transcript">
+                            AIC Call: "{call.transcript.length > 60 ? call.transcript.substring(0, 60) + '...' : call.transcript}"
+                        </div>
+                    )}
                 </div>
             ))}
             {missedManeuvers.map((missed, i) => (
-                <div key={`missed-${i}`} className="missed">
-                    {missed.groupName} - NO CALL MADE
+                <div key={`missed-${i}`} className="maneuver-entry missed">
+                    <div className="maneuver-header">
+                        <span className="maneuver-time">{formatMissionTime(missed.time || 0)}</span>
+                        <span className="maneuver-group">{missed.groupName}</span>
+                        {missed.maneuverType && (
+                            <span className="maneuver-type">{missed.maneuverType}</span>
+                        )}
+                    </div>
+                    {missed.description && (
+                        <div className="maneuver-description">{missed.description}</div>
+                    )}
+                    <div className="maneuver-response missed-response">
+                        <span className="response-label">Detected by AIC:</span>
+                        <span className="response-value missed">NO ✗</span>
+                        <span className="missed-note">(Missed maneuver call)</span>
+                    </div>
                 </div>
             ))}
         </div>
