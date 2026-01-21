@@ -5350,8 +5350,27 @@ function AICSimulator() {
         if (missionTime - maneuverTracking.lastCheckTime < 3) return;
 
         // Check each group for maneuvers
+        const MANEUVER_LOCKOUT_SECONDS = 20; // Prevent multiple detections during a single turn
         const newManeuvers = [];
         const updatedGroups = maneuverTracking.groups.map(group => {
+            // Check if this group is in lockout period (20 seconds after last maneuver)
+            const isInLockout = group.lastManeuverTime &&
+                (missionTime - group.lastManeuverTime) < MANEUVER_LOCKOUT_SECONDS;
+
+            if (isInLockout) {
+                // Still in lockout from previous maneuver - update savedHeadings but don't log new maneuver
+                // This prevents a single 180° turn from being counted multiple times
+                return {
+                    ...group,
+                    contacts: group.contacts.map(contact => {
+                        const asset = assets.find(a => a.id === contact.assetId);
+                        return {
+                            ...contact,
+                            savedHeading: asset ? asset.heading : contact.savedHeading
+                        };
+                    })
+                };
+            }
 
             // Use the helper function to detect maneuvers for this group
             const maneuverResult = detectGroupManeuverType(group.contacts, assets);
@@ -5373,9 +5392,10 @@ function AICSimulator() {
                     responseTime: null
                 });
 
-                // Update savedHeadings to current headings so we can detect future maneuvers
+                // Update savedHeadings to current headings and set lastManeuverTime for lockout
                 return {
                     ...group,
+                    lastManeuverTime: missionTime, // Start 20-second lockout
                     contacts: group.contacts.map(contact => {
                         const asset = assets.find(a => a.id === contact.assetId);
                         return {
@@ -9687,12 +9707,37 @@ function AICSimulator() {
                     // Find if this asset is associated with a group in the current intercept
                     const group = interceptState.groups?.find(g => g.assetId === asset.id);
 
+                    // Also check maneuverTracking for contact-level labels (for multi-contact groups)
+                    let contactLabel = null;
+                    if (maneuverTracking.groups.length > 0) {
+                        for (const trackedGroup of maneuverTracking.groups) {
+                            const contact = trackedGroup.contacts?.find(c => c.assetId === asset.id);
+                            if (contact && contact.contactLabel) {
+                                contactLabel = contact.contactLabel;
+                                // If no group found via interceptState, use the tracked group name
+                                if (!group) {
+                                    return (
+                                        <text x={pos.x} y={pos.y-size-17} fill="#FFFF00" fontSize="11"
+                                              textAnchor="middle" fontWeight="bold"
+                                              style={{ textShadow: '1px 1px 2px black' }}>
+                                            [{trackedGroup.groupName.toUpperCase()} - {contactLabel.toUpperCase()}]
+                                        </text>
+                                    );
+                                }
+                                break;
+                            }
+                        }
+                    }
+
                     if (group) {
+                        const labelText = contactLabel
+                            ? `${group.name.toUpperCase()} - ${contactLabel.toUpperCase()}`
+                            : group.name.toUpperCase();
                         return (
                             <text x={pos.x} y={pos.y-size-17} fill="#FFFF00" fontSize="11"
                                   textAnchor="middle" fontWeight="bold"
                                   style={{ textShadow: '1px 1px 2px black' }}>
-                                [{group.name.toUpperCase()}]
+                                [{labelText}]
                             </text>
                         );
                     }
