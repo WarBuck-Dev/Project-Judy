@@ -2156,7 +2156,16 @@ function AICSimulator() {
     // Find asset by bullseye anchor point (bearing/range from bullseye)
     // Tolerance: 3 degrees bearing, 3 NM range (AIC standard)
     const findAssetByBullseyeAnchor = useCallback((bearing, range, altitudeThousands) => {
-        const BEARING_TOLERANCE = 3; // degrees
+        // Bearing tolerance scales with range - at close range, small position errors
+        // create large bearing differences (e.g., 1nm lateral at 4nm = 14° bearing change)
+        // At long range (40nm+), use tight 3° tolerance
+        // At short range (<10nm), allow up to 15° tolerance
+        const BASE_BEARING_TOLERANCE = 3; // degrees at long range
+        const MAX_BEARING_TOLERANCE = 15; // degrees at very short range
+        const bearingTolerance = range < 10
+            ? Math.min(MAX_BEARING_TOLERANCE, BASE_BEARING_TOLERANCE + (10 - range) * 1.5)
+            : BASE_BEARING_TOLERANCE;
+
         const RANGE_TOLERANCE = 3;   // nautical miles
         const ALTITUDE_TOLERANCE = 2000; // feet
 
@@ -2179,9 +2188,9 @@ function AICSimulator() {
                 asset.lat, asset.lon
             );
 
-            // Check bearing match (within tolerance)
+            // Check bearing match (within tolerance - scales with range)
             const bearingDiff = Math.abs(shortestTurn(bearing, assetBearing));
-            if (bearingDiff > BEARING_TOLERANCE) continue;
+            if (bearingDiff > bearingTolerance) continue;
 
             // Check range match (within tolerance)
             const rangeDiff = Math.abs(range - assetRange);
@@ -2756,8 +2765,9 @@ function AICSimulator() {
     // ============================================
 
     // Simple acknowledgment - just callsign
+    // Add period at end to prevent TTS from dragging out the last word
     const generateFighterReadback = useCallback((callsign) => {
-        return formatCallsignForRadio(callsign);
+        return `${formatCallsignForRadio(callsign)}.`;
     }, [formatCallsignForRadio]);
 
     // Commit response - "Heat commit"
@@ -3215,6 +3225,24 @@ function AICSimulator() {
             const capStation = findGeoPointByName(stationName, geoPoints);
 
             if (capStation) {
+                // AIC DEBRIEF: Check if student combined vanished + reset in same call
+                // This is a procedural error - should wait for fighter's anchor-flow-picture request
+                // We store this locally and add it to finalDebrief since setState is async
+                let combinedVanishAssessment = null;
+                const combinedVanishedMatch = text.match(/(\w+\s*(?:group|arm))\s*vanished/i);
+                if (combinedVanishedMatch && currentIntercept) {
+                    const vanishedGroupName = combinedVanishedMatch[1];
+                    combinedVanishAssessment = {
+                        time: missionTime,
+                        transcript: text,
+                        fromGroup: vanishedGroupName,
+                        toGroup: null,
+                        valid: false,
+                        error: "Good vanish call, but wait for the fighter's Anchor-Flow-Picture request before giving picture clean/reset"
+                    };
+                    console.log(`[DEBRIEF] Vanished+Reset combined - procedural error logged for ${vanishedGroupName}`);
+                }
+
                 addOrbitPoint(targetAsset.id, capStation.lat, capStation.lon);
 
                 // Clear targeting state - fighter is returning to CAP
@@ -3243,19 +3271,16 @@ function AICSimulator() {
 
                 // AIC DEBRIEF: Finalize intercept on reset
                 if (currentIntercept) {
-                    // Check for unannounced maneuvers (missed calls)
-                    const missedManeuvers = Object.entries(groupManeuvers)
-                        .filter(([assetId, data]) => !data.announced && data.maneuverStartTime !== null)
-                        .map(([assetId, data]) => {
-                            const hostileAsset = assets.find(a => a.id === assetId);
-                            const groupInfo = interceptState.groups.find(g => g.assetId === assetId);
-                            return {
-                                type: 'missedManeuverCall',
-                                time: data.maneuverStartTime,
-                                groupName: groupInfo?.name || hostileAsset?.name || 'Unknown group',
-                                assetId: assetId
-                            };
-                        });
+                    // Check for unannounced maneuvers (missed calls) from maneuverTracking
+                    const missedManeuvers = maneuverTracking.maneuvers
+                        .filter(m => !m.aicCalled)
+                        .map(m => ({
+                            type: 'missedManeuverCall',
+                            time: m.time,
+                            groupName: m.groupName,
+                            maneuverType: m.maneuverType,
+                            description: m.description
+                        }));
 
                     // Check if TAC range was called (if there were TAC range calls)
                     const tacRangeMissed = currentIntercept.tacRangeCalls.length === 0;
@@ -3264,10 +3289,16 @@ function AICSimulator() {
                     const interceptRadioLog = radioLog.slice(currentIntercept.radioLogStartIndex || 0);
 
                     // Build final debrief record
+                    // Include combinedVanishAssessment if student combined vanished+reset call
+                    const finalVanishAssessments = [
+                        ...(currentIntercept.vanishAssessments || []),
+                        ...(combinedVanishAssessment ? [combinedVanishAssessment] : [])
+                    ];
                     const finalDebrief = {
                         ...currentIntercept,
                         endTime: missionTime,
                         radioLog: interceptRadioLog, // Include radio log for this intercept
+                        vanishAssessments: finalVanishAssessments,
                         missedEvents: [
                             ...(currentIntercept.missedEvents || []),
                             ...missedManeuvers,
@@ -3468,12 +3499,14 @@ function AICSimulator() {
         if (!commandExecuted && commitMatch) {
             console.log('[HANDLER DEBUG] >>> COMMIT handler ENTERED');
             const anchor = parseBullseyeAnchor(text);
+            console.log('[COMMIT DEBUG] Parsed anchor:', anchor);
             const groupNames = extractGroupNames(text);
             const priorityGroupName = groupNames[0] || 'single group';
 
             if (anchor) {
                 // Find hostile asset at anchor position
                 const targetGroup = findAssetByBullseyeAnchor(anchor.bearing, anchor.range, anchor.altitude ? anchor.altitude / 1000 : null);
+                console.log('[COMMIT DEBUG] findAssetByBullseyeAnchor result:', targetGroup?.name || 'null', 'bearing:', anchor.bearing, 'range:', anchor.range);
 
                 if (targetGroup) {
                     // Create group entry
@@ -3534,6 +3567,8 @@ function AICSimulator() {
                         targetAsset.lat, targetAsset.lon,
                         targetGroup.lat, targetGroup.lon
                     );
+                    // Commit grading will be finalized after labeled picture (when we know group count)
+                    // For now, just record the distance - grade will be set by labeled picture handler
                     const newInterceptNumber = debriefData.length + 1;
                     setCurrentIntercept({
                         interceptNumber: newInterceptNumber,
@@ -3544,7 +3579,10 @@ function AICSimulator() {
                             transcript: text,
                             fighterDistance: fighterDistance,
                             priorityGroup: priorityGroupName,
-                            pictureType: null // Will be set by labeled picture
+                            pictureType: null, // Will be set by labeled picture
+                            numGroups: null, // Will be set by labeled picture
+                            commitGrade: null, // Will be set by labeled picture: 'good', 'missed-desired', 'late'
+                            commitError: null // Will be set by labeled picture if not 'good'
                         },
                         labeledPicture: null,
                         tacRangeCalls: [],
@@ -3725,6 +3763,31 @@ function AICSimulator() {
             // AIC DEBRIEF: Log labeled picture and validate format
             if (currentIntercept) {
                 const pictureValid = validateLabeledPicture(text, numGroups, detectedPictureType);
+
+                // Grade the commit based on number of groups and commit distance
+                // Desired commit ranges: 1-group=40nm, 2-group=45nm, 3-group=50nm
+                // NLTC (minimum) = 35nm for all
+                const fighterDistance = currentIntercept.commitCall?.fighterDistance || 0;
+                const NLTC = 35; // No Later Than Commit
+                const desiredCommitRanges = { 1: 40, 2: 45, 3: 50 };
+                const desiredCommit = desiredCommitRanges[numGroups] || desiredCommitRanges[3]; // Default to 3-group if more
+
+                let commitGrade = 'good';
+                let commitError = null;
+
+                if (fighterDistance < NLTC) {
+                    // Red - Late commit (inside NLTC)
+                    commitGrade = 'late';
+                    commitError = `Late commit - fighter was ${fighterDistance.toFixed(1)} NM from target (NLTC is 35 NM)`;
+                } else if (fighterDistance < desiredCommit) {
+                    // Yellow - Missed desired commit but still on timeline
+                    commitGrade = 'missed-desired';
+                    commitError = `Missed desired commit - fighter was ${fighterDistance.toFixed(1)} NM (desired for ${numGroups}-group: ${desiredCommit} NM)`;
+                }
+                // else commitGrade stays 'good'
+
+                console.log(`[DEBRIEF] Commit grade: ${commitGrade} (distance: ${fighterDistance.toFixed(1)} NM, groups: ${numGroups}, desired: ${desiredCommit} NM)`);
+
                 setCurrentIntercept(prev => ({
                     ...prev,
                     labeledPicture: {
@@ -3737,7 +3800,10 @@ function AICSimulator() {
                     },
                     commitCall: {
                         ...prev.commitCall,
-                        pictureType: detectedPictureType
+                        pictureType: detectedPictureType,
+                        numGroups: numGroups,
+                        commitGrade: commitGrade,
+                        commitError: commitError
                     }
                 }));
                 console.log(`[DEBRIEF] Labeled picture logged: ${detectedPictureType}, valid: ${pictureValid.valid}`);
@@ -3834,12 +3900,13 @@ function AICSimulator() {
 
         // DECLARE RESPONSE: "Closeout, North Group Rock 090/28, twenty-five thousand, track west, hostile"
         // Fighter acknowledges - works in engagement phase, when intercepting, OR in active intercept scenario (loaded saves)
-        // IMPORTANT: Exclude vanished calls - they should be handled by the vanished handler
+        // IMPORTANT: Exclude vanished calls and new picture calls - they should be handled by their own handlers
         const declareResponseMatch = text.match(/(\w+\s*group).*?(rock|bullseye)/i);
         const isNotCommit = !text.match(/commit/i);
         const isVanishedCall = text.match(/vanished/i);
-        console.log('[HANDLER DEBUG] DECLARE check - declareResponseMatch:', declareResponseMatch, 'isVanishedCall:', isVanishedCall, 'commandExecuted:', commandExecuted, 'isIntercepting:', isIntercepting, 'isActiveInterceptScenario:', isActiveInterceptScenario);
-        if (!commandExecuted && declareResponseMatch && isNotCommit && !isVanishedCall && (interceptState.phase === 'engagement' || isIntercepting || isActiveInterceptScenario)) {
+        const isNewPictureCall = text.match(/new\s*picture/i);
+        console.log('[HANDLER DEBUG] DECLARE check - declareResponseMatch:', declareResponseMatch, 'isVanishedCall:', isVanishedCall, 'isNewPictureCall:', isNewPictureCall, 'commandExecuted:', commandExecuted, 'isIntercepting:', isIntercepting, 'isActiveInterceptScenario:', isActiveInterceptScenario);
+        if (!commandExecuted && declareResponseMatch && isNotCommit && !isVanishedCall && !isNewPictureCall && (interceptState.phase === 'engagement' || isIntercepting || isActiveInterceptScenario)) {
             console.log('[HANDLER DEBUG] >>> DECLARE handler ENTERED - setting commandExecuted=true');
             const response = generateFighterReadback(targetAsset.name);
             speakResponse(response);
@@ -4094,8 +4161,10 @@ function AICSimulator() {
         }
 
         // MANEUVER Calls (Inside SW): "Closeout, Single Group maneuver azimuth. Heat one one, target South Arm Rock 090/22..."
+        // Skip if "new picture" is in the text - that should be handled by the NEW PICTURE handler
         const maneuverMatch = text.match(/maneuver\s*(azimuth|range)/i);
-        if (!commandExecuted && maneuverMatch) {
+        const isManeuverNewPicture = text.match(/new\s*picture/i);
+        if (!commandExecuted && maneuverMatch && !isManeuverNewPicture) {
             const directive = parseDirectiveTarget(text);
             if (directive && directive.anchor) {
                 const maneuverTarget = findAssetByBullseyeAnchor(
@@ -4191,17 +4260,20 @@ function AICSimulator() {
         // - "Closeout lead group trail group passing" (passing without new target directive)
         // - "Closeout north group south group joined" (join without new target directive)
         // - "Closeout south group track north, north group track south" (combination maneuver)
+        // Skip if "new picture" is in the text - that should be handled by the NEW PICTURE handler
         if (!commandExecuted) {
             // Check for various maneuver call patterns
             const isSimpleManeuver = /\bmaneuver\b/i.test(text) && !text.match(/maneuver\s*(azimuth|range)/i);
             const isTrackCall = /\btrack\s*(north|south|east|west)\b/i.test(text);
             const isCrossingPassing = /(crossing|passing)/i.test(text);
             const isJoinCall = /\bjoined?\b/i.test(text);
+            const hasNewPicture = /new\s*picture/i.test(text);
 
             // Only handle these if they don't have a directive target (those are handled above)
+            // Also skip if this is a "new picture" call
             const hasDirectiveTarget = /\btarget\b/i.test(text) && /rock|bullseye/i.test(text);
 
-            if ((isSimpleManeuver || isTrackCall || isCrossingPassing || isJoinCall) && !hasDirectiveTarget) {
+            if ((isSimpleManeuver || isTrackCall || isCrossingPassing || isJoinCall) && !hasDirectiveTarget && !hasNewPicture) {
                 // Fighter acknowledges maneuver call with just callsign (no "roger")
                 const response = formatCallsignForRadio(targetAsset.name);
                 speakResponse(response);
@@ -4211,8 +4283,10 @@ function AICSimulator() {
         }
 
         // NEW PICTURE: "Closeout, single group maneuver range, new picture two groups range..."
-        // When AIC calls "new picture", re-label groups and contacts based on new group names
-        const newPictureMatch = text.match(/new\s*picture\s*((?:two|2|three|3|four|4)\s*groups?\s*(?:range|azimuth|ladder|wall|vic|champagne)?)/i);
+        // When AIC calls "new picture", re-cluster contacts based on current positions and assign new group names
+        // Include common mishearings: "to" for "two", "free" for "three", "for" for "four"
+        const newPictureMatch = text.match(/new\s*picture\s*((?:two|to|2|three|free|3|four|for|4|five|5)\s*groups?\s*(?:range|azimuth|ladder|wall|vic|champagne)?)/i);
+        console.log('[HANDLER DEBUG] NEW PICTURE check - newPictureMatch:', newPictureMatch, 'commandExecuted:', commandExecuted, 'currentIntercept:', !!currentIntercept);
         if (!commandExecuted && newPictureMatch && currentIntercept) {
             console.log('[NEW PICTURE] Detected new picture call:', text);
 
@@ -4235,56 +4309,208 @@ function AICSimulator() {
 
             console.log('[NEW PICTURE] New group names:', newGroupNames);
 
-            // Re-label contacts using existing interceptState.groups (which have assetId associations)
-            // This ensures we track what the AIC has declared, not filter by asset identity
-            const fighterPos = targetAsset ? { lat: targetAsset.lat, lon: targetAsset.lon } : null;
+            // Gather ALL contact assetIds from maneuverTracking (these are the contacts we've been tracking)
+            const allTrackedAssetIds = new Set();
+            if (maneuverTracking.groups) {
+                maneuverTracking.groups.forEach(group => {
+                    group.contacts.forEach(contact => {
+                        allTrackedAssetIds.add(contact.assetId);
+                    });
+                });
+            }
+            // Also include assetIds from interceptState.groups as fallback
+            if (interceptState.groups) {
+                interceptState.groups.forEach(group => {
+                    if (group.assetId) allTrackedAssetIds.add(group.assetId);
+                });
+            }
 
-            const trackedGroups = [];
-            // Use existing groups from interceptState for asset associations
-            const existingGroups = interceptState.groups || [];
+            console.log('[NEW PICTURE] All tracked asset IDs:', Array.from(allTrackedAssetIds));
 
-            existingGroups.forEach((group, groupIdx) => {
-                // Use new group name if provided, otherwise keep existing
-                const groupName = newGroupNames[groupIdx] || group.name || `group ${groupIdx + 1}`;
+            // Get all tracked assets that still exist and aren't hidden
+            const trackedAssets = assets.filter(a =>
+                allTrackedAssetIds.has(a.id) && !a.hidden
+            );
 
-                // Get the asset associated with this group
-                const groupAsset = assets.find(a => a.id === group.assetId);
-                if (!groupAsset) {
-                    console.log(`[NEW PICTURE] Warning: No asset found for group "${groupName}" (assetId: ${group.assetId})`);
-                    return;
+            console.log('[NEW PICTURE] Tracked assets:', trackedAssets.map(a => ({ id: a.id, name: a.name })));
+
+            // Re-cluster assets based on current positions (contacts within 3nm = same group)
+            const clusters = [];
+            const assignedAssets = new Set();
+
+            trackedAssets.forEach(asset => {
+                if (assignedAssets.has(asset.id)) return;
+
+                // Start a new cluster with this asset
+                const cluster = [asset];
+                assignedAssets.add(asset.id);
+
+                // Find all other assets within 3nm of this cluster
+                let foundNew = true;
+                while (foundNew) {
+                    foundNew = false;
+                    trackedAssets.forEach(otherAsset => {
+                        if (assignedAssets.has(otherAsset.id)) return;
+
+                        // Check if this asset is within 3nm of any asset in the cluster
+                        const isNearby = cluster.some(clusterAsset => {
+                            const dist = calculateDistance(
+                                clusterAsset.lat, clusterAsset.lon,
+                                otherAsset.lat, otherAsset.lon
+                            );
+                            return dist <= 3;
+                        });
+
+                        if (isNearby) {
+                            cluster.push(otherAsset);
+                            assignedAssets.add(otherAsset.id);
+                            foundNew = true;
+                        }
+                    });
                 }
 
-                // Find all contacts within 3nm of this group's asset
-                const nearbyAssets = assets.filter(a => {
-                    if (a.id === group.assetId) return true;
-                    if (a.hidden) return false;
-                    const dist = calculateDistance(groupAsset.lat, groupAsset.lon, a.lat, a.lon);
-                    return dist <= 3 && a.type !== 'airbase' && a.type !== 'carrier' && a.type !== 'awacs';
-                });
-
-                const labeledContacts = fighterPos
-                    ? labelContactsInGroup(nearbyAssets, fighterPos.lat, fighterPos.lon)
-                    : nearbyAssets.map(c => ({ assetId: c.id, contactLabel: null, savedHeading: c.heading }));
-
-                trackedGroups.push({
-                    groupName: groupName,
-                    contacts: labeledContacts
-                });
-
-                console.log(`[NEW PICTURE] Re-labeled group "${groupName}" with ${labeledContacts.length} contact(s)`);
+                clusters.push(cluster);
             });
 
-            // Update maneuver tracking with new groups (keep existing maneuvers)
+            console.log('[NEW PICTURE] Formed clusters:', clusters.map(c => c.map(a => a.name)));
+
+            // Detect picture type from the call
+            let detectedPictureType = 'azimuth';
+            if (/\brange\s+\d+/i.test(text)) detectedPictureType = 'range';
+            else if (/\bladder\b/i.test(text)) detectedPictureType = 'ladder';
+            else if (/\bvic\b/i.test(text)) detectedPictureType = 'vic';
+            else if (/\bwall\s+\d+/i.test(text)) detectedPictureType = 'wall';
+            else if (/\bchampagne\b/i.test(text)) detectedPictureType = 'champagne';
+            else if (/\bazimuth\s+\d+/i.test(text) || /\bazma\s+\d+/i.test(text)) detectedPictureType = 'azimuth';
+
+            // Sort clusters based on picture type to match group names
+            const fighterPos = targetAsset ? { lat: targetAsset.lat, lon: targetAsset.lon } : null;
+            if (fighterPos && clusters.length > 1) {
+                // Get centroid of each cluster
+                const clusterCentroids = clusters.map(cluster => {
+                    const avgLat = cluster.reduce((sum, a) => sum + a.lat, 0) / cluster.length;
+                    const avgLon = cluster.reduce((sum, a) => sum + a.lon, 0) / cluster.length;
+                    return { lat: avgLat, lon: avgLon };
+                });
+
+                if (detectedPictureType === 'range' || detectedPictureType === 'ladder' || detectedPictureType === 'vic') {
+                    // Sort by distance from fighter (lead = closest)
+                    const withDist = clusters.map((cluster, i) => ({
+                        cluster,
+                        dist: calculateDistance(fighterPos.lat, fighterPos.lon, clusterCentroids[i].lat, clusterCentroids[i].lon)
+                    }));
+                    withDist.sort((a, b) => a.dist - b.dist);
+                    clusters.length = 0;
+                    withDist.forEach(w => clusters.push(w.cluster));
+                } else if (detectedPictureType === 'azimuth' || detectedPictureType === 'wall' || detectedPictureType === 'champagne') {
+                    // Sort by bearing from fighter (use group name order from call)
+                    // For north/south: lower lat = south, higher lat = north
+                    // For east/west: lower lon = west, higher lon = east
+                    if (newGroupNames.some(n => n.includes('north') || n.includes('south'))) {
+                        // Sort by latitude
+                        const withLat = clusters.map((cluster, i) => ({ cluster, lat: clusterCentroids[i].lat }));
+                        withLat.sort((a, b) => {
+                            // If first group name is "south", south (lower lat) comes first
+                            const southFirst = newGroupNames[0]?.includes('south');
+                            return southFirst ? a.lat - b.lat : b.lat - a.lat;
+                        });
+                        clusters.length = 0;
+                        withLat.forEach(w => clusters.push(w.cluster));
+                    } else if (newGroupNames.some(n => n.includes('east') || n.includes('west'))) {
+                        // Sort by longitude
+                        const withLon = clusters.map((cluster, i) => ({ cluster, lon: clusterCentroids[i].lon }));
+                        withLon.sort((a, b) => {
+                            // If first group name is "west", west (lower lon) comes first
+                            const westFirst = newGroupNames[0]?.includes('west');
+                            return westFirst ? a.lon - b.lon : b.lon - a.lon;
+                        });
+                        clusters.length = 0;
+                        withLon.forEach(w => clusters.push(w.cluster));
+                    }
+                }
+            }
+
+            // Build new interceptState groups and maneuverTracking groups
+            const newInterceptGroups = [];
+            const newTrackedGroups = [];
+
+            clusters.forEach((cluster, idx) => {
+                const groupName = newGroupNames[idx] || `group ${idx + 1}`;
+                const groupId = `group-${Date.now()}-${idx}`;
+                const primaryAsset = cluster[0]; // Use first asset as primary
+
+                // Create interceptState group entry
+                newInterceptGroups.push({
+                    id: groupId,
+                    name: groupName,
+                    assetId: primaryAsset.id,
+                    status: 'active',
+                    priority: idx + 1,
+                    position: { lat: primaryAsset.lat, lon: primaryAsset.lon },
+                    altitude: primaryAsset.altitude,
+                    track: getTrackDirection(primaryAsset.heading),
+                    declaration: 'hostile'
+                });
+
+                // Label contacts within this cluster for maneuver tracking
+                const labeledContacts = fighterPos
+                    ? labelContactsInGroup(cluster, fighterPos.lat, fighterPos.lon)
+                    : cluster.map(c => ({ assetId: c.id, contactLabel: null, savedHeading: c.heading }));
+
+                // Check if any contact in this group was previously tracked and had a recent maneuver
+                // Preserve lastManeuverTime to maintain lockout period through relabeling
+                let groupLastManeuverTime = null;
+                for (const contact of labeledContacts) {
+                    for (const oldGroup of maneuverTracking.groups) {
+                        const oldContact = oldGroup.contacts?.find(c => c.assetId === contact.assetId);
+                        if (oldContact) {
+                            // This contact was previously tracked - check for recent maneuver
+                            if (oldGroup.lastManeuverTime && (!groupLastManeuverTime || oldGroup.lastManeuverTime > groupLastManeuverTime)) {
+                                groupLastManeuverTime = oldGroup.lastManeuverTime;
+                            }
+                        }
+                    }
+                }
+
+                newTrackedGroups.push({
+                    groupName: groupName,
+                    contacts: labeledContacts,
+                    lastManeuverTime: groupLastManeuverTime  // Preserve lockout from previous tracking
+                });
+
+                console.log(`[NEW PICTURE] Created group "${groupName}" with ${cluster.length} contact(s):`,
+                    labeledContacts.map(c => `${c.contactLabel || 'single'} (heading ${c.savedHeading})`).join(', '));
+            });
+
+            // Update interceptState with new groups
+            setInterceptState(prev => ({
+                ...prev,
+                groups: newInterceptGroups,
+                pictureType: detectedPictureType,
+                currentTargetGroupId: newInterceptGroups[0]?.id || null
+            }));
+
+            // Update maneuver tracking with new groups (keep existing maneuvers for continuity)
             setManeuverTracking(prev => ({
                 ...prev,
-                groups: trackedGroups,
+                groups: newTrackedGroups,
                 lastCheckTime: missionTime
             }));
 
-            // Fighter acknowledges
-            const response = formatCallsignForRadio(targetAsset.name);
+            // Fighter acknowledges and targets priority group
+            const priorityGroupName = newGroupNames[0] || 'lead group';
+            const response = `${formatCallsignForRadio(targetAsset.name)}, target ${priorityGroupName}.`;
             speakResponse(response);
             addToRadioLog(targetAsset.name, response, 'incoming');
+
+            // Update fighter's target
+            if (newInterceptGroups.length > 0) {
+                updateAsset(targetAsset.id, {
+                    targetGroupName: priorityGroupName,
+                    targetedAssetId: newInterceptGroups[0].assetId
+                });
+            }
+
             commandExecuted = true;
         }
 
@@ -4330,10 +4556,18 @@ function AICSimulator() {
         if (currentIntercept && commandExecuted) {
             // Only match calls that contain maneuver-related keywords
             const isManeuverCall = /\b(track|maneuver|maneuvering|turned?|turning|heading)\b/i.test(text);
+            // Check if this is an explicit maneuver call (contains "maneuver" keyword)
+            const isExplicitManeuverCall = /\bmaneuver(ing)?\b/i.test(text);
             // Exclude TAC range calls (e.g., "single group 30 miles")
             const isTacRangeCall = /\d+\s*miles/i.test(text);
+            // Exclude separation calls (contain "rock" bullseye + altitude, OR word "separation") - unless explicit maneuver
+            const isSeparationCall = (/rock\s*\d+.*?(thousand|angels)/i.test(text) || /\bseparation\b/i.test(text)) && !isExplicitManeuverCall;
+            // Exclude vanish calls - unless explicit maneuver
+            const isVanishCall = /vanished/i.test(text) && !isExplicitManeuverCall;
+            // Exclude new picture calls - unless explicit maneuver (e.g., "single group maneuver range, new picture...")
+            const isNewPictureCall = /new\s*picture/i.test(text) && !isExplicitManeuverCall;
 
-            if (!isManeuverCall || isTacRangeCall) {
+            if (!isManeuverCall || isTacRangeCall || isSeparationCall || isVanishCall || isNewPictureCall) {
                 // Skip - this is not a maneuver call
             } else {
                 // Match various group name patterns including champagne/vic compound names
@@ -5350,7 +5584,7 @@ function AICSimulator() {
         if (missionTime - maneuverTracking.lastCheckTime < 3) return;
 
         // Check each group for maneuvers
-        const MANEUVER_LOCKOUT_SECONDS = 20; // Prevent multiple detections during a single turn
+        const MANEUVER_LOCKOUT_SECONDS = 60; // Prevent multiple detections during a single turn
         const newManeuvers = [];
         const updatedGroups = maneuverTracking.groups.map(group => {
             // Check if this group is in lockout period (20 seconds after last maneuver)
@@ -17922,7 +18156,17 @@ function InterceptScorecard({ data }) {
 
             <div className="scorecard-row">
                 <label>Commit Distance:</label>
-                <span>{data.commitCall?.fighterDistance?.toFixed(1) || 'N/A'} NM</span>
+                <span className={
+                    data.commitCall?.commitGrade === 'late' ? 'error' :
+                    data.commitCall?.commitGrade === 'missed-desired' ? 'warning' :
+                    'success'
+                }>
+                    {data.commitCall?.fighterDistance?.toFixed(1) || 'N/A'} NM
+                    {data.commitCall?.numGroups && ` (${data.commitCall.numGroups}-group problem)`}
+                    {data.commitCall?.commitError && (
+                        <div className="error-detail">{data.commitCall.commitError}</div>
+                    )}
+                </span>
             </div>
 
             <div className="scorecard-row">
@@ -18071,14 +18315,14 @@ function ManeuverResult({ calls, missedEvents }) {
     }
 
     const getReactionClass = (time) => {
-        if (time < 5) return 'good';
-        if (time < 10) return 'acceptable';
+        if (time <= 30) return 'good';
+        if (time <= 60) return 'acceptable';
         return 'slow';
     };
 
     const getReactionSymbol = (time) => {
-        if (time < 5) return '✓';
-        if (time < 10) return '•';
+        if (time <= 30) return '✓';
+        if (time <= 60) return '•';
         return '⚠';
     };
 

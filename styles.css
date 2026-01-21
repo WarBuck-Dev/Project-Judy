@@ -1048,6 +1048,10 @@ select.input-field {
     color: #FF6600;
 }
 
+.scorecard-row .warning {
+    color: #FFCC00;
+}
+
 .scorecard-row .missed {
     color: #FF0000;
 }
@@ -1084,6 +1088,117 @@ select.input-field {
 
 .result-list > div {
     font-size: 13px;
+}
+
+/* Enhanced Maneuver Result Styles */
+.maneuver-list {
+    gap: 12px;
+}
+
+.maneuver-entry {
+    background: rgba(0, 255, 0, 0.05);
+    border: 1px solid rgba(0, 255, 0, 0.2);
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.maneuver-entry.good {
+    border-color: rgba(0, 255, 0, 0.4);
+}
+
+.maneuver-entry.acceptable {
+    border-color: rgba(255, 204, 0, 0.4);
+}
+
+.maneuver-entry.slow {
+    border-color: rgba(255, 102, 0, 0.4);
+}
+
+.maneuver-entry.missed {
+    border-color: rgba(255, 0, 0, 0.4);
+    background: rgba(255, 0, 0, 0.05);
+}
+
+.maneuver-header {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.maneuver-time {
+    font-family: monospace;
+    color: #888;
+    font-size: 12px;
+}
+
+.maneuver-group {
+    font-weight: bold;
+    color: #00FF00;
+    text-transform: capitalize;
+}
+
+.maneuver-type {
+    font-size: 11px;
+    background: rgba(0, 255, 0, 0.15);
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: #00FF00;
+    text-transform: uppercase;
+}
+
+.maneuver-description {
+    font-size: 12px;
+    color: #AAA;
+    margin-bottom: 8px;
+    font-style: italic;
+}
+
+.maneuver-response {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 12px;
+}
+
+.response-label {
+    color: #888;
+}
+
+.response-value {
+    color: #00FF00;
+    font-weight: bold;
+}
+
+.response-value.missed {
+    color: #FF0000;
+}
+
+.response-time {
+    color: #00FF00;
+    margin-left: auto;
+}
+
+.maneuver-entry.acceptable .response-time {
+    color: #FFCC00;
+}
+
+.maneuver-entry.slow .response-time {
+    color: #FF6600;
+}
+
+.missed-note {
+    color: #FF0000;
+    font-style: italic;
+}
+
+.maneuver-transcript {
+    font-size: 11px;
+    color: #888;
+    margin-top: 6px;
+    font-style: italic;
+    padding-left: 10px;
+    border-left: 2px solid rgba(0, 255, 0, 0.2);
 }
 
 /* Debrief Tabs */
