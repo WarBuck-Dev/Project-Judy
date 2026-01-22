@@ -1498,7 +1498,9 @@ function AICSimulator() {
     const [maneuverTracking, setManeuverTracking] = useState({
         groups: [],      // Array of tracked groups with their contacts
         maneuvers: [],   // Array of detected maneuvers (for debrief)
-        lastCheckTime: 0 // Mission time of last check (throttle to every ~10 seconds)
+        lastCheckTime: 0, // Mission time of last check (throttle to every ~10 seconds)
+        settlingUntil: 0,  // Mission time until which maneuver detection is paused (after NEW PICTURE)
+        recentAicCalls: [] // Proactive AIC calls awaiting maneuver detection (time, groupName, transcript)
     });
     // maneuverTracking.groups structure: [
     //   {
@@ -1745,10 +1747,24 @@ function AICSimulator() {
             'west trail grape': 'west trail group',
             'lead grape': 'lead group',
             'trail grape': 'trail group',
+            // "trailer" mishearing for "trail"
+            'trailer group': 'trail group',
+            'north trailer group': 'north trail group',
+            'south trailer group': 'south trail group',
+            'east trailer group': 'east trail group',
+            'west trailer group': 'west trail group',
             'shingle group': 'single group',
             'shingle': 'single',
             'northrup': 'north group',
             'northrop': 'north group',
+            // "grip" mishearing for "group"
+            'single grip': 'single group',
+            'lead grip': 'lead group',
+            'trail grip': 'trail group',
+            'north grip': 'north group',
+            'south grip': 'south group',
+            'east grip': 'east group',
+            'west grip': 'west group',
         };
 
         // Apply tactical corrections
@@ -1791,8 +1807,8 @@ function AICSimulator() {
     const validateSeparation = (transcript) => {
         const hasGroupName = /(north|south|lead|trail|single)\s*group/i.test(transcript) ||
                             /(north|south|lead|trail)\s+separation/i.test(transcript);
-        // Altitude: "25 thousand", "25,000", "angels 25", "flight level 250"
-        const hasAltitude = /thousand|angels|flight\s*level|\d{1,2},\d{3}/i.test(transcript);
+        // Altitude for hostiles: "25 thousand", "25,000", "25000" (NOT angels/flight level - those are for friendlies)
+        const hasAltitude = /thousand|\d{1,2},\d{3}|\b\d{5}\b/i.test(transcript);
         const hasTrack = /track\s*(north|south|east|west)/i.test(transcript);
         const hasDeclaration = /hostile|bandit|bogey|friendly/i.test(transcript);
 
@@ -1814,8 +1830,8 @@ function AICSimulator() {
         const hasTarget = /\btarget\b/i.test(transcript);
         const hasGroupName = /(north|south|lead|trail|single)\s*group/i.test(transcript);
         const hasBullseye = /rock|bullseye/i.test(transcript);
-        // Altitude: "25 thousand", "25,000", "angels 25", "flight level 250"
-        const hasAltitude = /thousand|angels|flight\s*level|\d{1,2},\d{3}/i.test(transcript);
+        // Altitude for hostiles: "25 thousand", "25,000", "25000" (NOT angels/flight level - those are for friendlies)
+        const hasAltitude = /thousand|\d{1,2},\d{3}|\b\d{5}\b/i.test(transcript);
         const hasTrack = /track\s*(north|south|east|west)/i.test(transcript);
         const hasDeclaration = /hostile|bandit|bogey/i.test(transcript);
 
@@ -1874,8 +1890,8 @@ function AICSimulator() {
         const hasGroupCount = /(\d+|two|three|four|five)\s*groups?/i.test(transcript);
         const hasPictureType = /range|azimuth|wall|ladder|vic|champagne/i.test(transcript);
         const hasBullseye = /rock|bullseye/i.test(transcript);
-        // Altitude: "25 thousand", "25,000", "angels 25", "flight level 250"
-        const hasAltitude = /thousand|angels|flight\s*level|\d{1,2},\d{3}/i.test(transcript);
+        // Altitude for hostiles: "25 thousand", "25,000", "25000" (NOT angels/flight level - those are for friendlies)
+        const hasAltitude = /thousand|\d{1,2},\d{3}|\b\d{5}\b/i.test(transcript);
         const hasDeclaration = /hostile|bandit|bogey/i.test(transcript);
 
         // Check for proper group labels based on picture type
@@ -4051,26 +4067,22 @@ function AICSimulator() {
                     });
                     console.log('[VANISHED DEBUG] Retarget - set targetDeclaration:', retargetDeclaration, 'fox3Called25nm:', false, 'delayUntil:', retargetDelayUntil);
 
-                    // Update intercept state
-                    const nextGroupId = `group-${Date.now()}`;
-                    setInterceptState(prev => ({
-                        ...prev,
-                        groups: [...prev.groups, {
-                            id: nextGroupId,
-                            name: directive.groupName,
-                            assetId: nextTarget.id,
-                            status: 'active',
-                            priority: prev.groups.length + 1,
-                            position: { lat: nextTarget.lat, lon: nextTarget.lon },
-                            altitude: nextTarget.altitude,
-                            track: getTrackDirection(nextTarget.heading),
-                            declaration: parseDeclarationFromText(text),
-                            declareCalled: false,
-                            fox3Called: false,
-                            timeoutCalled: false
-                        }],
-                        currentTargetGroupId: nextGroupId
-                    }));
+                    // Update intercept state - find existing group and set as current target
+                    // Don't add a new group - groups are already established from LABELED PICTURE or NEW PICTURE
+                    setInterceptState(prev => {
+                        const existingGroup = prev.groups.find(g =>
+                            g.name.toLowerCase() === directive.groupName.toLowerCase()
+                        );
+                        if (existingGroup) {
+                            return {
+                                ...prev,
+                                currentTargetGroupId: existingGroup.id
+                            };
+                        }
+                        // If no existing group found (shouldn't happen), log warning and don't add
+                        console.warn(`[VANISHED] Could not find existing group "${directive.groupName}" to retarget`);
+                        return prev;
+                    });
                 } else {
                     // Directive exists but couldn't find target - acknowledge anyway
                     console.log('[VANISHED DEBUG] No target found for directive, generating simple readback');
@@ -4491,10 +4503,12 @@ function AICSimulator() {
             }));
 
             // Update maneuver tracking with new groups (keep existing maneuvers for continuity)
+            // Add 15-second settling period for groups to establish on new headings
             setManeuverTracking(prev => ({
                 ...prev,
                 groups: newTrackedGroups,
-                lastCheckTime: missionTime
+                lastCheckTime: missionTime,
+                settlingUntil: missionTime + 15  // Pause maneuver detection for 15 seconds
             }));
 
             // Fighter acknowledges and targets priority group
@@ -4586,18 +4600,24 @@ function AICSimulator() {
                 }
 
                 if (mentionedGroupName) {
-                // NEW: Check maneuverTracking for uncalled maneuvers matching this group
-                const uncalledManeuverIdx = maneuverTracking.maneuvers.findIndex(m =>
-                    !m.aicCalled &&
-                    (m.groupName.toLowerCase().includes(mentionedGroupName) ||
-                     mentionedGroupName.includes(m.groupName.toLowerCase()))
-                );
+                // NEW: Check maneuverTracking for ALL uncalled maneuvers matching this group
+                // When AIC calls a group's maneuver, credit all pending maneuvers for that group
+                const uncalledManeuvers = maneuverTracking.maneuvers
+                    .map((m, idx) => ({ ...m, idx }))
+                    .filter(m =>
+                        !m.aicCalled &&
+                        (m.groupName.toLowerCase().includes(mentionedGroupName) ||
+                         mentionedGroupName.includes(m.groupName.toLowerCase()))
+                    );
 
-                if (uncalledManeuverIdx >= 0) {
-                    const uncalledManeuver = maneuverTracking.maneuvers[uncalledManeuverIdx];
-                    const reactionTime = missionTime - uncalledManeuver.time;
+                if (uncalledManeuvers.length > 0) {
+                    // Use the earliest uncalled maneuver for reaction time calculation
+                    const earliestManeuver = uncalledManeuvers.reduce((earliest, m) =>
+                        m.time < earliest.time ? m : earliest
+                    );
+                    const reactionTime = missionTime - earliestManeuver.time;
 
-                    // Log the maneuver recognition to currentIntercept
+                    // Log the maneuver recognition to currentIntercept (use earliest maneuver's details)
                     setCurrentIntercept(prev => ({
                         ...prev,
                         maneuverRecognition: [
@@ -4605,25 +4625,49 @@ function AICSimulator() {
                             {
                                 time: missionTime,
                                 transcript: text,
-                                groupName: uncalledManeuver.groupName,
-                                maneuverType: uncalledManeuver.maneuverType,
-                                description: uncalledManeuver.description,
+                                groupName: earliestManeuver.groupName,
+                                maneuverType: earliestManeuver.maneuverType,
+                                description: earliestManeuver.description,
                                 reactionTime: reactionTime
                             }
                         ]
                     }));
 
-                    // Mark maneuver as called in maneuverTracking
+                    // Mark ALL uncalled maneuvers for this group as called
+                    // Also reset the group's lastManeuverTime to restart the lockout period
+                    const uncalledIndices = new Set(uncalledManeuvers.map(m => m.idx));
+                    const calledGroupName = earliestManeuver.groupName.toLowerCase();
                     setManeuverTracking(prev => ({
                         ...prev,
                         maneuvers: prev.maneuvers.map((m, idx) =>
-                            idx === uncalledManeuverIdx
+                            uncalledIndices.has(idx)
                                 ? { ...m, aicCalled: true, aicTime: missionTime, aicTranscript: text, responseTime: reactionTime }
                                 : m
+                        ),
+                        // Reset lockout for this group when AIC calls the maneuver
+                        groups: prev.groups.map(g =>
+                            g.groupName.toLowerCase() === calledGroupName
+                                ? { ...g, lastManeuverTime: missionTime }
+                                : g
                         )
                     }));
 
-                    console.log(`[DEBRIEF MANEUVER] AIC called "${uncalledManeuver.maneuverType}" for "${uncalledManeuver.groupName}", response time: ${reactionTime.toFixed(1)}s`);
+                    console.log(`[DEBRIEF MANEUVER] AIC called "${earliestManeuver.maneuverType}" for "${earliestManeuver.groupName}", response time: ${reactionTime.toFixed(1)}s (credited ${uncalledManeuvers.length} pending maneuver(s), lockout reset)`);
+                } else {
+                    // No pending maneuver for this group yet - store as proactive call
+                    // Will be matched when maneuver is detected (within 30 seconds)
+                    setManeuverTracking(prev => ({
+                        ...prev,
+                        recentAicCalls: [
+                            ...(prev.recentAicCalls || []),
+                            {
+                                time: missionTime,
+                                groupName: mentionedGroupName,
+                                transcript: text
+                            }
+                        ]
+                    }));
+                    console.log(`[DEBRIEF MANEUVER] Stored proactive AIC call for "${mentionedGroupName}" - awaiting maneuver detection`);
                 }
 
                 // Also check legacy groupManeuvers for backwards compatibility
@@ -5580,6 +5624,11 @@ function AICSimulator() {
             return;
         }
 
+        // Skip during settling period (after NEW PICTURE, let groups establish new headings)
+        if (missionTime < maneuverTracking.settlingUntil) {
+            return;
+        }
+
         // Throttle: only check every 3 seconds (reduced from 10 for better response time tracking)
         if (missionTime - maneuverTracking.lastCheckTime < 3) return;
 
@@ -5613,18 +5662,43 @@ function AICSimulator() {
                 // Maneuver detected!
                 console.log(`[DEBRIEF MANEUVER] Detected ${maneuverResult.maneuverType} in "${group.groupName}": ${maneuverResult.description}`);
 
-                // Record the maneuver
-                newManeuvers.push({
-                    time: missionTime,
-                    groupName: group.groupName,
-                    maneuverType: maneuverResult.maneuverType,
-                    description: maneuverResult.description,
-                    contactDetails: maneuverResult.contactDetails,
-                    aicCalled: false,
-                    aicTime: null,
-                    aicTranscript: null,
-                    responseTime: null
-                });
+                // Check for matching proactive AIC call (within last 30 seconds)
+                const PROACTIVE_CALL_WINDOW = 30; // seconds
+                const recentCalls = maneuverTracking.recentAicCalls || [];
+                const matchingProactiveCall = recentCalls.find(call =>
+                    (missionTime - call.time) <= PROACTIVE_CALL_WINDOW &&
+                    (call.groupName.toLowerCase().includes(group.groupName.toLowerCase()) ||
+                     group.groupName.toLowerCase().includes(call.groupName.toLowerCase()))
+                );
+
+                // Record the maneuver - credit proactive AIC call if found
+                if (matchingProactiveCall) {
+                    const reactionTime = missionTime - matchingProactiveCall.time; // Negative = called early
+                    console.log(`[DEBRIEF MANEUVER] Matched proactive AIC call from ${reactionTime.toFixed(1)}s ago for "${group.groupName}"`);
+                    newManeuvers.push({
+                        time: missionTime,
+                        groupName: group.groupName,
+                        maneuverType: maneuverResult.maneuverType,
+                        description: maneuverResult.description,
+                        contactDetails: maneuverResult.contactDetails,
+                        aicCalled: true,
+                        aicTime: matchingProactiveCall.time,
+                        aicTranscript: matchingProactiveCall.transcript,
+                        responseTime: -reactionTime // Negative indicates called before detection
+                    });
+                } else {
+                    newManeuvers.push({
+                        time: missionTime,
+                        groupName: group.groupName,
+                        maneuverType: maneuverResult.maneuverType,
+                        description: maneuverResult.description,
+                        contactDetails: maneuverResult.contactDetails,
+                        aicCalled: false,
+                        aicTime: null,
+                        aicTranscript: null,
+                        responseTime: null
+                    });
+                }
 
                 // Update savedHeadings to current headings and set lastManeuverTime for lockout
                 return {
@@ -5645,11 +5719,46 @@ function AICSimulator() {
 
         // Update state with new maneuvers and updated check time
         if (newManeuvers.length > 0) {
+            // Get group names of maneuvers that were matched with proactive calls
+            const matchedGroupNames = newManeuvers
+                .filter(m => m.aicCalled)
+                .map(m => m.groupName.toLowerCase());
+
+            // Clean up: remove matched proactive calls AND expired calls (older than 30 seconds)
+            const PROACTIVE_CALL_WINDOW = 30;
+
             setManeuverTracking(prev => ({
                 groups: updatedGroups,
                 maneuvers: [...prev.maneuvers, ...newManeuvers],
-                lastCheckTime: missionTime
+                lastCheckTime: missionTime,
+                recentAicCalls: (prev.recentAicCalls || []).filter(call =>
+                    // Keep calls that are not expired AND not matched
+                    (missionTime - call.time) <= PROACTIVE_CALL_WINDOW &&
+                    !matchedGroupNames.some(gn =>
+                        call.groupName.toLowerCase().includes(gn) ||
+                        gn.includes(call.groupName.toLowerCase())
+                    )
+                )
             }));
+
+            // Add maneuver recognition to currentIntercept for proactively called maneuvers
+            const proactivelyCalled = newManeuvers.filter(m => m.aicCalled);
+            if (proactivelyCalled.length > 0) {
+                setCurrentIntercept(prev => ({
+                    ...prev,
+                    maneuverRecognition: [
+                        ...(prev.maneuverRecognition || []),
+                        ...proactivelyCalled.map(m => ({
+                            time: m.aicTime, // Use the time AIC called (not detection time)
+                            transcript: m.aicTranscript,
+                            groupName: m.groupName,
+                            maneuverType: m.maneuverType,
+                            description: m.description,
+                            reactionTime: m.responseTime // Negative = called early
+                        }))
+                    ]
+                }));
+            }
 
             // Also update the legacy groupManeuvers for backwards compatibility
             // This is used by the AIC maneuver call handler
@@ -5662,16 +5771,20 @@ function AICSimulator() {
                         [primaryAssetId]: {
                             lastHeading: maneuver.contactDetails[0]?.newHeading || 0,
                             maneuverStartTime: missionTime,
-                            announced: false
+                            announced: maneuver.aicCalled // Mark as announced if proactively called
                         }
                     }));
                 }
             });
         } else {
-            // Just update the check time
+            // Just update the check time and clean up expired proactive calls
+            const PROACTIVE_CALL_WINDOW = 30;
             setManeuverTracking(prev => ({
                 ...prev,
-                lastCheckTime: missionTime
+                lastCheckTime: missionTime,
+                recentAicCalls: (prev.recentAicCalls || []).filter(call =>
+                    (missionTime - call.time) <= PROACTIVE_CALL_WINDOW
+                )
             }));
         }
     }, [isRunning, currentIntercept, assets, missionTime, maneuverTracking.groups, maneuverTracking.lastCheckTime]);
@@ -18315,63 +18428,80 @@ function ManeuverResult({ calls, missedEvents }) {
     }
 
     const getReactionClass = (time) => {
-        if (time <= 30) return 'good';
+        // Negative time = called early (proactive) - always good
+        if (time < 0 || time <= 30) return 'good';
         if (time <= 60) return 'acceptable';
         return 'slow';
     };
 
     const getReactionSymbol = (time) => {
-        if (time <= 30) return '✓';
+        // Negative time = called early (proactive) - always good
+        if (time < 0 || time <= 30) return '✓';
         if (time <= 60) return '•';
         return '⚠';
     };
 
+    const formatReactionTime = (time) => {
+        if (time < 0) {
+            // AIC called before system detected - show as immediate response
+            return `Response Time: 0.0s`;
+        }
+        return `Response Time: ${time.toFixed(1)}s`;
+    };
+
+    // Combine called and missed maneuvers, then sort chronologically by time
+    const allManeuvers = [
+        ...(calls || []).map(call => ({ ...call, isMissed: false })),
+        ...missedManeuvers.map(missed => ({ ...missed, isMissed: true }))
+    ].sort((a, b) => (a.time || 0) - (b.time || 0));
+
     return (
         <div className="result-list maneuver-list">
-            {calls?.map((call, i) => (
-                <div key={i} className={`maneuver-entry ${getReactionClass(call.reactionTime)}`}>
-                    <div className="maneuver-header">
-                        <span className="maneuver-time">{formatMissionTime(call.time || 0)}</span>
-                        <span className="maneuver-group">{call.groupName}</span>
-                        {call.maneuverType && (
-                            <span className="maneuver-type">{call.maneuverType}</span>
-                        )}
-                    </div>
-                    {call.description && (
-                        <div className="maneuver-description">{call.description}</div>
-                    )}
-                    <div className="maneuver-response">
-                        <span className="response-label">Detected by AIC:</span>
-                        <span className="response-value">YES</span>
-                        <span className="response-time">
-                            Response Time: {call.reactionTime.toFixed(1)}s {getReactionSymbol(call.reactionTime)}
-                        </span>
-                    </div>
-                    {call.transcript && (
-                        <div className="maneuver-transcript">
-                            AIC Call: "{call.transcript.length > 60 ? call.transcript.substring(0, 60) + '...' : call.transcript}"
+            {allManeuvers.map((item, i) => (
+                item.isMissed ? (
+                    <div key={`missed-${i}`} className="maneuver-entry missed">
+                        <div className="maneuver-header">
+                            <span className="maneuver-time">{formatMissionTime(item.time || 0)}</span>
+                            <span className="maneuver-group">{item.groupName}</span>
+                            {item.maneuverType && (
+                                <span className="maneuver-type">{item.maneuverType}</span>
+                            )}
                         </div>
-                    )}
-                </div>
-            ))}
-            {missedManeuvers.map((missed, i) => (
-                <div key={`missed-${i}`} className="maneuver-entry missed">
-                    <div className="maneuver-header">
-                        <span className="maneuver-time">{formatMissionTime(missed.time || 0)}</span>
-                        <span className="maneuver-group">{missed.groupName}</span>
-                        {missed.maneuverType && (
-                            <span className="maneuver-type">{missed.maneuverType}</span>
+                        {item.description && (
+                            <div className="maneuver-description">{item.description}</div>
+                        )}
+                        <div className="maneuver-response missed-response">
+                            <span className="response-label">Detected by AIC:</span>
+                            <span className="response-value missed">NO ✗</span>
+                            <span className="missed-note">(Missed maneuver call)</span>
+                        </div>
+                    </div>
+                ) : (
+                    <div key={i} className={`maneuver-entry ${getReactionClass(item.reactionTime)}`}>
+                        <div className="maneuver-header">
+                            <span className="maneuver-time">{formatMissionTime(item.time || 0)}</span>
+                            <span className="maneuver-group">{item.groupName}</span>
+                            {item.maneuverType && (
+                                <span className="maneuver-type">{item.maneuverType}</span>
+                            )}
+                        </div>
+                        {item.description && (
+                            <div className="maneuver-description">{item.description}</div>
+                        )}
+                        <div className="maneuver-response">
+                            <span className="response-label">Detected by AIC:</span>
+                            <span className="response-value">YES</span>
+                            <span className="response-time">
+                                {formatReactionTime(item.reactionTime)} {getReactionSymbol(item.reactionTime)}
+                            </span>
+                        </div>
+                        {item.transcript && (
+                            <div className="maneuver-transcript">
+                                AIC Call: "{item.transcript.length > 60 ? item.transcript.substring(0, 60) + '...' : item.transcript}"
+                            </div>
                         )}
                     </div>
-                    {missed.description && (
-                        <div className="maneuver-description">{missed.description}</div>
-                    )}
-                    <div className="maneuver-response missed-response">
-                        <span className="response-label">Detected by AIC:</span>
-                        <span className="response-value missed">NO ✗</span>
-                        <span className="missed-note">(Missed maneuver call)</span>
-                    </div>
-                </div>
+                )
             ))}
         </div>
     );
