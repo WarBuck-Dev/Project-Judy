@@ -1310,7 +1310,10 @@ function AICSimulator() {
             vidCalled2nm: false,   // Has called "V-I-D group, group NATO name" at 2nm
             // AIC Training Mode - range-triggered call flags
             declareCalled28nm: false,  // Has fighter called "declare group" at 28nm
-            fox3Called25nm: false      // Has fighter called "fox-3 group" at 25nm
+            fox3Called25nm: false,     // Has fighter called "fox-3 group" at 25nm
+            // Two-ship engagement tracking
+            twoShipEngagement: false,      // True if engaged a two-contact group
+            twoShipMissilesRemaining: 0    // Track missiles in flight for two-ship timeout
         }
     ]);
     const [selectedAssetId, setSelectedAssetId] = useState(null);
@@ -5003,6 +5006,14 @@ function AICSimulator() {
                                 updated.fox3Called25nm = true;
                                 const groupName = asset.targetGroupName || 'group';
 
+                                // Find contacts in the target group from maneuverTracking
+                                const targetGroup = maneuverTracking.groups.find(g =>
+                                    g.groupName.toLowerCase() === groupName.toLowerCase()
+                                );
+                                const contactsInGroup = targetGroup?.contacts || [];
+                                const numContacts = contactsInGroup.length;
+                                const isTwoShip = numContacts >= 2;
+
                                 // Check interceptState for next priority group to request separation
                                 // ONLY request separation if there are OTHER ACTIVE groups (not vanished)
                                 // No separation call if:
@@ -5023,12 +5034,26 @@ function AICSimulator() {
                                 let nextGroupName = nextGroup?.name || null;
 
                                 console.log('[FOX3 DEBUG] Current target group name:', currentTargetGroupName);
-                                console.log('[FOX3 DEBUG] All groups:', interceptState.groups.map(g => ({ name: g.name, status: g.status, assetId: g.assetId })));
-                                console.log('[FOX3 DEBUG] Active groups (excluding current target):', activeGroups.map(g => ({ name: g.name, status: g.status })));
+                                console.log('[FOX3 DEBUG] Contacts in group:', numContacts, contactsInGroup.map(c => c.assetId));
+                                console.log('[FOX3 DEBUG] Two-ship engagement:', isTwoShip);
                                 console.log('[FOX3 DEBUG] Next group for separation:', nextGroup?.name || 'NONE');
 
+                                // Fire weapons at all contacts in the group (two-ship)
+                                if (isTwoShip) {
+                                    contactsInGroup.forEach(contact => {
+                                        fireWeapon(asset.id, contact.assetId, 'AAM');
+                                    });
+                                    updated.twoShipEngagement = true;
+                                    updated.twoShipMissilesRemaining = numContacts;
+                                }
+
                                 setTimeout(() => {
-                                    let fox3Call = `${formatCallsignForRadio(asset.name)}, fox-3 ${groupName}`;
+                                    let fox3Call;
+                                    if (isTwoShip) {
+                                        fox3Call = `${formatCallsignForRadio(asset.name)}, fox-3 two ship`;
+                                    } else {
+                                        fox3Call = `${formatCallsignForRadio(asset.name)}, fox-3 ${groupName}`;
+                                    }
                                     if (nextGroupName) {
                                         fox3Call += `. ${ownshipTacticalCallsign}, say separation ${nextGroupName}`;
                                     }
@@ -5039,7 +5064,10 @@ function AICSimulator() {
 
                             // Switch to engaging state - weapon will be fired by separate logic
                             updated.targetingState = 'engaging';
-                            updated.engageAttempted = true; // Flag to trigger weapon fire
+                            // Only set engageAttempted for single-contact groups (not two-ship)
+                            if (!updated.twoShipEngagement) {
+                                updated.engageAttempted = true; // Flag to trigger weapon fire
+                            }
                         }
 
                         // VID (Visual ID) calls for BOGEY SPADES intercepts
@@ -5549,13 +5577,45 @@ function AICSimulator() {
                 const targetIdsToRemove = impactedWeapons.map(w => w.impactTargetId);
 
                 // Queue timeout calls for AIC-controlled assets that fired weapons
+                // Track two-ship impacts per asset (handles both missiles impacting same tick)
+                const twoShipImpactCounts = {};
                 impactedWeapons.forEach(weapon => {
                     const firingAsset = assets.find(a => a.id === weapon.firingAssetId);
                     // Only announce timeout if this was an AIC-controlled engagement
                     if (firingAsset && firingAsset.targetingState) {
+                        if (firingAsset.twoShipEngagement) {
+                            // Track impacts for this asset within this tick
+                            if (!twoShipImpactCounts[firingAsset.id]) {
+                                twoShipImpactCounts[firingAsset.id] = {
+                                    asset: firingAsset,
+                                    count: 0
+                                };
+                            }
+                            twoShipImpactCounts[firingAsset.id].count++;
+                        } else {
+                            // Single contact - existing behavior
+                            setPendingTimeoutCalls(prev => [...prev, {
+                                assetName: firingAsset.name,
+                                groupName: firingAsset.targetGroupName || 'group'
+                            }]);
+                        }
+                    }
+                });
+
+                // Process two-ship timeouts - check if all missiles have now impacted
+                Object.values(twoShipImpactCounts).forEach(({ asset, count }) => {
+                    const remainingAfterThisTick = asset.twoShipMissilesRemaining - count;
+                    // Update the missiles remaining counter
+                    setAssets(prev => prev.map(a =>
+                        a.id === asset.id
+                            ? { ...a, twoShipMissilesRemaining: remainingAfterThisTick }
+                            : a
+                    ));
+                    // Queue timeout when all missiles have impacted
+                    if (remainingAfterThisTick <= 0) {
                         setPendingTimeoutCalls(prev => [...prev, {
-                            assetName: firingAsset.name,
-                            groupName: firingAsset.targetGroupName || 'group'
+                            assetName: asset.name,
+                            groupName: 'two ship'
                         }]);
                     }
                 });
