@@ -502,9 +502,9 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - Vanish call assessment
 
 - **Maneuver Recognition**:
-  - Detects when groups change heading (15+ degree turn)
+  - Detects when groups change heading (>44 degree turn)
   - Tracks AIC response time to maneuvers
-  - Grades as Excellent (<3s), Good (<7s), Late (>7s), or Missed
+  - Grades as Good (≤30s), Acceptable (≤60s), Slow (>60s), or Missed
   - Supports proactive calls (AIC calls maneuver before system detects it)
   - Handles all group types: single, north/south, lead/trail, etc.
 
