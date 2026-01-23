@@ -1313,7 +1313,8 @@ function AICSimulator() {
             fox3Called25nm: false,     // Has fighter called "fox-3 group" at 25nm
             // Two-ship engagement tracking
             twoShipEngagement: false,      // True if engaged a two-contact group
-            twoShipMissilesRemaining: 0    // Track missiles in flight for two-ship timeout
+            twoShipTargetIds: [],          // Target asset IDs for two-ship timeout check
+            twoShipTimeoutCalled: false    // Prevent duplicate timeout calls
         }
     ]);
     const [selectedAssetId, setSelectedAssetId] = useState(null);
@@ -2147,6 +2148,26 @@ function AICSimulator() {
         return null;
     }, []);
 
+    // Find the nearest CAP station to a given asset
+    const findNearestCapStation = useCallback((asset, geoPointList) => {
+        // Filter to only CAP station geopoints (type is 'capStation' in GEOPOINT_TYPES)
+        const capStations = geoPointList.filter(gp => gp.type === 'capStation');
+        if (capStations.length === 0) return null;
+
+        let nearest = null;
+        let nearestDistance = Infinity;
+
+        capStations.forEach(station => {
+            const dist = calculateDistance(asset.lat, asset.lon, station.lat, station.lon);
+            if (dist < nearestDistance) {
+                nearestDistance = dist;
+                nearest = station;
+            }
+        });
+
+        return nearest;
+    }, []);
+
     // Normalize bullseye name for matching (case-insensitive, alphanumeric only)
     const normalizeBullseyeName = (name) => {
         return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
@@ -2832,7 +2853,11 @@ function AICSimulator() {
 
     // Reset acknowledgment - "Heat one one, resetting TAMPA, state green"
     const generateFighterResetAck = useCallback((callsign, stationName) => {
-        return `${formatCallsignForRadio(callsign)}, resetting ${stationName}, state green`;
+        if (stationName) {
+            return `${formatCallsignForRadio(callsign)}, resetting ${stationName}, state green`;
+        } else {
+            return `${formatCallsignForRadio(callsign)}, resetting, state green`;
+        }
     }, [formatCallsignForRadio]);
 
     // Format lat/lon as bullseye position string for speech - "Rock zero niner five, eighteen"
@@ -2892,11 +2917,19 @@ function AICSimulator() {
                 }
                 return `${callsign}, setting ${value}`;
             case 'reset':
-                // value = station name, extraParam = sayState boolean
-                if (extraParam) {
-                    return `${callsign}, resetting ${value}, state green`;
+                // value = station name (may be empty/null), extraParam = sayState boolean
+                if (value) {
+                    if (extraParam) {
+                        return `${callsign}, resetting ${value}, state green`;
+                    }
+                    return `${callsign}, resetting ${value}`;
+                } else {
+                    // No station name - omit it from readback
+                    if (extraParam) {
+                        return `${callsign}, resetting, state green`;
+                    }
+                    return `${callsign}, resetting`;
                 }
-                return `${callsign}, resetting ${value}`;
             case 'target':
                 // value = group description (e.g., "single group")
                 return `${callsign}, target ${value}`;
@@ -3237,11 +3270,26 @@ function AICSimulator() {
             }
         }
 
-        // RESET: "reset Chargers" or "reset Chargers say state" - re-orbit at CAP station
-        const resetMatch = text.match(/\breset\s+([a-z]+)/i);
+        // RESET: "reset Chargers" or "reset Chargers say state" or "reset say state" (auto-select nearest)
+        const resetMatch = text.match(/\breset\b(?:\s+([a-z]+))?/i);
+        console.log('[RESET DEBUG] resetMatch:', resetMatch, 'commandExecuted:', commandExecuted);
         if (!commandExecuted && resetMatch) {
+            let capStation = null;
             const stationName = resetMatch[1];
-            const capStation = findGeoPointByName(stationName, geoPoints);
+            console.log('[RESET DEBUG] stationName:', stationName);
+
+            // If station name provided and it's not "say" (from "say state"), look it up
+            if (stationName && stationName.toLowerCase() !== 'say') {
+                capStation = findGeoPointByName(stationName, geoPoints);
+                console.log('[RESET DEBUG] findGeoPointByName result:', capStation);
+            }
+
+            // If no station found, find nearest CAP station to the fighter
+            if (!capStation && targetAsset) {
+                console.log('[RESET DEBUG] Finding nearest CAP. geoPoints:', geoPoints.map(gp => ({ name: gp.name, type: gp.type })));
+                capStation = findNearestCapStation(targetAsset, geoPoints);
+                console.log('[RESET DEBUG] findNearestCapStation result:', capStation);
+            }
 
             if (capStation) {
                 // AIC DEBRIEF: Check if student combined vanished + reset in same call
@@ -4531,30 +4579,38 @@ function AICSimulator() {
             commandExecuted = true;
         }
 
-        // PICTURE CLEAN + RESET: "Closeout, picture clean. Heat one one, reset TAMPA, say state"
+        // PICTURE CLEAN + RESET: "Closeout, picture clean. Heat one one, reset TAMPA, say state" or "reset say state" (auto-select nearest)
         const pictureCleanMatch = text.match(/picture\s*clean/i);
-        const resetMatchInClean = text.match(/reset\s+(\w+)/i);
+        const resetMatchInClean = text.match(/reset(?:\s+(\w+))?/i);
         if (!commandExecuted && pictureCleanMatch && interceptState.phase === 'post-merge') {
-            if (resetMatchInClean) {
-                const stationName = resetMatchInClean[1];
-                const capStation = findGeoPointByName(stationName, geoPoints);
+            let capStation = null;
+            const stationName = resetMatchInClean ? resetMatchInClean[1] : null;
 
-                if (capStation) {
-                    // Fighter acknowledges reset
-                    const response = generateFighterResetAck(targetAsset.name, capStation.name);
-                    speakResponse(response);
-                    addToRadioLog(targetAsset.name, response, 'incoming');
+            // If station name provided and it's not "say" (from "say state"), look it up
+            if (stationName && stationName.toLowerCase() !== 'say') {
+                capStation = findGeoPointByName(stationName, geoPoints);
+            }
 
-                    // Clear targeting state and return to CAP
-                    updateAsset(targetAsset.id, {
-                        targetingState: null,
-                        targetedAssetId: null,
-                        targetGroupName: null
-                    });
+            // If no station found, find nearest CAP to the engaging fighter
+            if (!capStation && targetAsset) {
+                capStation = findNearestCapStation(targetAsset, geoPoints);
+            }
 
-                    // Add orbit point to return to CAP station
-                    addOrbitPoint(targetAsset.id, capStation.lat, capStation.lon);
-                }
+            if (capStation) {
+                // Fighter acknowledges reset
+                const response = generateFighterResetAck(targetAsset.name, capStation.name);
+                speakResponse(response);
+                addToRadioLog(targetAsset.name, response, 'incoming');
+
+                // Clear targeting state and return to CAP
+                updateAsset(targetAsset.id, {
+                    targetingState: null,
+                    targetedAssetId: null,
+                    targetGroupName: null
+                });
+
+                // Add orbit point to return to CAP station
+                addOrbitPoint(targetAsset.id, capStation.lat, capStation.lon);
             }
 
             // Reset intercept state
@@ -5040,11 +5096,12 @@ function AICSimulator() {
 
                                 // Fire weapons at all contacts in the group (two-ship)
                                 if (isTwoShip) {
+                                    const targetIds = contactsInGroup.map(contact => contact.assetId);
                                     contactsInGroup.forEach(contact => {
                                         fireWeapon(asset.id, contact.assetId, 'AAM');
                                     });
                                     updated.twoShipEngagement = true;
-                                    updated.twoShipMissilesRemaining = numContacts;
+                                    updated.twoShipTargetIds = targetIds; // Track which targets to monitor
                                 }
 
                                 setTimeout(() => {
@@ -5577,52 +5634,49 @@ function AICSimulator() {
                 const targetIdsToRemove = impactedWeapons.map(w => w.impactTargetId);
 
                 // Queue timeout calls for AIC-controlled assets that fired weapons
-                // Track two-ship impacts per asset (handles both missiles impacting same tick)
-                const twoShipImpactCounts = {};
-                impactedWeapons.forEach(weapon => {
-                    const firingAsset = assets.find(a => a.id === weapon.firingAssetId);
-                    // Only announce timeout if this was an AIC-controlled engagement
-                    if (firingAsset && firingAsset.targetingState) {
-                        if (firingAsset.twoShipEngagement) {
-                            // Track impacts for this asset within this tick
-                            if (!twoShipImpactCounts[firingAsset.id]) {
-                                twoShipImpactCounts[firingAsset.id] = {
-                                    asset: firingAsset,
-                                    count: 0
-                                };
+                setAssets(prevAssets => {
+                    let updatedAssets = prevAssets;
+
+                    impactedWeapons.forEach(weapon => {
+                        const firingAsset = updatedAssets.find(a => a.id === weapon.firingAssetId);
+                        // Only announce timeout if this was an AIC-controlled engagement
+                        if (firingAsset && firingAsset.targetingState) {
+                            if (firingAsset.twoShipEngagement) {
+                                // Two-ship: don't queue timeout yet, we'll check when all targets are gone
+                            } else {
+                                // Single contact - queue timeout immediately
+                                setPendingTimeoutCalls(prev => [...prev, {
+                                    assetName: firingAsset.name,
+                                    groupName: firingAsset.targetGroupName || 'group'
+                                }]);
                             }
-                            twoShipImpactCounts[firingAsset.id].count++;
-                        } else {
-                            // Single contact - existing behavior
-                            setPendingTimeoutCalls(prev => [...prev, {
-                                assetName: firingAsset.name,
-                                groupName: firingAsset.targetGroupName || 'group'
-                            }]);
                         }
-                    }
-                });
+                    });
 
-                // Process two-ship timeouts - check if all missiles have now impacted
-                Object.values(twoShipImpactCounts).forEach(({ asset, count }) => {
-                    const remainingAfterThisTick = asset.twoShipMissilesRemaining - count;
-                    // Update the missiles remaining counter
-                    setAssets(prev => prev.map(a =>
-                        a.id === asset.id
-                            ? { ...a, twoShipMissilesRemaining: remainingAfterThisTick }
-                            : a
-                    ));
-                    // Queue timeout when all missiles have impacted
-                    if (remainingAfterThisTick <= 0) {
-                        setPendingTimeoutCalls(prev => [...prev, {
-                            assetName: asset.name,
-                            groupName: 'two ship'
-                        }]);
-                    }
-                });
+                    // Remove destroyed targets
+                    updatedAssets = updatedAssets.filter(a => !targetIdsToRemove.includes(a.id));
 
-                // Remove assets regardless of launch mode - weapons always destroy their targets
-                // In student mode, the student track will age naturally after 2 sweeps without radar returns
-                setAssets(prevAssets => prevAssets.filter(a => !targetIdsToRemove.includes(a.id)));
+                    // Check for two-ship timeout: all target assets destroyed
+                    updatedAssets = updatedAssets.map(asset => {
+                        if (asset.twoShipEngagement && !asset.twoShipTimeoutCalled && asset.twoShipTargetIds?.length > 0) {
+                            // Check if ALL targets from two-ship engagement are now destroyed
+                            const allTargetsDestroyed = asset.twoShipTargetIds.every(
+                                targetId => !updatedAssets.find(a => a.id === targetId)
+                            );
+                            if (allTargetsDestroyed) {
+                                console.log('[TIMEOUT DEBUG] Two-ship targets all destroyed, queueing timeout for', asset.name);
+                                setPendingTimeoutCalls(prev => [...prev, {
+                                    assetName: asset.name,
+                                    groupName: 'two ship'
+                                }]);
+                                return { ...asset, twoShipTimeoutCalled: true };
+                            }
+                        }
+                        return asset;
+                    });
+
+                    return updatedAssets;
+                });
             }
 
             return updatedWeapons.filter(w => !w.impact);
