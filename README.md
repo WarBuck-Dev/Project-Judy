@@ -485,11 +485,50 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 3.2
-**Last Updated**: January 19, 2026
+**Version**: 3.3
+**Last Updated**: January 22, 2026
 **Status**: Production Ready
 
 ## Recent Updates
+
+### Version 3.3 (January 2026)
+
+#### AIC Debrief System
+- **Automatic Intercept Tracking**: System tracks each intercept from commit to reset
+  - Commit range and grade (Excellent/Good/Late based on group count)
+  - Labeled picture validation (correct format and group identification)
+  - TAC range calls tracking
+  - Maneuver recognition with response time measurement
+  - Vanish call assessment
+
+- **Maneuver Recognition**:
+  - Detects when groups change heading (15+ degree turn)
+  - Tracks AIC response time to maneuvers
+  - Grades as Excellent (<3s), Good (<7s), Late (>7s), or Missed
+  - Supports proactive calls (AIC calls maneuver before system detects it)
+  - Handles all group types: single, north/south, lead/trail, etc.
+
+- **Debrief Panel** (Pause Menu):
+  - Shows intercept history with expandable details
+  - Commit grade with distance and group count
+  - Picture type validation
+  - Maneuver response times with grades
+  - Missed events tracking (TAC range, maneuvers, threats)
+
+- **FOX-3 Two-Ship Engagement**:
+  - Fighters fire at ALL contacts in a multi-contact group
+  - Radio call: "fox-3 two ship" for 2+ contact groups
+  - Timeout call waits for all missiles to impact
+  - Single "timeout, two ship" call after all targets destroyed
+
+- **RESET Command Auto-Select**:
+  - "reset say state" without CAP name finds nearest CAP station
+  - Works with both named and unnamed CAP stations
+  - Readback includes station name if available
+
+#### Voice Recognition Improvements
+- "trailer group" accepted as "trail group"
+- Better handling of common voice recognition errors
 
 ### Version 3.2 (January 2026)
 
@@ -546,7 +585,7 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
   - **Altitude (Angels)**: "Heat one one climb to angels two four" (24,000 ft)
   - **Altitude (Flight Level)**: "Heat one one climb to flight level two four zero" (24,000 ft)
   - **SET (Orbit at CAP)**: "Heat one one set Chargers" - sends asset to orbit at named CAP station
-  - **RESET (Re-orbit)**: "Heat one one reset Chargers" - same as SET
+  - **RESET (Re-orbit)**: "Heat one one reset Chargers" - same as SET, or "reset say state" to auto-select nearest CAP
   - **Say State**: Add "say state" to SET/RESET for fuel status response (e.g., "state green")
 
 - **Proper Radio Terminology**:
