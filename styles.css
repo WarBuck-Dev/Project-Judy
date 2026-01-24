@@ -1284,3 +1284,97 @@ select.input-field {
     color: #CCC;
     flex: 1;
 }
+
+/* Scenario Settings Modal */
+.scenario-settings-modal {
+    background: linear-gradient(135deg, rgba(0, 20, 0, 0.98), rgba(0, 40, 0, 0.95));
+    border: 2px solid #00FF00;
+    border-radius: 8px;
+    padding: 20px;
+    min-width: 400px;
+    box-shadow: 0 0 30px rgba(0, 255, 0, 0.3);
+}
+
+.scenario-settings-modal h2 {
+    color: #00FF00;
+    font-family: 'Orbitron', monospace;
+    font-size: 18px;
+    margin-bottom: 20px;
+    text-align: center;
+    text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+}
+
+.scenario-settings-modal h3 {
+    color: #00FF00;
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    margin: 15px 0 10px 0;
+}
+
+.settings-section {
+    margin-bottom: 20px;
+}
+
+.radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.radio-group label {
+    color: #00CC00;
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 8px 12px;
+    border: 1px solid #004400;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.radio-group label:hover {
+    border-color: #00FF00;
+    background: rgba(0, 255, 0, 0.1);
+}
+
+.radio-group label.selected {
+    border-color: #00FF00;
+    background: rgba(0, 255, 0, 0.2);
+    box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+}
+
+.radio-group input[type="radio"] {
+    margin-right: 10px;
+    accent-color: #00FF00;
+}
+
+.scenario-settings-modal input[type="text"],
+.scenario-settings-modal select {
+    width: 100%;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid #004400;
+    border-radius: 4px;
+    color: #00FF00;
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    box-sizing: border-box;
+}
+
+.scenario-settings-modal input[type="text"]:focus,
+.scenario-settings-modal select:focus {
+    border-color: #00FF00;
+    outline: none;
+    box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+}
+
+.scenario-settings-modal select option {
+    background: #001100;
+    color: #00FF00;
+}
+
+.settings-actions {
+    margin-top: 20px;
+    display: flex;
+    justify-content: center;
+}

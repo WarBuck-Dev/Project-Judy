@@ -1550,6 +1550,10 @@ function AICSimulator() {
     const [ownshipAirDefenseCallsign, setOwnshipAirDefenseCallsign] = useState('Tango'); // Tango, Uniform, or Victor
     const [ownshipSideNumber, setOwnshipSideNumber] = useState(''); // 3-digit code
 
+    // Scenario settings
+    const [warningWeaponStatus, setWarningWeaponStatus] = useState('yellow'); // 'white' | 'yellow' | 'red'
+    const [showScenarioSettings, setShowScenarioSettings] = useState(false);
+
     // Refs
     const svgRef = useRef(null);
     const physicsIntervalRef = useRef(null);
@@ -1769,6 +1773,20 @@ function AICSimulator() {
             'south grip': 'south group',
             'east grip': 'east group',
             'west grip': 'west group',
+            // AW (Alpha Whiskey) callsign mishearings
+            'alpha whisky': 'alpha whiskey',
+            'alpha whiskie': 'alpha whiskey',
+            'alfa whiskey': 'alpha whiskey',
+            'alfa whisky': 'alpha whiskey',
+            'apple whiskey': 'alpha whiskey',
+            'apple whisky': 'alpha whiskey',
+            // Check print variations
+            'checkprint': 'check print',
+            'check-print': 'check print',
+            'czech print': 'check print',
+            'czech-print': 'check print',
+            'checkpoint': 'check print',
+            'check point': 'check print',
         };
 
         // Apply tactical corrections
@@ -3102,6 +3120,77 @@ function AICSimulator() {
         console.log('[VOICE CMD] Normalized text:', text);
         console.log('[VOICE CMD] interceptState.phase:', interceptState.phase);
         console.log('========================================');
+
+        // ========================================================================
+        // AW CHECK PRINT: "AW, Tango, Track 6001, check print Line 1, Line 8, recommend hostile, over"
+        // Communication with Air Defense Warfare Commander for track identification
+        // This must be handled before regular callsign matching since AW is not a fighter callsign
+        // ========================================================================
+        const awMatch = text.match(/\b(?:aw|alpha\s*whiskey)\b/i);
+        const checkPrintMatch = text.match(/check\s*print/i);
+
+        if (awMatch && checkPrintMatch) {
+            // Parse track numbers - can be multiple formats:
+            // "track 6001, 6002, 6003" (comma-separated after single "track")
+            // "track 6001 track 6002" (repeated "track" keyword)
+            // "tracks 6001 6002" (plural with space-separated)
+
+            // Use matchAll to find all "track(s) NNNN" patterns
+            const trackMatches = [...text.matchAll(/tracks?\s*(\d+)/gi)];
+            const trackNumbers = trackMatches.map(m => {
+                const num = parseInt(m[1]);
+                // If 3 digits or less, pad to 4 digits (e.g., 601 → 0601)
+                return num.toString().padStart(4, '0');
+            });
+
+            // Parse check print lines
+            const line1 = /line\s*1\b/i.test(text);  // ES (Electronic Support)
+            const line8 = /line\s*8\b/i.test(text);  // No IFF
+            const line9 = /line\s*9\b/i.test(text);  // VID
+
+            if (trackNumbers.length > 0) {
+                // Determine identity based on warning weapon status and lines
+                let identity = 'unknown';
+
+                if (line1 && line8) {
+                    // Line 1 + Line 8: ES + No IFF
+                    if (warningWeaponStatus === 'white') {
+                        identity = 'bandit';
+                    } else {
+                        identity = 'hostile';
+                    }
+                } else if (line8 && !line1) {
+                    // Line 8 only: No IFF
+                    identity = 'unknown';
+                } else if (line9) {
+                    // Line 9: VID
+                    if (warningWeaponStatus === 'white') {
+                        identity = 'unknown';
+                    } else {
+                        identity = 'hostile';
+                    }
+                }
+
+                // Format track list for response
+                const trackList = trackNumbers.length === 1
+                    ? `track ${trackNumbers[0]}`
+                    : `tracks ${trackNumbers.join(', ')}`;
+
+                // Generate AW response
+                const awResponse = `${ownshipAirDefenseCallsign}, Alpha Whiskey, roger, make ${trackList} ${identity}, over.`;
+
+                // Log outgoing call (user to AW)
+                addToRadioLog(ownshipAirDefenseCallsign, transcript, 'outgoing');
+
+                // Speak and log AW response
+                setTimeout(() => {
+                    speakResponse(awResponse);
+                    addToRadioLog('Alpha Whiskey', awResponse, 'incoming');
+                }, 500);
+
+                return; // AW command handled, exit early
+            }
+        }
 
         // Check if this is a BROADCAST call (AIC uses their own callsign, not asset callsign)
         // Broadcast format: "Closeout, [N groups,] group ROCK 234/23, twenty-five thousand, track east hostile"
@@ -12087,6 +12176,23 @@ function AICSimulator() {
                         setShowPauseMenu(false);
                         setShowDebriefDialog(true);
                     }}
+                    onScenario={() => {
+                        setShowPauseMenu(false);
+                        setShowScenarioSettings(true);
+                    }}
+                />
+            )}
+
+            {/* Scenario Settings Dialog */}
+            {showScenarioSettings && (
+                <ScenarioSettings
+                    warningWeaponStatus={warningWeaponStatus}
+                    setWarningWeaponStatus={setWarningWeaponStatus}
+                    ownshipTacticalCallsign={ownshipTacticalCallsign}
+                    setOwnshipTacticalCallsign={setOwnshipTacticalCallsign}
+                    ownshipAirDefenseCallsign={ownshipAirDefenseCallsign}
+                    setOwnshipAirDefenseCallsign={setOwnshipAirDefenseCallsign}
+                    onClose={() => setShowScenarioSettings(false)}
                 />
             )}
 
@@ -18639,7 +18745,7 @@ function ThreatResult({ missedEvents }) {
     );
 }
 
-function PauseMenu({ onResume, onSave, onLoad, onControls, onSound, onMissionProducts, onDebrief }) {
+function PauseMenu({ onResume, onSave, onLoad, onControls, onSound, onMissionProducts, onDebrief, onScenario }) {
     return (
         <div className="modal-overlay">
             <div className="pause-menu">
@@ -18648,6 +18754,7 @@ function PauseMenu({ onResume, onSave, onLoad, onControls, onSound, onMissionPro
                     <button className="control-btn primary" onClick={onResume}>RESUME</button>
                     <button className="control-btn" onClick={onSave}>SAVE FILE</button>
                     <button className="control-btn" onClick={onLoad}>LOAD FILE</button>
+                    <button className="control-btn" onClick={onScenario}>SCENARIO</button>
                     <button className="control-btn" onClick={onMissionProducts}>MISSION PRODUCTS</button>
                     <button className="control-btn" onClick={onDebrief}>AIC DEBRIEF</button>
                     <button className="control-btn" onClick={onSound}>SOUND</button>
@@ -18660,6 +18767,95 @@ function PauseMenu({ onResume, onSave, onLoad, onControls, onSound, onMissionPro
                 </div>
             </div>
         </div>
+    );
+}
+
+// Scenario Settings Component
+function ScenarioSettings({
+    warningWeaponStatus, setWarningWeaponStatus,
+    ownshipTacticalCallsign, setOwnshipTacticalCallsign,
+    ownshipAirDefenseCallsign, setOwnshipAirDefenseCallsign,
+    onClose
+}) {
+    return React.createElement('div', { className: 'modal-overlay' },
+        React.createElement('div', { className: 'scenario-settings-modal' },
+            React.createElement('h2', null, 'SCENARIO SETTINGS'),
+
+            // Warning Weapon Status Section
+            React.createElement('div', { className: 'settings-section' },
+                React.createElement('h3', null, 'Warning Weapon Status'),
+                React.createElement('div', { className: 'radio-group' },
+                    React.createElement('label', {
+                        className: warningWeaponStatus === 'white' ? 'selected' : ''
+                    },
+                        React.createElement('input', {
+                            type: 'radio',
+                            name: 'wws',
+                            value: 'white',
+                            checked: warningWeaponStatus === 'white',
+                            onChange: (e) => setWarningWeaponStatus(e.target.value)
+                        }),
+                        'White / Safe'
+                    ),
+                    React.createElement('label', {
+                        className: warningWeaponStatus === 'yellow' ? 'selected' : ''
+                    },
+                        React.createElement('input', {
+                            type: 'radio',
+                            name: 'wws',
+                            value: 'yellow',
+                            checked: warningWeaponStatus === 'yellow',
+                            onChange: (e) => setWarningWeaponStatus(e.target.value)
+                        }),
+                        'Yellow / Tight'
+                    ),
+                    React.createElement('label', {
+                        className: warningWeaponStatus === 'red' ? 'selected' : ''
+                    },
+                        React.createElement('input', {
+                            type: 'radio',
+                            name: 'wws',
+                            value: 'red',
+                            checked: warningWeaponStatus === 'red',
+                            onChange: (e) => setWarningWeaponStatus(e.target.value)
+                        }),
+                        'Red / Tight'
+                    )
+                )
+            ),
+
+            // Tactical Callsign Section
+            React.createElement('div', { className: 'settings-section' },
+                React.createElement('h3', null, 'Ownship Tactical Callsign'),
+                React.createElement('input', {
+                    type: 'text',
+                    value: ownshipTacticalCallsign,
+                    onChange: (e) => setOwnshipTacticalCallsign(e.target.value),
+                    placeholder: 'Closeout'
+                })
+            ),
+
+            // Air Defense Callsign Section
+            React.createElement('div', { className: 'settings-section' },
+                React.createElement('h3', null, 'Air Defense Callsign'),
+                React.createElement('select', {
+                    value: ownshipAirDefenseCallsign,
+                    onChange: (e) => setOwnshipAirDefenseCallsign(e.target.value)
+                },
+                    React.createElement('option', { value: 'Tango' }, 'Tango'),
+                    React.createElement('option', { value: 'Uniform' }, 'Uniform'),
+                    React.createElement('option', { value: 'Victor' }, 'Victor')
+                )
+            ),
+
+            // Close Button
+            React.createElement('div', { className: 'settings-actions' },
+                React.createElement('button', {
+                    className: 'control-btn primary',
+                    onClick: onClose
+                }, 'CLOSE')
+            )
+        )
     );
 }
 
