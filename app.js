@@ -10467,7 +10467,7 @@ function AICSimulator() {
         const pos = latLonToScreen(track.lat, track.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
         const isSelected = track.id === selectedTrackId;
         const size = 12; // Consistent size for all tracks
-        const strokeWidth = 2;
+        const strokeWidth = 1;
 
         // Get underlying asset for heading
         const asset = assets.find(a => a.id === track.assetId);
@@ -10531,7 +10531,7 @@ function AICSimulator() {
                 {/* Heading line - show for all non-land tracks (including aged) using estimated heading */}
                 {track.domain !== 'land' && (
                     <line x1={pos.x} y1={pos.y} x2={headingX} y2={headingY}
-                          stroke={config.color} strokeWidth="2" />
+                          stroke={config.color} strokeWidth="1" />
                 )}
 
                 {/* Track symbol - MIL-STD-2525 symbology based on domain */}
@@ -10634,7 +10634,7 @@ function AICSimulator() {
                 {/* Student label above - only show if label exists */}
                 {track.label && (
                     <text x={pos.x} y={pos.y-size-5} fill={config.color} fontSize="10"
-                          textAnchor="middle" fontWeight="700">
+                          textAnchor="middle" fontWeight="400">
                         {track.label}
                     </text>
                 )}
@@ -10649,7 +10649,7 @@ function AICSimulator() {
                     if (track.trackNumber) {
                         labels.push(
                             <text key="tn" x={pos.x} y={currentY} fill={config.color} fontSize="10"
-                                  textAnchor="middle" fontWeight="700">
+                                  textAnchor="middle" fontWeight="400">
                                 TN#{track.trackNumber}
                             </text>
                         );
@@ -10660,7 +10660,7 @@ function AICSimulator() {
                     if (track.iffModeI) {
                         labels.push(
                             <text key="m1" x={pos.x} y={currentY} fill={config.color} fontSize="10"
-                                  textAnchor="middle" fontWeight="700">
+                                  textAnchor="middle" fontWeight="400">
                                 M1: {track.iffModeI}
                             </text>
                         );
@@ -10669,7 +10669,7 @@ function AICSimulator() {
                     if (track.iffModeII) {
                         labels.push(
                             <text key="m2" x={pos.x} y={currentY} fill={config.color} fontSize="10"
-                                  textAnchor="middle" fontWeight="700">
+                                  textAnchor="middle" fontWeight="400">
                                 M2: {track.iffModeII}
                             </text>
                         );
@@ -10678,7 +10678,7 @@ function AICSimulator() {
                     if (track.iffModeIII) {
                         labels.push(
                             <text key="m3" x={pos.x} y={currentY} fill={config.color} fontSize="10"
-                                  textAnchor="middle" fontWeight="700">
+                                  textAnchor="middle" fontWeight="400">
                                 M3: {track.iffModeIII}
                             </text>
                         );
@@ -10689,14 +10689,14 @@ function AICSimulator() {
                     if (asset && track.domain === 'air') {
                         labels.push(
                             <text key="alt" x={pos.x} y={currentY} fill={config.color} fontSize="10"
-                                  textAnchor="middle" fontWeight="700">
+                                  textAnchor="middle" fontWeight="400">
                                 ALT: FL{Math.round(asset.altitude/100)}
                             </text>
                         );
                     } else if (asset && track.domain === 'subSurface' && asset.depth !== null) {
                         labels.push(
                             <text key="depth" x={pos.x} y={currentY} fill={config.color} fontSize="10"
-                                  textAnchor="middle" fontWeight="700">
+                                  textAnchor="middle" fontWeight="400">
                                 DEPTH: {Math.round(asset.depth)}ft
                             </text>
                         );
