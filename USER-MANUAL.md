@@ -1,4 +1,4 @@
-# AIC Simulator User Manual
+# Project Judy User Manual
 
 **Version 3.4** | For AIC Trainees
 
@@ -24,9 +24,9 @@
 
 ## 1. Introduction & Getting Started
 
-### What is the AIC Simulator?
+### What is the Project Judy?
 
-The AIC Simulator is a web-based tactical training application for practicing Air Intercept Control procedures. It provides:
+The Project Judy is a web-based tactical training application for practicing Air Intercept Control procedures. It provides:
 
 - Realistic radar display with rotating sweep and return generation
 - Voice-activated fighter control with automated responses
@@ -49,7 +49,7 @@ The AIC Simulator is a web-based tactical training application for practicing Ai
 
 **Method 1: Start Server Script (Recommended)**
 
-1. Double-click `start-server.bat` in the AIC Simulator v2 folder
+1. Double-click `start-server.bat` in the Project Judy v2 folder
 2. The simulator opens automatically in your default browser
 3. Select **Instructor** or **Student** mode
 4. Click **PLAY** to start the simulation
@@ -819,7 +819,7 @@ Behaviors automate asset actions based on triggers.
 | Issue | Solution |
 |-------|----------|
 | Invalid file | Ensure file is valid JSON |
-| Wrong format | File must be from AIC Simulator |
+| Wrong format | File must be from Project Judy |
 | Corrupted data | Try different scenario |
 
 ### Map Display Issues
@@ -903,7 +903,7 @@ Behaviors automate asset actions based on triggers.
 
 ## Document Information
 
-**AIC Simulator Version:** 3.4
+**Project Judy Version:** 3.4
 **Manual Version:** 1.1
 **Last Updated:** February 2026
 

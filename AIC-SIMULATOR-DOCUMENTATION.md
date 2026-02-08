@@ -1,4 +1,4 @@
-# AIC Simulator - Requirements & Features Documentation
+# Project Judy - Requirements & Features Documentation
 
 **Air Intercept Control Simulator**
 Version 3.4
@@ -26,7 +26,7 @@ Last Updated: February 7, 2026
 
 ## Overview
 
-The AIC Simulator is a web-based tactical air intercept control training application designed to simulate real-time air operations in the Persian Gulf region. It provides instructors and students with a realistic radar scope interface for practicing air intercept control procedures.
+The Project Judy is a web-based tactical air intercept control training application designed to simulate real-time air operations in the Persian Gulf region. It provides instructors and students with a realistic radar scope interface for practicing air intercept control procedures.
 
 ### Purpose
 - Train Air Intercept Controllers (AICs)
@@ -1162,7 +1162,7 @@ Mission Products allows users to attach documents and files to scenarios for mis
 **Application Version**: 3.4
 **Created**: December 30, 2025
 **Last Updated**: February 7, 2026
-**Author**: AIC Simulator Development Team
+**Author**: Project Judy Development Team
 **Status**: Production
 
 ---

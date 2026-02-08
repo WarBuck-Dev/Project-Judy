@@ -1,4 +1,4 @@
-# AIC Simulator - Air Intercept Control Training
+# Project Judy - Air Intercept Control Training
 
 A web-based tactical air intercept control training application designed for military aviation students to practice real-time air operations in the Persian Gulf region.
 
@@ -6,7 +6,7 @@ A web-based tactical air intercept control training application designed for mil
 
 ### Option 1: Using the Start Server Script (Recommended)
 
-1. **Double-click** `start-server.bat` in the AIC Simulator v2 folder
+1. **Double-click** `start-server.bat` in the Project Judy v2 folder
 2. The simulator will automatically open in your default browser
 3. Start creating scenarios by clicking "+ ADD ASSET" or right-clicking on the map
 4. Click "PLAY" to start the physics simulation
@@ -464,7 +464,7 @@ Shapes use the same color coding as assets and geo-points:
 
 ### Scenario won't load
 - Ensure file is valid JSON format
-- Check file was saved from AIC Simulator
+- Check file was saved from Project Judy
 - Try loading a different scenario to test
 
 ### Map is blank

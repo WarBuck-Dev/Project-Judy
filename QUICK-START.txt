@@ -1,5 +1,5 @@
 ================================================================================
-AIC SIMULATOR - QUICK START GUIDE
+PROJECT JUDY - QUICK START GUIDE
 ================================================================================
 
 IMPORTANT: You encountered a CORS error because browsers don't allow loading

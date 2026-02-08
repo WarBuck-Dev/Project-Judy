@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo AIC Simulator - Starting Local Server
+echo Project Judy - Starting Local Server
 echo ========================================
 echo.
 echo The simulator will open in your default browser.

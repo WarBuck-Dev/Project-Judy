@@ -1,4 +1,4 @@
-# AIC Simulator - Visual Style Updates
+# Project Judy - Visual Style Updates
 
 ## Overview
 Updated the simulator's visual design to match a premium military-grade radar interface aesthetic with clean tactical display, refined typography, and polished UI elements.
