@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Console</title>
+</head>
+<body>
+    <h1>Check Browser Console for Errors</h1>
+    <p>Open Project Judy in another tab and check for error messages.</p>
+    <script>
+        console.log('Debug helper loaded. Check the simulator for errors.');
+
+        // Clear localStorage for testing
+        function clearSimulatorStorage() {
+            const keys = Object.keys(localStorage);
+            const aicKeys = keys.filter(k => k.startsWith('aic-scenario-'));
+            console.log('Found scenarios in localStorage:', aicKeys);
+
+            if (confirm('Clear all saved scenarios? This will help test if localStorage is causing crashes.')) {
+                aicKeys.forEach(key => {
+                    console.log('Removing:', key);
+                    localStorage.removeItem(key);
+                });
+                alert('Cleared ' + aicKeys.length + ' scenarios. Reload the simulator.');
+            }
+        }
+
+        console.log('Type clearSimulatorStorage() to clear saved scenarios');
+    </script>
+</body>
+</html>

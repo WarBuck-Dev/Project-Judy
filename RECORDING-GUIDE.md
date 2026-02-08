@@ -1,4 +1,4 @@
-# AIC Simulator - Recording Guide
+# Project Judy - Recording Guide
 
 ## Audio Recording Fix
 
@@ -15,7 +15,7 @@ When the screen sharing dialog appears, you'll see options:
 
 #### **Chrome Tab** (Recommended)
 - ✅ Select "Chrome Tab"
-- ✅ Choose the AIC Simulator tab
+- ✅ Choose the Project Judy tab
 - ✅ **IMPORTANT**: Check the box "Share tab audio" at the bottom
 - ✅ Click "Share"
 

@@ -9165,8 +9165,46 @@ function AICSimulator() {
     const handleWheel = useCallback((e) => {
         e.preventDefault();
         const delta = e.deltaY > 0 ? 10 : -10;
-        setScale(prev => Math.max(MIN_SCALE, Math.min(MAX_SCALE, prev + delta)));
-    }, []);
+
+        // Zoom toward cursor position
+        const svg = svgRef.current;
+        if (svg) {
+            const rect = svg.getBoundingClientRect();
+            const cursorX = e.clientX - rect.left;
+            const cursorY = e.clientY - rect.top;
+            const width = rect.width;
+            const height = rect.height;
+
+            setScale(prevScale => {
+                const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, prevScale + delta));
+                if (newScale === prevScale) return prevScale;
+
+                // Get the lat/lon under the cursor at the old scale
+                const cursorLatLon = screenToLatLon(cursorX, cursorY, mapCenter.lat, mapCenter.lon, prevScale, width, height);
+
+                // Calculate where that lat/lon would appear on screen at the new scale
+                const newScreenPos = latLonToScreen(cursorLatLon.lat, cursorLatLon.lon, mapCenter.lat, mapCenter.lon, newScale, width, height);
+
+                // Calculate the pixel offset between cursor and where the point moved to
+                const offsetX = cursorX - newScreenPos.x;
+                const offsetY = cursorY - newScreenPos.y;
+
+                // Convert pixel offset to a map center adjustment
+                const pixelsPerNM = Math.min(width, height) / newScale;
+                const offsetNMx = offsetX / pixelsPerNM;
+                const offsetNMy = offsetY / pixelsPerNM;
+
+                // Shift the map center so the cursor point stays in place
+                const newCenterLat = mapCenter.lat + (offsetNMy / 60);
+                const newCenterLon = mapCenter.lon - (offsetNMx / (60 * Math.cos(mapCenter.lat * Math.PI / 180)));
+
+                setMapCenter({ lat: newCenterLat, lon: newCenterLon });
+                return newScale;
+            });
+        } else {
+            setScale(prev => Math.max(MIN_SCALE, Math.min(MAX_SCALE, prev + delta)));
+        }
+    }, [mapCenter]);
 
     // ========================================================================
     // KEYBOARD HANDLERS
@@ -10048,7 +10086,7 @@ function AICSimulator() {
         const pos = latLonToScreen(asset.lat, asset.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
         const isSelected = asset.id === selectedAssetId;
         const size = 12; // Consistent size for all assets
-        const strokeWidth = 2;
+        const strokeWidth = 1;
 
         // INSTRUCTOR MODE: Use grey color for hidden assets to indicate they're not visible to students
         const assetColor = (simulatorMode === 'instructor' && asset.hidden && asset.type !== 'ownship')
@@ -10113,7 +10151,7 @@ function AICSimulator() {
                 {/* Heading line - hide for land domain (stationary) */}
                 {asset.domain !== 'land' && (
                     <line x1={pos.x} y1={pos.y} x2={headingX} y2={headingY}
-                          stroke={assetColor} strokeWidth="2" />
+                          stroke={assetColor} strokeWidth="1" />
                 )}
 
                 {/* Asset symbol - MIL-STD-2525 symbology based on domain */}
@@ -10244,7 +10282,7 @@ function AICSimulator() {
 
                 {/* Name label above */}
                 <text x={pos.x} y={pos.y-size-5} fill={assetColor} fontSize="10"
-                      textAnchor="middle" fontWeight="700">
+                      textAnchor="middle" fontWeight="400">
                     {asset.name}
                 </text>
 
@@ -10304,7 +10342,7 @@ function AICSimulator() {
                     if (asset.trackNumber) {
                         labels.push(
                             <text key="tn" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
-                                  textAnchor="middle" fontWeight="700">
+                                  textAnchor="middle" fontWeight="400">
                                 TN#{asset.trackNumber}
                             </text>
                         );
@@ -10316,7 +10354,7 @@ function AICSimulator() {
                         if (asset.iffModeI) {
                             labels.push(
                                 <text key="m1" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
-                                      textAnchor="middle" fontWeight="700">
+                                      textAnchor="middle" fontWeight="400">
                                     M1: {asset.iffModeI}
                                 </text>
                             );
@@ -10325,7 +10363,7 @@ function AICSimulator() {
                         if (asset.iffModeII) {
                             labels.push(
                                 <text key="m2" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
-                                      textAnchor="middle" fontWeight="700">
+                                      textAnchor="middle" fontWeight="400">
                                     M2: {asset.iffModeII}
                                 </text>
                             );
@@ -10334,7 +10372,7 @@ function AICSimulator() {
                         if (asset.iffModeIII) {
                             labels.push(
                                 <text key="m3" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
-                                      textAnchor="middle" fontWeight="700">
+                                      textAnchor="middle" fontWeight="400">
                                     M3: {asset.iffModeIII}
                                 </text>
                             );
@@ -10346,14 +10384,14 @@ function AICSimulator() {
                     if (asset.domain === 'air') {
                         labels.push(
                             <text key="alt" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
-                                  textAnchor="middle" fontWeight="700">
+                                  textAnchor="middle" fontWeight="400">
                                 ALT: FL{Math.round(asset.altitude/100)}
                             </text>
                         );
                     } else if (asset.domain === 'subSurface' && asset.depth !== null) {
                         labels.push(
                             <text key="depth" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
-                                  textAnchor="middle" fontWeight="700">
+                                  textAnchor="middle" fontWeight="400">
                                 DEPTH: {Math.round(asset.depth)}ft
                             </text>
                         );
@@ -10956,7 +10994,7 @@ function AICSimulator() {
                             r={8}
                             fill="none"
                             stroke={identityColor}
-                            strokeWidth="2"
+                            strokeWidth="1"
                         />
                         <line
                             x1={pos.x - 12}
@@ -10964,7 +11002,7 @@ function AICSimulator() {
                             x2={pos.x + 12}
                             y2={pos.y}
                             stroke={identityColor}
-                            strokeWidth="2"
+                            strokeWidth="1"
                         />
                         <line
                             x1={pos.x}
@@ -10972,7 +11010,7 @@ function AICSimulator() {
                             x2={pos.x}
                             y2={pos.y + 12}
                             stroke={identityColor}
-                            strokeWidth="2"
+                            strokeWidth="1"
                         />
                     </g>
                 ) : config.icon === 'airfield' ? (
@@ -10984,7 +11022,7 @@ function AICSimulator() {
                             x2={pos.x + 2}
                             y2={pos.y - 8}
                             stroke={identityColor}
-                            strokeWidth="2"
+                            strokeWidth="1"
                         />
                         <line
                             x1={pos.x - 2}
@@ -10992,7 +11030,7 @@ function AICSimulator() {
                             x2={pos.x + 10}
                             y2={pos.y - 8}
                             stroke={identityColor}
-                            strokeWidth="2"
+                            strokeWidth="1"
                         />
                         <line
                             x1={pos.x - 10}
@@ -11000,7 +11038,7 @@ function AICSimulator() {
                             x2={pos.x + 10}
                             y2={pos.y}
                             stroke={identityColor}
-                            strokeWidth="2"
+                            strokeWidth="1"
                         />
                     </g>
                 ) : config.icon === 'samsite' ? (
@@ -11012,7 +11050,7 @@ function AICSimulator() {
                             x2={pos.x}
                             y2={pos.y - 8}
                             stroke={identityColor}
-                            strokeWidth="2"
+                            strokeWidth="1"
                         />
                         <line
                             x1={pos.x - 10}
@@ -11020,7 +11058,7 @@ function AICSimulator() {
                             x2={pos.x + 8}
                             y2={pos.y + 8}
                             stroke={identityColor}
-                            strokeWidth="2"
+                            strokeWidth="1"
                         />
                     </g>
                 ) : config.icon === 'mark' ? (
@@ -11033,7 +11071,7 @@ function AICSimulator() {
                             height="12"
                             fill="none"
                             stroke={identityColor}
-                            strokeWidth="2"
+                            strokeWidth="1"
                         />
                         <circle
                             cx={pos.x}
@@ -11047,7 +11085,7 @@ function AICSimulator() {
                             x2={pos.x - 10}
                             y2={pos.y - 10}
                             stroke={identityColor}
-                            strokeWidth="2"
+                            strokeWidth="1"
                         />
                         <line
                             x1={pos.x + 10}
@@ -11055,7 +11093,7 @@ function AICSimulator() {
                             x2={pos.x + 10}
                             y2={pos.y - 10}
                             stroke={identityColor}
-                            strokeWidth="2"
+                            strokeWidth="1"
                         />
                         <line
                             x1={pos.x - 10}
@@ -11063,7 +11101,7 @@ function AICSimulator() {
                             x2={pos.x - 10}
                             y2={pos.y + 10}
                             stroke={identityColor}
-                            strokeWidth="2"
+                            strokeWidth="1"
                         />
                         <line
                             x1={pos.x + 10}
@@ -11071,7 +11109,7 @@ function AICSimulator() {
                             x2={pos.x + 10}
                             y2={pos.y + 10}
                             stroke={identityColor}
-                            strokeWidth="2"
+                            strokeWidth="1"
                         />
                     </g>
                 ) : (
@@ -11095,7 +11133,7 @@ function AICSimulator() {
                     fill={identityColor}
                     fontSize="10"
                     textAnchor="middle"
-                    fontWeight="700"
+                    fontWeight="400"
                 >
                     {geoPoint.name}
                 </text>
@@ -12621,7 +12659,7 @@ function ControlPanel({
 
     return (
         <div className="control-panel">
-            <h1>AIC SIMULATOR</h1>
+            <h1>PROJECT JUDY</h1>
 
             {/* Mode Toggle - Always visible for switching between modes */}
             <div className="control-section">
