@@ -1,8 +1,8 @@
 # AIC Simulator - Requirements & Features Documentation
 
 **Air Intercept Control Simulator**
-Version 3.2
-Last Updated: January 17, 2026
+Version 3.4
+Last Updated: February 7, 2026
 
 ---
 
@@ -1158,10 +1158,10 @@ Mission Products allows users to attach documents and files to scenarios for mis
 
 ## Document Metadata
 
-**Document Version**: 3.1
-**Application Version**: 3.1
+**Document Version**: 3.4
+**Application Version**: 3.4
 **Created**: December 30, 2025
-**Last Updated**: January 16, 2026
+**Last Updated**: February 7, 2026
 **Author**: AIC Simulator Development Team
 **Status**: Production
 

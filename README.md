@@ -485,11 +485,40 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 3.3
-**Last Updated**: January 22, 2026
+**Version**: 3.4
+**Last Updated**: February 7, 2026
 **Status**: Production Ready
 
 ## Recent Updates
+
+### Version 3.4 (February 2026)
+
+#### AW (Alpha Whiskey) Communication System
+- **Check Print Voice Command**: Request track identification from Air Defense Warfare Commander
+  - Format: "Alpha Whiskey, [callsign], Track [number], check print Line [1/8/9], recommend hostile, over"
+  - Supports multiple tracks: "Track 6001, Track 6002" or "Tracks 6001, 6002"
+  - Check Print Lines:
+    - **Line 1**: Electronic Support (ES) - radar emissions detected
+    - **Line 8**: No IFF - target not squawking
+    - **Line 9**: VID - visual identification
+  - AW responds with identity assignment based on Warning Weapon Status
+
+- **Warning Weapon Status (WWS) Identity Rules**:
+  | WWS Status | Line 1 + Line 8 (ES + No IFF) | Line 8 Only (No IFF) | Line 9 (VID) |
+  |------------|-------------------------------|---------------------|--------------|
+  | White/Safe | Bandit | Unknown | Unknown |
+  | Yellow/Tight | Hostile | Unknown | Hostile |
+  | Red/Tight | Hostile | Unknown | Hostile |
+
+- **Scenario Settings** (Pause Menu → SCENARIO):
+  - Warning Weapon Status selector (White/Safe, Yellow/Tight, Red/Tight)
+  - Ownship Tactical Callsign text input
+  - Air Defense Callsign dropdown (Tango, Uniform, Victor)
+
+- **Voice Recognition Improvements**:
+  - "apple whiskey" → "alpha whiskey" normalization
+  - "checkpoint" / "check point" → "check print" normalization
+  - Multiple track number parsing with repeated "track" keyword
 
 ### Version 3.3 (January 2026)
 

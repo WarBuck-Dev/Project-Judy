@@ -1,6 +1,6 @@
 # AIC Simulator User Manual
 
-**Version 3.2** | For AIC Trainees
+**Version 3.4** | For AIC Trainees
 
 ---
 
@@ -903,9 +903,9 @@ Behaviors automate asset actions based on triggers.
 
 ## Document Information
 
-**AIC Simulator Version:** 3.2
-**Manual Version:** 1.0
-**Last Updated:** January 2026
+**AIC Simulator Version:** 3.4
+**Manual Version:** 1.1
+**Last Updated:** February 2026
 
 For additional support, refer to:
 - `README.md` - Technical overview and version history
