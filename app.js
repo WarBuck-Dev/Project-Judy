@@ -9724,10 +9724,13 @@ function AICSimulator() {
                         strokeDasharray="4,4"
                     />
                 )}
+                {/* Circle */}
                 <circle cx={pos.x} cy={pos.y} r={8} fill="none" stroke="#00FF00" strokeWidth="2" />
-                <line x1={pos.x-12} y1={pos.y} x2={pos.x+12} y2={pos.y} stroke="#00FF00" strokeWidth="2" />
-                <line x1={pos.x} y1={pos.y-12} x2={pos.x} y2={pos.y+12} stroke="#00FF00" strokeWidth="2" />
-                <text x={pos.x} y={pos.y-15} fill="#00FF00" fontSize="10" textAnchor="middle" fontWeight="700">{displayName}</text>
+                {/* Flag pole from top of circle */}
+                <line x1={pos.x} y1={pos.y-8} x2={pos.x} y2={pos.y-26} stroke="#00FF00" strokeWidth="2" />
+                {/* Flag pennant */}
+                <path d={`M ${pos.x} ${pos.y-26} L ${pos.x+12} ${pos.y-21} L ${pos.x} ${pos.y-16} Z`} fill="none" stroke="#00FF00" strokeWidth="2" />
+                <text x={pos.x} y={pos.y+20} fill="#00FF00" fontSize="10" textAnchor="middle" fontWeight="700">{displayName}</text>
             </g>
         );
     };
