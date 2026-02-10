@@ -1396,6 +1396,7 @@ function AICSimulator() {
             vidCalled2nm: false,   // Has called "V-I-D group, group NATO name" at 2nm
             // AIC Training Mode - range-triggered call flags
             declareCalled28nm: false,  // Has fighter called "declare group" at 28nm
+            declareResponseReceived: false, // Has AIC responded to the declare call
             fox3Called25nm: false,     // Has fighter called "fox-3 group" at 25nm
             // Two-ship engagement tracking
             twoShipEngagement: false,      // True if engaged a two-contact group
@@ -1445,6 +1446,7 @@ function AICSimulator() {
     const [radarControlsSelected, setRadarControlsSelected] = useState(false);
     const [radarReturns, setRadarReturns] = useState([]);
     const radarSweepAngleRef = useRef(0); // Current radar sweep angle in degrees (ref to avoid 60Hz re-renders)
+    const restartingRef = useRef(false); // Guard to prevent effects from re-introducing stale data during restart
     const [radarEnabled, setRadarEnabled] = useState(true); // Radar ON/OFF state
     const [radarSweepOpacity, setRadarSweepOpacity] = useState(0.12); // Radar sweep opacity (0-1) - default 12%
     const [radarReturnDecay, setRadarReturnDecay] = useState(11); // Radar return decay time in seconds - default 11s
@@ -2046,9 +2048,10 @@ function AICSimulator() {
         const hasSouth = /south\s*group/i.test(transcript);
         const hasEast = /east\s*group/i.test(transcript);
         const hasWest = /west\s*group/i.test(transcript);
+        const hasMiddle = /middle\s*group/i.test(transcript);
 
         // Count how many group labels were mentioned
-        const groupLabelsCount = [hasLead, hasTrail, hasNorth, hasSouth, hasEast, hasWest].filter(Boolean).length;
+        const groupLabelsCount = [hasLead, hasTrail, hasNorth, hasSouth, hasEast, hasWest, hasMiddle].filter(Boolean).length;
 
         // Determine picture type from transcript if not provided
         let detectedType = pictureType?.toLowerCase();
@@ -3505,6 +3508,7 @@ function AICSimulator() {
                     targetGroupName: null,
                     fox3Called25nm: false,
                     declareCalled28nm: false,
+                    declareResponseReceived: false,
                     engageAttempted: false
                 });
 
@@ -3710,6 +3714,7 @@ function AICSimulator() {
                             vidCalled20nm: false, // Reset VID state for new intercept
                             vidCalled2nm: false,
                             declareCalled28nm: false, // Reset AIC training flags for new intercept
+                            declareResponseReceived: false,
                             fox3Called25nm: false
                         });
 
@@ -3802,6 +3807,7 @@ function AICSimulator() {
                         vidCalled20nm: false,
                         vidCalled2nm: false,
                         declareCalled28nm: false, // Reset AIC training flags for new intercept
+                        declareResponseReceived: false,
                         fox3Called25nm: false,
                         isOrbiting: false, // Break out of CAP orbit
                         waypoints: nonOrbitWaypoints // Clear orbit waypoints
@@ -4003,6 +4009,57 @@ function AICSimulator() {
                 }
             }
 
+            // TACTICAL DOCTRINE: Reassign priorities for 3-group formations
+            // Priority 1 (initial target) is already correctly set above.
+            // This fixes the 2nd and 3rd targeting order based on formation type.
+            if (newGroups.length === 3) {
+                if (detectedPictureType === 'wall') {
+                    // Wall: outer → middle → other outer
+                    const middleIdx = newGroups.findIndex(g => g.name.toLowerCase().includes('middle'));
+                    if (middleIdx >= 0 && middleIdx !== 1) {
+                        const [middleGroup] = newGroups.splice(middleIdx, 1);
+                        newGroups.splice(1, 0, middleGroup);
+                        newGroups.forEach((g, i) => g.priority = i + 1);
+                    }
+                } else if (detectedPictureType === 'ladder') {
+                    // Ladder: lead → middle → trail (fixed order)
+                    const leadIdx = newGroups.findIndex(g => g.name.toLowerCase().includes('lead'));
+                    const middleIdx = newGroups.findIndex(g => g.name.toLowerCase().includes('middle'));
+                    const trailIdx = newGroups.findIndex(g => g.name.toLowerCase().includes('trail'));
+                    if (leadIdx >= 0 && middleIdx >= 0 && trailIdx >= 0) {
+                        const reordered = [newGroups[leadIdx], newGroups[middleIdx], newGroups[trailIdx]];
+                        reordered.forEach((g, i) => g.priority = i + 1);
+                        newGroups.length = 0;
+                        newGroups.push(...reordered);
+                    }
+                } else if (detectedPictureType === 'vic') {
+                    // Vic: lead → closest trail → farthest trail
+                    const trailGroups = newGroups.filter((g, i) => i !== 0);
+                    if (trailGroups.length === 2 && targetAsset) {
+                        const withDist = trailGroups.map(g => {
+                            const groupAsset = g.assetId ? assets.find(a => a.id === g.assetId) : null;
+                            const dist = groupAsset ? calculateDistance(targetAsset.lat, targetAsset.lon, groupAsset.lat, groupAsset.lon) : Infinity;
+                            return { group: g, dist };
+                        });
+                        withDist.sort((a, b) => a.dist - b.dist);
+                        newGroups[1] = withDist[0].group;
+                        newGroups[2] = withDist[1].group;
+                        newGroups.forEach((g, i) => g.priority = i + 1);
+                    }
+                } else if (detectedPictureType === 'champagne') {
+                    // Champagne: first lead → other lead → trail (trail always last)
+                    const trailIdx = newGroups.findIndex(g => {
+                        const name = g.name.toLowerCase();
+                        return name.includes('trail') && !name.includes('lead');
+                    });
+                    if (trailIdx >= 0 && trailIdx !== 2) {
+                        const [trailGroup] = newGroups.splice(trailIdx, 1);
+                        newGroups.push(trailGroup);
+                        newGroups.forEach((g, i) => g.priority = i + 1);
+                    }
+                }
+            }
+
             console.log('[LABELED PICTURE] Created groups:', newGroups);
 
             setInterceptState(prev => ({
@@ -4161,10 +4218,60 @@ function AICSimulator() {
         console.log('[HANDLER DEBUG] DECLARE check - declareResponseMatch:', declareResponseMatch, 'isVanishedCall:', isVanishedCall, 'isNewPictureCall:', isNewPictureCall, 'commandExecuted:', commandExecuted, 'isIntercepting:', isIntercepting, 'isActiveInterceptScenario:', isActiveInterceptScenario);
         if (!commandExecuted && declareResponseMatch && isNotCommit && !isVanishedCall && !isNewPictureCall && (interceptState.phase === 'engagement' || isIntercepting || isActiveInterceptScenario)) {
             console.log('[HANDLER DEBUG] >>> DECLARE handler ENTERED - setting commandExecuted=true');
-            const response = generateFighterReadback(targetAsset.name);
-            speakResponse(response);
-            addToRadioLog(targetAsset.name, response, 'incoming');
-            commandExecuted = true;
+
+            // RE-DECLARATION: If fighter has non-hostile declaration and AIC declares hostile,
+            // upgrade the declaration so fighter can engage with FOX-3
+            // Format: "Closeout, [Group] Rock [brg]/[rng], [alt] track [dir] Hostile"
+            if (targetAsset && targetAsset.targetedAssetId &&
+                targetAsset.targetDeclaration !== 'hostile' &&
+                (text.includes('hostile') || text.includes('hostel') || text.includes('hostil')) &&
+                (targetAsset.targetingState === 'intercepting' || targetAsset.targetingState === 'escorting')) {
+
+                const anchor = parseBullseyeAnchor(text);
+                if (anchor) {
+                    const groupName = targetAsset.targetGroupName || 'group';
+
+                    // Correlate the anchored position with the target asset
+                    const anchoredTarget = findAssetByBullseyeAnchor(
+                        anchor.bearing, anchor.range,
+                        anchor.altitude ? anchor.altitude / 1000 : null
+                    );
+
+                    // Update fighter: switch declaration to hostile and re-enter intercept
+                    updateAsset(targetAsset.id, {
+                        targetDeclaration: 'hostile',
+                        targetingState: 'intercepting',
+                        targetedAssetId: anchoredTarget ? anchoredTarget.id : targetAsset.targetedAssetId,
+                        fox3Called25nm: false,
+                        declareCalled28nm: false,
+                        declareResponseReceived: false
+                    });
+
+                    // Fighter acknowledges re-declaration with callsign
+                    const ackCall = `${formatCallsignForRadio(targetAsset.name)}`;
+                    speakResponse(ackCall);
+                    addToRadioLog(targetAsset.name, ackCall, 'incoming');
+
+                    console.log(`[RE-DECLARE] Fighter ${targetAsset.name} declaration upgraded to hostile for ${groupName}`);
+                    commandExecuted = true;
+                } else {
+                    // No anchor found, just acknowledge normally
+                    const response = generateFighterReadback(targetAsset.name);
+                    speakResponse(response);
+                    addToRadioLog(targetAsset.name, response, 'incoming');
+                    commandExecuted = true;
+                }
+            } else {
+                // Normal declare response - just acknowledge
+                // Set declareResponseReceived so fighter can proceed with FOX-3
+                if (targetAsset) {
+                    updateAsset(targetAsset.id, { declareResponseReceived: true });
+                }
+                const response = generateFighterReadback(targetAsset.name);
+                speakResponse(response);
+                addToRadioLog(targetAsset.name, response, 'incoming');
+                commandExecuted = true;
+            }
         }
 
         // SEPARATION RESPONSE: "Closeout, South Group separation 10, twenty-five thousand, track west, hostile"
@@ -4299,6 +4406,7 @@ function AICSimulator() {
                         targetingState: 'intercepting',
                         targetDeclaration: retargetDeclaration, // Set declaration for fox-3 logic
                         declareCalled28nm: true,  // Skip declare for retarget (already engaged)
+                        declareResponseReceived: true, // Skip declare response wait for retarget (already engaged)
                         fox3Called25nm: false,    // Allow fox-3 for new target
                         retargetDelayUntil: retargetDelayUntil  // Delay before engaging next target
                     });
@@ -5238,7 +5346,7 @@ function AICSimulator() {
                         // Check if within engagement range (25 NM) and HOSTILE
                         // Also check retargetDelayUntil - wait before engaging after retarget (clearing the merge)
                         const canEngage = !asset.retargetDelayUntil || Date.now() >= asset.retargetDelayUntil;
-                        if (distanceToTarget <= 25 && asset.targetDeclaration === 'hostile' && canEngage) {
+                        if (distanceToTarget <= 25 && asset.targetDeclaration === 'hostile' && canEngage && asset.declareResponseReceived) {
                             // Clear the delay flag once we're past it
                             if (asset.retargetDelayUntil) {
                                 updated.retargetDelayUntil = null;
@@ -5360,6 +5468,7 @@ function AICSimulator() {
                             updated.vidCalled20nm = false;
                             updated.vidCalled2nm = false;
                             updated.declareCalled28nm = false;
+                            updated.declareResponseReceived = false;
                             updated.fox3Called25nm = false;
                         }
                     }
@@ -5404,6 +5513,7 @@ function AICSimulator() {
                     updated.vidCalled20nm = false;
                     updated.vidCalled2nm = false;
                     updated.declareCalled28nm = false;
+                    updated.declareResponseReceived = false;
                     updated.fox3Called25nm = false;
                 }
             }
@@ -6264,7 +6374,7 @@ function AICSimulator() {
 
     // Radar return generation - create returns when sweep passes over assets
     useEffect(() => {
-        if (isRunning && radarEnabled) {
+        if (isRunning && radarEnabled && !restartingRef.current) {
             const ownship = assets.find(a => a.type === 'ownship');
             if (!ownship) return;
 
@@ -6319,44 +6429,29 @@ function AICSimulator() {
                         id: `${asset.id}-${missionTime}-${Math.random()}`
                     });
 
-                    // STUDENT MODE: Increment detection count and auto-create tracks (once per sweep rotation)
-                    if (simulatorMode === 'student') {
-                        // Initialize threshold if not set
-                        let currentThresholds = { ...detectionThresholds };
-                        if (!currentThresholds[asset.id]) {
-                            const newThreshold = 2 + Math.floor(Math.random() * 2); // Random 2-3
-                            currentThresholds[asset.id] = newThreshold;
-                            setDetectionThresholds(currentThresholds);
-                            console.log(`[Student Mode] Asset ${asset.id} (${asset.name}) - Set threshold: ${newThreshold}`);
-                        }
+                    // Increment detection count for track building (counts in ALL modes)
+                    let currentThresholds = { ...detectionThresholds };
+                    if (!currentThresholds[asset.id]) {
+                        const newThreshold = 2 + Math.floor(Math.random() * 2); // Random 2-3
+                        currentThresholds[asset.id] = newThreshold;
+                        setDetectionThresholds(currentThresholds);
+                    }
 
-                        // This code only executes when the sweep crosses the asset's bearing (once per rotation)
-                        // So we can safely increment on every execution
-                        const lastMissionTime = lastDetectionSweepAngle[asset.id];
+                    const lastMissionTime = lastDetectionSweepAngle[asset.id];
+                    const shouldIncrement = !lastMissionTime || (missionTime - lastMissionTime) >= 5;
 
-                        // Only increment if enough time has passed since last detection (prevent double-counting)
-                        // A full 360° sweep takes 10 seconds, so require at least 5 seconds between counts
-                        const shouldIncrement = !lastMissionTime || (missionTime - lastMissionTime) >= 5;
+                    if (shouldIncrement) {
+                        const currentCount = radarDetectionCounts[asset.id] || 0;
+                        const newCount = currentCount + 1;
+                        const threshold = currentThresholds[asset.id];
 
-                        if (shouldIncrement) {
-                            // Increment detection count
-                            const currentCount = radarDetectionCounts[asset.id] || 0;
-                            const newCount = currentCount + 1;
-                            const threshold = currentThresholds[asset.id];
+                        setRadarDetectionCounts(prev => ({ ...prev, [asset.id]: newCount }));
+                        setLastDetectionSweepAngle(prev => ({ ...prev, [asset.id]: missionTime }));
 
-                            // Update detection count and last detection time
-                            setRadarDetectionCounts(prev => ({ ...prev, [asset.id]: newCount }));
-                            setLastDetectionSweepAngle(prev => ({ ...prev, [asset.id]: missionTime }));
-
-                            // Create student track when threshold is reached (only if trackFileEnabled)
-                            if (newCount >= threshold && !studentTracks.find(t => t.assetId === asset.id)) {
-                                // Check if trackFileEnabled is true (default to true for backward compatibility)
-                                if (asset.trackFileEnabled !== false) {
-                                    console.log(`[Student Mode] Asset ${asset.id} (${asset.name}) - Creating track (${threshold} sweeps completed)`);
-                                    createStudentTrack(asset);
-                                } else {
-                                    console.log(`[Student Mode] Asset ${asset.id} (${asset.name}) - Track file disabled, no track created`);
-                                }
+                        // STUDENT MODE ONLY: Create track when threshold reached
+                        if (simulatorMode === 'student' && newCount >= threshold && !studentTracks.find(t => t.assetId === asset.id)) {
+                            if (asset.trackFileEnabled !== false) {
+                                createStudentTrack(asset);
                             }
                         }
                     }
@@ -6511,7 +6606,7 @@ function AICSimulator() {
 
     // IFF return generation - create returns when sweep passes over squawking assets
     useEffect(() => {
-        if (isRunning && iffEnabled) {
+        if (isRunning && iffEnabled && !restartingRef.current) {
             const ownship = assets.find(a => a.type === 'ownship');
             if (!ownship) return;
 
@@ -7172,6 +7267,7 @@ function AICSimulator() {
             vidCalled2nm: false,   // Has called "V-I-D group, group NATO name" at 2nm
             // AIC Training Mode - range-triggered call flags
             declareCalled28nm: false,  // Has fighter called "declare group" at 28nm
+            declareResponseReceived: false, // Has AIC responded to the declare call
             fox3Called25nm: false      // Has fighter called "fox-3 group" at 25nm
         };
 
@@ -7362,6 +7458,12 @@ function AICSimulator() {
 
         if (!firingAsset || !targetAsset) {
             console.warn('Missing firing asset or target asset');
+            return;
+        }
+
+        // Prevent assets from targeting themselves
+        if (firingAssetId === targetAssetId) {
+            console.warn('Cannot fire weapon at self');
             return;
         }
 
@@ -8435,7 +8537,9 @@ function AICSimulator() {
                 nextShapeId: saveData.nextShapeId || 1,
                 sonobuoys: JSON.parse(JSON.stringify(saveData.sonobuoys || [])),
                 sonobuoyCount: saveData.sonobuoyCount !== undefined ? saveData.sonobuoyCount : 30,
-                nextSonobuoyId: saveData.nextSonobuoyId || 1
+                nextSonobuoyId: saveData.nextSonobuoyId || 1,
+                studentTracks: JSON.parse(JSON.stringify(saveData.studentTracks || [])),
+                nextStudentTrackId: saveData.nextStudentTrackId || 1
             });
             }
             setIsLoading(false);
@@ -8592,7 +8696,9 @@ function AICSimulator() {
                         nextShapeId: saveData.nextShapeId || 1,
                         sonobuoys: JSON.parse(JSON.stringify(saveData.sonobuoys || [])),
                         sonobuoyCount: saveData.sonobuoyCount !== undefined ? saveData.sonobuoyCount : 30,
-                        nextSonobuoyId: saveData.nextSonobuoyId || 1
+                        nextSonobuoyId: saveData.nextSonobuoyId || 1,
+                        studentTracks: JSON.parse(JSON.stringify(saveData.studentTracks || [])),
+                        nextStudentTrackId: saveData.nextStudentTrackId || 1
                     });
 
                     setIsLoading(false);
@@ -8618,6 +8724,7 @@ function AICSimulator() {
         if (initialScenario) {
             setIsLoading(true);
             setLoadingMessage('Restarting scenario...');
+            restartingRef.current = true;
 
             setTimeout(() => {
                 // Restart to loaded scenario
@@ -8650,6 +8757,52 @@ function AICSimulator() {
                 setDatalinkTrackBlockEnd('');
                 setNextDatalinkTrackNumber(null);
 
+                // Reset intercept / labeling state
+                setInterceptState({
+                    phase: 'idle',
+                    pictureType: null,
+                    groups: [],
+                    currentTargetGroupId: null,
+                    engagingFighterId: null,
+                });
+                setManeuverTracking({
+                    groups: [],
+                    maneuvers: [],
+                    lastCheckTime: 0,
+                    settlingUntil: 0,
+                    recentAicCalls: []
+                });
+                setGroupManeuvers({});
+
+                // Reset debrief state
+                setDebriefData([]);
+                setCurrentIntercept(null);
+                setShowDebriefDialog(false);
+
+                // Reset radio / comms
+                setRadioLog([]);
+                setPendingTimeoutCalls([]);
+                setPendingVIDCalls([]);
+
+                // Reset sensor detections
+                setRadarDetectionCounts({});
+                setDetectionThresholds({});
+                setLastDetectionSweepAngle({});
+                setTrackAgingTimers({});
+                setIffReturns([]);
+                setDetectedEmitters([]);
+                setManualBearingLines([]);
+                setSonoDetections([]);
+
+                // Restore student mode tracks from saved scenario
+                setStudentTracks(JSON.parse(JSON.stringify(initialScenario.studentTracks || [])));
+                setNextStudentTrackId(initialScenario.nextStudentTrackId || 1);
+
+                // Reset weapons
+                setWeapons([]);
+                setNextWeaponId(1);
+
+                restartingRef.current = false;
                 setIsLoading(false);
             }, 50);
         } else {
@@ -8910,7 +9063,7 @@ function AICSimulator() {
                 if (selectedTrack && selectedTrack.identity === 'friendly') {
                     // Get the underlying asset for the firing asset ID
                     const firingAsset = assets.find(a => a.id === selectedTrack.assetId);
-                    if (firingAsset) {
+                    if (firingAsset && firingAsset.id !== clickedTargetAsset.id) {
                         setContextMenu({
                             x: e.clientX,
                             y: e.clientY,
@@ -8921,8 +9074,8 @@ function AICSimulator() {
                         return;
                     }
                 }
-            } else if (selectedAsset && selectedAsset.type !== 'ownship') {
-                // Instructor mode - show engage for any non-ownship asset
+            } else if (selectedAsset && selectedAsset.type !== 'ownship' && selectedAsset.id !== clickedTargetAsset.id) {
+                // Instructor mode - show engage for any non-ownship asset (prevent self-targeting)
                 setContextMenu({
                     x: e.clientX,
                     y: e.clientY,
@@ -10220,8 +10373,8 @@ function AICSimulator() {
                     </>
                 )}
 
-                {/* Heading line - hide for land domain (stationary) */}
-                {asset.domain !== 'land' && (
+                {/* Heading line - hide for land domain (stationary) or zero speed */}
+                {asset.domain !== 'land' && asset.speed > 0 && (
                     <line x1={pos.x} y1={pos.y} x2={headingX} y2={headingY}
                           stroke={assetColor} strokeWidth="1" />
                 )}
@@ -10604,8 +10757,8 @@ function AICSimulator() {
                     </>
                 )}
 
-                {/* Heading line - show for all non-land tracks (including aged) using estimated heading */}
-                {track.domain !== 'land' && (
+                {/* Heading line - show for all non-land tracks with speed (including aged) using estimated heading */}
+                {track.domain !== 'land' && (track.estimatedSpeed || 0) > 0 && (
                     <line x1={pos.x} y1={pos.y} x2={headingX} y2={headingY}
                           stroke={config.color} strokeWidth="1" />
                 )}
