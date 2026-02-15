@@ -15,7 +15,7 @@ const YARDS_PER_NAUTICAL_MILE = 2025.37;
 
 // Asset type configurations
 const ASSET_TYPES = {
-    friendly: { color: '#00BFFF', badge: 'FRD', shape: 'circle' },
+    friendly: { color: '#00FFFF', badge: 'FRD', shape: 'circle' },
     hostile: { color: '#FF0000', badge: 'HST', shape: 'diamond' },
     neutral: { color: '#00FF00', badge: 'NEU', shape: 'square' },
     unknown: { color: '#FFFF00', badge: 'UNK', shape: 'square' },
@@ -11033,7 +11033,7 @@ function AICSimulator() {
             <g className="sonobuoys">
                 {sonobuoys.map(sono => {
                     const pos = latLonToScreen(sono.lat, sono.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
-                    const sonoColor = '#00BFFF'; // Friendly asset light blue color
+                    const sonoColor = '#00FFFF'; // Friendly asset aqua color
                     const circleRadius = 9; // 1.5x larger (was 6)
                     const lineHeight = 18; // 1.5x larger (was 12)
                     const horizontalLineLength = 9; // Length of horizontal line at top
@@ -11124,7 +11124,7 @@ function AICSimulator() {
             <g className="weapons">
                 {weapons.map(wpn => {
                     const pos = latLonToScreen(wpn.lat, wpn.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
-                    const color = wpn.affiliation === 'friendly' ? '#00BFFF' : '#FF0000';
+                    const color = wpn.affiliation === 'friendly' ? '#00FFFF' : '#FF0000';
                     const headingRad = (wpn.heading - 90) * Math.PI / 180;
 
                     // Direction of travel indicator line (solid)
@@ -14491,7 +14491,7 @@ function ControlPanel({
                                                         background: '#1a1a1a',
                                                         borderRadius: '2px',
                                                         fontSize: '9px',
-                                                        color: wpn.affiliation === 'friendly' ? '#00BFFF' : '#FF0000'
+                                                        color: wpn.affiliation === 'friendly' ? '#00FFFF' : '#FF0000'
                                                     }}>
                                                         <div style={{ fontWeight: 'bold' }}>{wpn.weaponType} #{wpn.id}</div>
                                                         <div style={{ opacity: 0.7 }}>Target: {target ? target.name : 'LOST'}</div>
@@ -18157,7 +18157,7 @@ function ControlsDialog({ onClose }) {
 
                     <h3 style={{ color: '#00FF00', fontSize: '12px', marginTop: '15px', marginBottom: '10px' }}>ASSET TYPES</h3>
                     <div style={{ marginLeft: '10px' }}>
-                        <p><strong style={{ color: '#00BFFF' }}>Friendly:</strong> Blue circle symbol</p>
+                        <p><strong style={{ color: '#00FFFF' }}>Friendly:</strong> Aqua circle symbol</p>
                         <p><strong style={{ color: '#FF0000' }}>Hostile:</strong> Red diamond symbol</p>
                         <p><strong style={{ color: '#FFFF00' }}>Neutral:</strong> Yellow square symbol</p>
                         <p><strong style={{ color: '#00FF00' }}>Unknown:</strong> Green triangle symbol</p>
