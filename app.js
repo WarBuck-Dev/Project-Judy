@@ -1035,7 +1035,8 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                             React.createElement('option', { value: 'turnEmitterOn' }, 'Turn Emitter On'),
                             React.createElement('option', { value: 'turnEmitterOff' }, 'Turn Emitter Off'),
                             React.createElement('option', { value: 'makeVisible' }, 'Make Visible'),
-                            React.createElement('option', { value: 'makeInvisible' }, 'Make Invisible')
+                            React.createElement('option', { value: 'makeInvisible' }, 'Make Invisible'),
+                            React.createElement('option', { value: 'transmitOnRadio' }, 'Transmit on Radio')
                         ),
 
                         // Action-specific inputs
@@ -1130,7 +1131,25 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
 
                         action.type === 'makeInvisible' && React.createElement('div', {
                             style: { color: '#FFAA00', fontSize: '11px', padding: '8px', backgroundColor: 'rgba(255, 170, 0, 0.1)', borderRadius: '3px' }
-                        }, 'Checks the HIDDEN box, making this asset invisible to the student.')
+                        }, 'Checks the HIDDEN box, making this asset invisible to the student.'),
+
+                        action.type === 'transmitOnRadio' && React.createElement('div', {},
+                            React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '11px' } }, 'MESSAGE:'),
+                            React.createElement('input', {
+                                type: 'text',
+                                value: action.value || '',
+                                placeholder: 'Enter radio message...',
+                                onChange: (e) => handleUpdateAction(idx, 'value', e.target.value),
+                                style: {
+                                    width: '100%',
+                                    padding: '6px',
+                                    backgroundColor: '#000',
+                                    color: '#00FF00',
+                                    border: '1px solid #00FF00',
+                                    fontSize: '11px'
+                                }
+                            })
+                        )
                     )
                 ),
 
@@ -5775,6 +5794,16 @@ function AICSimulator() {
                                     break;
                                 case 'makeInvisible':
                                     updated.hidden = true;
+                                    break;
+                                case 'transmitOnRadio':
+                                    if (action.value) {
+                                        const assetName = updated.name || `Asset ${updated.id}`;
+                                        const message = action.value;
+                                        setTimeout(() => {
+                                            speakResponse(message);
+                                            addToRadioLog(assetName, message, 'incoming');
+                                        }, 100);
+                                    }
                                     break;
                             }
                         });
@@ -16282,18 +16311,15 @@ function ControlPanel({
 
                                             <div className="input-group">
                                                 <label className="input-label">Domain</label>
-                                                <div
+                                                <select
                                                     className="input-field"
-                                                    style={{
-                                                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                                                        color: '#00FF00',
-                                                        padding: '10px',
-                                                        cursor: 'not-allowed',
-                                                        opacity: 0.7
-                                                    }}
+                                                    value={selectedTrack.domain || 'air'}
+                                                    onChange={(e) => updateStudentTrack(selectedTrack.id, { domain: e.target.value })}
                                                 >
-                                                    {selectedTrack.domain ? DOMAIN_TYPES[selectedTrack.domain].label : 'Unknown'}
-                                                </div>
+                                                    {Object.entries(DOMAIN_TYPES).filter(([key]) => key !== 'land').map(([key, config]) => (
+                                                        <option key={key} value={key}>{config.label}</option>
+                                                    ))}
+                                                </select>
                                             </div>
 
                                             {/* Editable Heading, Speed, Altitude, Lat/Lon for OPERATOR TRACKS (no underlying asset) */}
