@@ -1,6 +1,6 @@
 # Project Judy - Requirements & Features Documentation
 
-**Air Intercept Control Simulator**
+**Air Intercept Control & Anti-Submarine Warfare Training Simulator**
 Version 3.4
 Last Updated: February 7, 2026
 

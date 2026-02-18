@@ -1,6 +1,6 @@
 # Project Judy User Manual
 
-**Version 3.4** | For AIC Trainees
+**Version 3.4** | For AIC & ASW Trainees
 
 ---
 
@@ -26,7 +26,7 @@
 
 ### What is the Project Judy?
 
-The Project Judy is a web-based tactical training application for practicing Air Intercept Control procedures. It provides:
+The Project Judy is a web-based tactical training application for practicing Air Intercept Control (AIC) and Anti-Submarine Warfare (ASW) procedures. It provides:
 
 - Realistic radar display with rotating sweep and return generation
 - Voice-activated fighter control with automated responses

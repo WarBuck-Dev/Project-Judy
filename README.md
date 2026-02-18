@@ -1,6 +1,6 @@
-# Project Judy - Air Intercept Control Training
+# Project Judy - AIC & ASW Training Simulator
 
-A web-based tactical air intercept control training application designed for military aviation students to practice real-time air operations in the Persian Gulf region.
+A web-based tactical training application designed for military aviation students to practice Air Intercept Control (AIC) and Anti-Submarine Warfare (ASW) operations in the Persian Gulf region.
 
 ## Quick Start
 

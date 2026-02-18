@@ -1,5 +1,5 @@
 ================================================================================
-PROJECT JUDY - QUICK START GUIDE
+PROJECT JUDY - AIC & ASW TRAINING SIMULATOR - QUICK START GUIDE
 ================================================================================
 
 IMPORTANT: You encountered a CORS error because browsers don't allow loading
