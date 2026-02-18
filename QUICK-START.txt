@@ -9,8 +9,8 @@ JavaScript files directly from the file system for security reasons.
 SOLUTION: Run a Local Web Server
 ================================================================================
 
-METHOD 1 - EASIEST (Using the included batch file):
-----------------------------------------------------
+METHOD 1 - EASIEST FOR WINDOWS (Using the included batch file):
+----------------------------------------------------------------
 1. Double-click "start-server.bat" in this folder
 2. The simulator will automatically open in your browser
 3. That's it! Start using the simulator
@@ -19,30 +19,32 @@ Requirements: Python 3 OR Node.js must be installed
 - Get Python: https://www.python.org/downloads/
 - Get Node.js: https://nodejs.org/
 
-METHOD 2 - MANUAL (If you have Python):
-----------------------------------------
+METHOD 2 - MANUAL WITH PYTHON (Windows & macOS):
+-------------------------------------------------
+WINDOWS:
 1. Open Command Prompt in this folder
    (Shift + Right-click → "Open PowerShell window here" or "Open command window here")
-
 2. Type: python -m http.server 8000
-
 3. Open Chrome or Edge browser
-
 4. Go to: http://localhost:8000
-
 5. Press Ctrl+C in the command prompt when done
 
-METHOD 3 - MANUAL (If you have Node.js):
------------------------------------------
-1. Open Command Prompt in this folder
+macOS:
+1. Open Terminal
+2. Navigate to the Project Judy folder:
+   cd /path/to/Project-Judy
+3. Type: python3 -m http.server 8000
+4. Open Chrome browser
+5. Go to: http://localhost:8000
+6. Press Ctrl+C in Terminal when done
 
+METHOD 3 - MANUAL WITH NODE.JS (Windows & macOS):
+--------------------------------------------------
+1. Open Command Prompt (Windows) or Terminal (macOS) in this folder
 2. Type: npx http-server -p 8000
-
-3. Open Chrome or Edge browser
-
+3. Open Chrome browser
 4. Go to: http://localhost:8000
-
-5. Press Ctrl+C in the command prompt when done
+5. Press Ctrl+C when done
 
 ================================================================================
 FIRST STEPS IN THE SIMULATOR
@@ -97,8 +99,11 @@ KEYBOARD:
 TROUBLESHOOTING
 ================================================================================
 
-Problem: "start-server.bat says Python or Node.js not found"
+Problem: "start-server.bat says Python or Node.js not found" (Windows)
 Solution: Install Python from python.org or Node.js from nodejs.org
+
+Problem: "python: command not found" (macOS)
+Solution: Use "python3" instead of "python", or install Python from python.org
 
 Problem: "The simulator won't load / blank screen"
 Solution: Make sure you're accessing http://localhost:8000 (not opening index.html directly)
@@ -106,8 +111,11 @@ Solution: Make sure you're accessing http://localhost:8000 (not opening index.ht
 Problem: "Assets aren't moving"
 Solution: Make sure simulation is in PLAY mode and asset has speed > 0
 
-Problem: "Can't find start-server.bat"
+Problem: "Can't find start-server.bat" (Windows)
 Solution: It's in the same folder as this file. Look for "start-server.bat"
+
+Problem: "How do I run this on macOS?"
+Solution: Use METHOD 2 or METHOD 3 above. The .bat file is Windows-only.
 
 ================================================================================
 NEED MORE HELP?

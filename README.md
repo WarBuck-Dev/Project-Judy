@@ -4,9 +4,11 @@ A web-based tactical air intercept control training application designed for mil
 
 ## Quick Start
 
-### Option 1: Using the Start Server Script (Recommended)
+### Windows
 
-1. **Double-click** `start-server.bat` in the Project Judy v2 folder
+**Option 1: Start Server Script (Recommended)**
+
+1. **Double-click** `start-server.bat` in the Project Judy folder
 2. The simulator will automatically open in your default browser
 3. Start creating scenarios by clicking "+ ADD ASSET" or right-clicking on the map
 4. Click "PLAY" to start the physics simulation
@@ -21,12 +23,24 @@ A web-based tactical air intercept control training application designed for mil
 2. Close the command window running the server
 3. Double-click `start-server.bat` again to restart
 
-### Option 2: Manual Python Server
+**Option 2: Manual Python Server**
 
 1. Open Command Prompt in the simulator folder
 2. Run: `python -m http.server 8000`
-3. Open your browser to: http://localhost:8000
+3. Open Chrome or Edge to: http://localhost:8000
 4. Press Ctrl+C in the command prompt when done
+
+### macOS
+
+1. Open **Terminal**
+2. Navigate to the Project Judy folder: `cd /path/to/Project-Judy`
+3. Run: `python3 -m http.server 8000`
+4. Open **Chrome** to: http://localhost:8000
+5. Press Ctrl+C in Terminal when done
+
+**Note**: macOS comes with Python 3 pre-installed on recent versions. If `python3` is not found, install it from https://www.python.org/downloads/ or via Homebrew: `brew install python3`
+
+**Alternative (Node.js)**: If you have Node.js installed, run `npx http-server -p 8000` instead.
 
 ### Why Use a Server?
 
