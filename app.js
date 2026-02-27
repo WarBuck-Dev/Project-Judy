@@ -12938,6 +12938,7 @@ function ControlPanel({
     return (
         <div className="control-panel">
             <h1>PROJECT JUDY</h1>
+            <div style={{ textAlign: 'center', color: '#FFFF00', fontSize: '12px', marginTop: '-15px', marginBottom: '8px' }}>By LoadMaster</div>
 
             {/* Mode Toggle - Always visible for switching between modes */}
             <div className="control-section">
