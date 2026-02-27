@@ -1534,6 +1534,7 @@ function AICSimulator() {
     });
     const [weaponConfigs, setWeaponConfigs] = useState({});
     const [selectedTargetAssetId, setSelectedTargetAssetId] = useState(null);
+    const [selectedOperatorTrackTarget, setSelectedOperatorTrackTarget] = useState(null); // Operator track ID targeted with torpedo
     const [selectedWeaponType, setSelectedWeaponType] = useState(null);
     const [showRangeWarning, setShowRangeWarning] = useState(false);
 
@@ -5832,6 +5833,85 @@ function AICSimulator() {
 
                 const target = currentAssets.find(a => a.id === weapon.targetId);
 
+                // Operator track torpedo guidance — guide toward operator track, acquire real sub within 1nm
+                if (!target && weapon.operatorTrackTargetId) {
+                    const opTrack = studentTracks.find(t => t.id === weapon.operatorTrackTargetId);
+
+                    if (opTrack) {
+                        // Check if any real submarine asset is within 1nm of the weapon — proximity acquisition
+                        const nearestSub = currentAssets.find(a =>
+                            a.domain === 'subSurface' &&
+                            calculateDistance(weapon.lat, weapon.lon, a.lat, a.lon) < 1.0
+                        );
+
+                        if (nearestSub) {
+                            // Acquire real target — normal proportional navigation takes over
+                            updated.targetId = nearestSub.id;
+                            updated.operatorTrackTargetId = null;
+                            console.log(`Torpedo ${weapon.id} acquired submarine ${nearestSub.name} within 1nm`);
+                            // Fall through to normal guidance below
+                        } else {
+                            // Guide toward operator track position
+                            const bearing = calculateBearing(weapon.lat, weapon.lon, opTrack.lat, opTrack.lon);
+                            const distance = calculateDistance(weapon.lat, weapon.lon, opTrack.lat, opTrack.lon);
+
+                            // Fuel/acceleration
+                            const configKey = weapon.weaponName || weapon.weaponType;
+                            const config = weaponConfigs[configKey];
+                            if (config) {
+                                if (weapon.selfDestructTime !== undefined && missionTime >= weapon.selfDestructTime) {
+                                    updated.impact = true;
+                                    updated.impactTargetId = null;
+                                    return updated;
+                                }
+                                const fuelDepleted = weapon.fuelDepletionTime !== undefined && missionTime >= weapon.fuelDepletionTime;
+                                if (fuelDepleted) {
+                                    const speedLoss = 50 * deltaTime;
+                                    updated.speed = Math.max(0, weapon.speed - speedLoss);
+                                    if (updated.speed < 10) {
+                                        updated.impact = true;
+                                        updated.impactTargetId = null;
+                                        return updated;
+                                    }
+                                } else {
+                                    const currentAcceleration = (weapon.boosterActive && config.boosterAcceleration)
+                                        ? config.boosterAcceleration : config.maxAcceleration;
+                                    if (weapon.speed < config.maxSpeed) {
+                                        updated.speed = weapon.speed + Math.min(currentAcceleration * deltaTime, config.maxSpeed - weapon.speed);
+                                    }
+                                }
+                                if (weapon.boosterActive && weapon.boosterEndTime !== undefined && missionTime >= weapon.boosterEndTime) {
+                                    updated.boosterActive = false;
+                                }
+                            }
+
+                            // Steering
+                            const turnAmount = shortestTurn(weapon.heading, bearing);
+                            const turnDelta = Math.sign(turnAmount) * Math.min(Math.abs(turnAmount), 30 * deltaTime);
+                            updated.heading = normalizeHeading(weapon.heading + turnDelta);
+
+                            // Movement
+                            const speedNMPerSec = updated.speed / 3600;
+                            const travelDist = speedNMPerSec * deltaTime;
+                            const headingRad = updated.heading * Math.PI / 180;
+                            const latRad = updated.lat * Math.PI / 180;
+                            updated.lat = weapon.lat + (travelDist * Math.cos(headingRad)) / 60;
+                            updated.lon = weapon.lon + (travelDist * Math.sin(headingRad)) / (60 * Math.cos(latRad));
+
+                            // If reached operator track position but no sub nearby, clear track target and continue ballistic
+                            if (distance < 0.1) {
+                                updated.operatorTrackTargetId = null;
+                                console.log(`Torpedo ${weapon.id} reached operator track position, no submarine acquired`);
+                            }
+
+                            return updated;
+                        }
+                    } else {
+                        // Operator track deleted — clear and continue ballistic
+                        updated.operatorTrackTargetId = null;
+                    }
+                }
+
                 if (!target) {
                     // Target lost, continue on last heading with fuel system active
 
@@ -6006,7 +6086,7 @@ function AICSimulator() {
 
             return updatedWeapons.filter(w => !w.impact);
         });
-    }, [weaponConfigs, assets, missionTime, simulatorMode]);
+    }, [weaponConfigs, assets, missionTime, simulatorMode, studentTracks]);
 
     // Keep updatePhysicsRef in sync (updated every render, avoids effect teardown)
     updatePhysicsRef.current = updatePhysics;
@@ -7329,7 +7409,7 @@ function AICSimulator() {
             assetId: asset.id,
             lat: asset.lat,
             lon: asset.lon,
-            domain: asset.domain,
+            domain: (asset.domain === 'subSurface' && (asset.depth === 0 || asset.depth === null)) ? 'surface' : asset.domain,
             identity: 'unknownUnevaluated', // Default orange
             label: '',
             trackNumber: null,
@@ -7579,6 +7659,77 @@ function AICSimulator() {
             }));
         }
     }, [assets, weaponConfigs, nextWeaponId, missionTime, simulatorMode, studentTracks]);
+
+    // Fire weapon at an operator track (torpedo with proximity guidance to real submarines)
+    const fireWeaponAtOperatorTrack = useCallback((operatorTrackId, weaponType) => {
+        const track = studentTracks.find(t => t.id === operatorTrackId);
+        if (!track || !track.isOperatorTrack) {
+            console.warn('Invalid operator track for torpedo targeting');
+            return;
+        }
+
+        const ownship = assets.find(a => a.type === 'ownship');
+        if (!ownship) {
+            console.warn('No ownship found for operator track targeting');
+            return;
+        }
+
+        // Find torpedo weapon variant from ownship platform
+        let selectedWeaponName = null;
+        if (ownship.platform?.weapons) {
+            selectedWeaponName = ownship.platform.weapons.find(weaponName => {
+                const config = weaponConfigs[weaponName];
+                return config && config.type === weaponType;
+            });
+        }
+
+        if (!selectedWeaponName) {
+            console.warn(`No weapon variant found for type ${weaponType}`);
+            return;
+        }
+
+        const config = weaponConfigs[selectedWeaponName];
+        if (!config) {
+            console.warn(`Weapon config not found for ${selectedWeaponName}`);
+            return;
+        }
+
+        const range = calculateDistance(ownship.lat, ownship.lon, track.lat, track.lon);
+        if (range > config.maxRange) {
+            setShowRangeWarning(true);
+            setTimeout(() => setShowRangeWarning(false), 2000);
+            return;
+        }
+
+        const newWeapon = {
+            id: nextWeaponId,
+            weaponType: weaponType,
+            weaponName: selectedWeaponName,
+            lat: ownship.lat,
+            lon: ownship.lon,
+            heading: calculateBearing(ownship.lat, ownship.lon, track.lat, track.lon),
+            speed: 100,
+            altitude: ownship.altitude || 0,
+            targetId: null,                            // No real target yet
+            operatorTrackTargetId: operatorTrackId,    // Guide toward operator track position
+            firingAssetId: ownship.id,
+            affiliation: 'friendly',
+            launchTime: missionTime,
+            launchMode: simulatorMode,
+            fuelRemaining: config.fuelTime || 60,
+            boosterActive: true,
+            boosterEndTime: missionTime + (config.boosterTime || 10),
+            fuelDepletionTime: missionTime + (config.fuelTime || 60),
+            selfDestructTime: missionTime + (config.selfDestructTime || 120)
+        };
+
+        setWeapons(prev => [...prev, newWeapon]);
+        setNextWeaponId(prev => prev + 1);
+        setWeaponInventory(prev => ({
+            ...prev,
+            [weaponType]: Math.max(0, prev[weaponType] - 1)
+        }));
+    }, [assets, studentTracks, weaponConfigs, nextWeaponId, missionTime, simulatorMode]);
 
     // Handle automatic weapon engagement from AIC targeting
     // When engageAttempted flag is set by physics update, fire AAM at target
@@ -8526,6 +8677,7 @@ function AICSimulator() {
             setWeaponArmed(saveData.weaponArmed || false);
             setWeaponGuardOpen(false);
             setSelectedTargetAssetId(null);
+            setSelectedOperatorTrackTarget(null);
             setSelectedWeaponType(saveData.selectedWeaponType || null);
 
             // Load student/instructor mode state (with backward compatibility)
@@ -8686,6 +8838,7 @@ function AICSimulator() {
                     setWeaponArmed(saveData.weaponArmed || false);
                     setWeaponGuardOpen(false);
                     setSelectedTargetAssetId(null);
+                    setSelectedOperatorTrackTarget(null);
                     setSelectedWeaponType(saveData.selectedWeaponType || null);
 
                     // Load student/instructor mode state (with backward compatibility)
@@ -8830,6 +8983,7 @@ function AICSimulator() {
                 // Reset weapons
                 setWeapons([]);
                 setNextWeaponId(1);
+                setSelectedOperatorTrackTarget(null);
 
                 restartingRef.current = false;
                 setIsLoading(false);
@@ -9127,6 +9281,38 @@ function AICSimulator() {
                     targetAssetId: clickedTargetAsset.id
                 });
                 return;
+            }
+        }
+
+        // Priority 3: If WEAPON tab is open in student mode, check for student track targeting
+        if (simulatorMode === 'student' && selectedSystemTab === 'weapon' && !clickedTargetAsset) {
+            const ownship = assets.find(a => a.type === 'ownship');
+            if (ownship) {
+                for (const track of studentTracks) {
+                    const pos = latLonToScreen(track.lat, track.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                    const dist = Math.sqrt((x - pos.x) ** 2 + (y - pos.y) ** 2);
+                    if (dist < 15) {
+                        if (track.isOperatorTrack && track.domain === 'subSurface') {
+                            // Operator sub-surface track — target with torpedo (proximity guidance)
+                            setContextMenu({
+                                x: e.clientX,
+                                y: e.clientY,
+                                type: 'targetWithOperatorTrack',
+                                trackId: track.id
+                            });
+                            return;
+                        } else if (track.assetId !== null) {
+                            // Radar track with linked asset — target the real asset
+                            setContextMenu({
+                                x: e.clientX,
+                                y: e.clientY,
+                                type: 'targetWith',
+                                targetAssetId: track.assetId
+                            });
+                            return;
+                        }
+                    }
+                }
             }
         }
 
@@ -11936,6 +12122,9 @@ function AICSimulator() {
                 fireWeapon={fireWeapon}
                 selectedTargetAssetId={selectedTargetAssetId}
                 setSelectedTargetAssetId={setSelectedTargetAssetId}
+                selectedOperatorTrackTarget={selectedOperatorTrackTarget}
+                setSelectedOperatorTrackTarget={setSelectedOperatorTrackTarget}
+                fireWeaponAtOperatorTrack={fireWeaponAtOperatorTrack}
                 selectedWeaponType={selectedWeaponType}
                 setSelectedWeaponType={setSelectedWeaponType}
                 weaponConfigs={weaponConfigs}
@@ -11987,6 +12176,7 @@ function AICSimulator() {
                     fireWeapon={fireWeapon}
                     setSelectedTargetAssetId={setSelectedTargetAssetId}
                     setSelectedWeaponType={setSelectedWeaponType}
+                    setSelectedOperatorTrackTarget={setSelectedOperatorTrackTarget}
                     simulatorMode={simulatorMode}
                     studentTracks={studentTracks}
                     setShowCreateOperatorTrackDialog={setShowCreateOperatorTrackDialog}
@@ -12645,6 +12835,8 @@ function ControlPanel({
     weapons,
     fireWeapon,
     selectedTargetAssetId, setSelectedTargetAssetId,
+    selectedOperatorTrackTarget, setSelectedOperatorTrackTarget,
+    fireWeaponAtOperatorTrack,
     selectedWeaponType, setSelectedWeaponType,
     weaponConfigs,
     addBehavior, updateBehavior, deleteBehavior,
@@ -14303,7 +14495,12 @@ function ControlPanel({
                                     <div style={{ fontSize: '10px', color: '#00FF00', marginBottom: '3px' }}>
                                         Target: {selectedTargetAssetId !== null
                                             ? assets.find(a => a.id === selectedTargetAssetId)?.name || 'Unknown'
-                                            : 'None Selected'}
+                                            : selectedOperatorTrackTarget !== null
+                                                ? (() => {
+                                                    const opTrack = studentTracks.find(t => t.id === selectedOperatorTrackTarget);
+                                                    return opTrack ? (opTrack.label || 'Operator Track') : 'Unknown Track';
+                                                })()
+                                                : 'None Selected'}
                                     </div>
                                     <div style={{ fontSize: '10px', color: '#00FF00' }}>
                                         Weapon: {selectedWeaponType || 'None Selected'}
@@ -14377,7 +14574,7 @@ function ControlPanel({
                                     const ownship = assets.find(a => a.type === 'ownship');
                                     if (!ownship || !ownship.platform || !ownship.platform.weapons) {
                                         return Object.entries(weaponInventory).map(([weaponType, count]) => {
-                                            const isTargeted = selectedTargetAssetId !== null && selectedWeaponType === weaponType;
+                                            const isTargeted = (selectedTargetAssetId !== null || selectedOperatorTrackTarget !== null) && selectedWeaponType === weaponType;
                                             const isReady = weaponEnabled && weaponArmed && count > 0;
                                             const canFire = isReady && isTargeted;
                                             const buttonColor = isTargeted ? '#00FF00' : (isReady ? '#FFFF00' : '#666');
@@ -14391,8 +14588,13 @@ function ControlPanel({
                                                         if (canFire) {
                                                             const ownship = assets.find(a => a.type === 'ownship');
                                                             if (ownship) {
-                                                                fireWeapon(ownship.id, selectedTargetAssetId, weaponType);
-                                                                setSelectedTargetAssetId(null);
+                                                                if (selectedOperatorTrackTarget !== null) {
+                                                                    fireWeaponAtOperatorTrack(selectedOperatorTrackTarget, weaponType);
+                                                                    setSelectedOperatorTrackTarget(null);
+                                                                } else {
+                                                                    fireWeapon(ownship.id, selectedTargetAssetId, weaponType);
+                                                                    setSelectedTargetAssetId(null);
+                                                                }
                                                                 setSelectedWeaponType(null);
                                                             }
                                                         }
@@ -14421,7 +14623,7 @@ function ControlPanel({
                                     return Object.entries(weaponInventory)
                                         .filter(([weaponType]) => ownshipWeaponTypes.has(weaponType))
                                         .map(([weaponType, count]) => {
-                                            const isTargeted = selectedTargetAssetId !== null && selectedWeaponType === weaponType;
+                                            const isTargeted = (selectedTargetAssetId !== null || selectedOperatorTrackTarget !== null) && selectedWeaponType === weaponType;
                                             const isReady = weaponEnabled && weaponArmed && count > 0;
                                             const canFire = isReady && isTargeted;
                                             const buttonColor = isTargeted ? '#00FF00' : (isReady ? '#FFFF00' : '#666');
@@ -14433,8 +14635,13 @@ function ControlPanel({
                                                     disabled={!canFire}
                                                     onClick={() => {
                                                         if (canFire) {
-                                                            fireWeapon(ownship.id, selectedTargetAssetId, weaponType);
-                                                            setSelectedTargetAssetId(null);
+                                                            if (selectedOperatorTrackTarget !== null) {
+                                                                fireWeaponAtOperatorTrack(selectedOperatorTrackTarget, weaponType);
+                                                                setSelectedOperatorTrackTarget(null);
+                                                            } else {
+                                                                fireWeapon(ownship.id, selectedTargetAssetId, weaponType);
+                                                                setSelectedTargetAssetId(null);
+                                                            }
                                                             setSelectedWeaponType(null);
                                                         }
                                                     }}
@@ -17342,7 +17549,7 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, clearWaypoints, deleteWaypoint, wrapWaypoint, unwrapWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType, simulatorMode, studentTracks, setShowCreateOperatorTrackDialog, fuseTrack, addOrbitPoint }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, clearWaypoints, deleteWaypoint, wrapWaypoint, unwrapWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType, setSelectedOperatorTrackTarget, simulatorMode, studentTracks, setShowCreateOperatorTrackDialog, fuseTrack, addOrbitPoint }) {
     const [showDomainSubmenu, setShowDomainSubmenu] = useState(false);
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
     const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
@@ -17372,6 +17579,10 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             // Check if there's a friendly student track for this asset
             const track = studentTracks.find(t => t.assetId === contextMenu.assetId);
             return track && track.identity === 'friendly';
+        }
+        // targetWith and targetWithOperatorTrack are always ownship firing — allow
+        if (contextMenu.type === 'targetWith' || contextMenu.type === 'targetWithOperatorTrack') {
+            return true;
         }
         return false;
     };
@@ -17712,6 +17923,62 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                                         className="context-menu-item"
                                         onClick={() => {
                                             setSelectedTargetAssetId(contextMenu.targetAssetId);
+                                            setSelectedWeaponType(weaponType);
+                                            setContextMenu(null);
+                                            setShowEngageSubmenu(false);
+                                        }}
+                                    >
+                                        {weaponType}
+                                    </div>
+                                ));
+                            })()}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Target operator sub-surface track with torpedo */}
+            {contextMenu.type === 'targetWithOperatorTrack' && isFriendlyAssetOrTrack() && (
+                <div
+                    className="context-menu-item context-menu-parent"
+                    onMouseEnter={() => setShowEngageSubmenu(true)}
+                    onMouseLeave={() => setShowEngageSubmenu(false)}
+                >
+                    Target With ›
+                    {showEngageSubmenu && (
+                        <div className="context-menu-submenu">
+                            {(() => {
+                                const ownship = assets.find(a => a.type === 'ownship');
+                                if (!ownship) return null;
+
+                                // Only show torpedo types for sub-surface operator tracks
+                                const torpedoTypes = [];
+                                if (ownship.platform?.weapons) {
+                                    for (const weaponName of ownship.platform.weapons) {
+                                        const config = weaponConfigs[weaponName];
+                                        if (config && config.targetType === 'subSurface') {
+                                            if (!torpedoTypes.includes(config.type)) {
+                                                torpedoTypes.push(config.type);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (torpedoTypes.length === 0) {
+                                    return (
+                                        <div className="context-menu-item" style={{ opacity: 0.5, cursor: 'not-allowed' }}>
+                                            No Torpedoes Available
+                                        </div>
+                                    );
+                                }
+
+                                return torpedoTypes.map(weaponType => (
+                                    <div
+                                        key={weaponType}
+                                        className="context-menu-item"
+                                        onClick={() => {
+                                            setSelectedOperatorTrackTarget(contextMenu.trackId);
+                                            setSelectedTargetAssetId(null);
                                             setSelectedWeaponType(weaponType);
                                             setContextMenu(null);
                                             setShowEngageSubmenu(false);
