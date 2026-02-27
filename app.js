@@ -15675,77 +15675,88 @@ function ControlPanel({
                                 BEHAVIORS
                             </button>
                         )}
-                        {selectedAsset && selectedAsset.type !== 'ownship' && (selectedAsset.platform?.image || selectedAsset.platform?.isar) && (
-                            <>
-                                {selectedAsset.platform && selectedAsset.platform.image && (
-                                    <button
-                                        onClick={() => {
-                                            if (eoirEnabled) {
-                                                setEoirSelectedAssetId(selectedAsset.id);
-                                            }
-                                        }}
-                                        style={{
-                                            flex: 1,
-                                            padding: '8px',
-                                            background: eoirSelectedAssetId === selectedAsset.id ? '#00FF00' : 'transparent',
-                                            color: eoirSelectedAssetId === selectedAsset.id ? '#000' : (eoirEnabled ? '#00FF00' : '#FF0000'),
-                                            border: 'none',
-                                            borderBottom: eoirSelectedAssetId === selectedAsset.id ? '2px solid #00FF00' : '2px solid transparent',
-                                            cursor: eoirEnabled ? 'pointer' : 'not-allowed',
-                                            fontSize: '10px',
-                                            fontWeight: 'bold',
-                                            transition: 'all 0.2s',
-                                            opacity: eoirEnabled ? 1 : 0.5
-                                        }}
-                                    >
-                                        EO/IR
-                                    </button>
-                                )}
-                                {selectedAsset.platform && selectedAsset.platform.isar && (() => {
-                                    const validation = validateIsarFlightProfile(selectedAsset);
-
-                                    return (
+                        {(() => {
+                            // Derive display asset: use selectedAsset, or in student mode look up the linked asset from the selected track
+                            let displayAsset = selectedAsset;
+                            if (!displayAsset && simulatorMode === 'student' && selectedTrackId) {
+                                const track = studentTracks.find(t => t.id === selectedTrackId);
+                                if (track && track.assetId !== null) {
+                                    displayAsset = assets.find(a => a.id === track.assetId);
+                                }
+                            }
+                            if (!displayAsset || displayAsset.type === 'ownship' || (!displayAsset.platform?.image && !displayAsset.platform?.isar)) return null;
+                            return (
+                                <>
+                                    {displayAsset.platform && displayAsset.platform.image && (
                                         <button
                                             onClick={() => {
-                                                if (isarEnabled) {
-                                                    setIsarSelectedAssetId(selectedAsset.id);
+                                                if (eoirEnabled) {
+                                                    setEoirSelectedAssetId(displayAsset.id);
                                                 }
                                             }}
                                             style={{
                                                 flex: 1,
                                                 padding: '8px',
-                                                background: isarSelectedAssetId === selectedAsset.id
-                                                    ? '#00FF00'
-                                                    : (isarEnabled && validation.valid
-                                                        ? 'transparent'
-                                                        : (isarEnabled ? '#FFAA00' : 'transparent')),
-                                                color: isarSelectedAssetId === selectedAsset.id
-                                                    ? '#000'
-                                                    : (isarEnabled && validation.valid
-                                                        ? '#00FF00'
-                                                        : (isarEnabled ? '#000' : '#FF0000')),
+                                                background: eoirSelectedAssetId === displayAsset.id ? '#00FF00' : 'transparent',
+                                                color: eoirSelectedAssetId === displayAsset.id ? '#000' : (eoirEnabled ? '#00FF00' : '#FF0000'),
                                                 border: 'none',
-                                                borderBottom: isarSelectedAssetId === selectedAsset.id
-                                                    ? '2px solid #00FF00'
-                                                    : (isarEnabled && !validation.valid
-                                                        ? '2px solid #FFAA00'
-                                                        : '2px solid transparent'),
-                                                cursor: isarEnabled ? 'pointer' : 'not-allowed',
+                                                borderBottom: eoirSelectedAssetId === displayAsset.id ? '2px solid #00FF00' : '2px solid transparent',
+                                                cursor: eoirEnabled ? 'pointer' : 'not-allowed',
                                                 fontSize: '10px',
                                                 fontWeight: 'bold',
                                                 transition: 'all 0.2s',
-                                                opacity: isarEnabled ? 1 : 0.5
+                                                opacity: eoirEnabled ? 1 : 0.5
                                             }}
-                                            title={isarEnabled && !validation.valid
-                                                ? 'ISAR acquisition requirements not met. Check ISAR tab for details.'
-                                                : ''}
                                         >
-                                            {validation.valid ? 'ISAR' : 'ISAR ⚠'}
+                                            EO/IR
                                         </button>
-                                    );
-                                })()}
-                            </>
-                        )}
+                                    )}
+                                    {displayAsset.platform && displayAsset.platform.isar && (() => {
+                                        const validation = validateIsarFlightProfile(displayAsset);
+
+                                        return (
+                                            <button
+                                                onClick={() => {
+                                                    if (isarEnabled) {
+                                                        setIsarSelectedAssetId(displayAsset.id);
+                                                    }
+                                                }}
+                                                style={{
+                                                    flex: 1,
+                                                    padding: '8px',
+                                                    background: isarSelectedAssetId === displayAsset.id
+                                                        ? '#00FF00'
+                                                        : (isarEnabled && validation.valid
+                                                            ? 'transparent'
+                                                            : (isarEnabled ? '#FFAA00' : 'transparent')),
+                                                    color: isarSelectedAssetId === displayAsset.id
+                                                        ? '#000'
+                                                        : (isarEnabled && validation.valid
+                                                            ? '#00FF00'
+                                                            : (isarEnabled ? '#000' : '#FF0000')),
+                                                    border: 'none',
+                                                    borderBottom: isarSelectedAssetId === displayAsset.id
+                                                        ? '2px solid #00FF00'
+                                                        : (isarEnabled && !validation.valid
+                                                            ? '2px solid #FFAA00'
+                                                            : '2px solid transparent'),
+                                                    cursor: isarEnabled ? 'pointer' : 'not-allowed',
+                                                    fontSize: '10px',
+                                                    fontWeight: 'bold',
+                                                    transition: 'all 0.2s',
+                                                    opacity: isarEnabled ? 1 : 0.5
+                                                }}
+                                                title={isarEnabled && !validation.valid
+                                                    ? 'ISAR acquisition requirements not met. Check ISAR tab for details.'
+                                                    : ''}
+                                            >
+                                                {validation.valid ? 'ISAR' : 'ISAR ⚠'}
+                                            </button>
+                                        );
+                                    })()}
+                                </>
+                            );
+                        })()}
                     </div>
 
                     {/* GENERAL TAB */}
