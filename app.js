@@ -1438,6 +1438,8 @@ function AICSimulator() {
     const [showAddAssetDialog, setShowAddAssetDialog] = useState(null);
     const [showSaveDialog, setShowSaveDialog] = useState(false);
     const [showLoadDialog, setShowLoadDialog] = useState(false);
+    const [currentScenarioName, setCurrentScenarioName] = useState(null);
+    const [currentScenarioSource, setCurrentScenarioSource] = useState(null); // 'app' or 'file'
     const [showControlsDialog, setShowControlsDialog] = useState(false);
     const [showSoundDialog, setShowSoundDialog] = useState(false);
     const [showMissionProductsDialog, setShowMissionProductsDialog] = useState(false);
@@ -8502,6 +8504,8 @@ function AICSimulator() {
 
         try {
             localStorage.setItem(`aic-scenario-${name}`, JSON.stringify(saveData));
+            setCurrentScenarioName(name);
+            setCurrentScenarioSource('app');
             if (missionProducts && missionProducts.length > 0) {
                 alert(`Scenario saved to application: ${name}\n\nNote: Mission products are not included in application saves due to browser storage limits. Use "Save to File" to include mission products.`);
             } else {
@@ -8561,11 +8565,22 @@ function AICSimulator() {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+            setCurrentScenarioName(name);
+            setCurrentScenarioSource('file');
         } catch (error) {
             console.error('Save error:', error);
             alert('Failed to save scenario: ' + error.message);
         }
     }, [assets, bullseyePosition, bullseyeName, scale, mapCenter, tempMark, nextTrackNumber, missionTime, geoPoints, nextGeoPointId, shapes, nextShapeId, sonobuoys, sonobuoyCount, nextSonobuoyId, weapons, weaponInventory, nextWeaponId, weaponEnabled, weaponArmed, selectedWeaponType, simulatorMode, studentTracks, radarDetectionCounts, detectionThresholds, trackAgingTimers, nextStudentTrackId, missionProducts]);
+
+    const quickSave = useCallback(() => {
+        if (!currentScenarioName) return;
+        if (currentScenarioSource === 'app') {
+            saveToLocalStorage(currentScenarioName);
+        } else if (currentScenarioSource === 'file') {
+            saveToFile(currentScenarioName);
+        }
+    }, [currentScenarioName, currentScenarioSource, saveToLocalStorage, saveToFile]);
 
     const loadFromLocalStorage = useCallback((name) => {
         setIsLoading(true);
@@ -8723,6 +8738,8 @@ function AICSimulator() {
                 nextStudentTrackId: saveData.nextStudentTrackId || 1
             });
             }
+            setCurrentScenarioName(name);
+            setCurrentScenarioSource('app');
             setIsLoading(false);
         }, 50);
     }, []);
@@ -8883,6 +8900,10 @@ function AICSimulator() {
                         nextStudentTrackId: saveData.nextStudentTrackId || 1
                     });
 
+                    // Extract scenario name from filename (strip .json and date suffix)
+                    let scenarioName = file.name.replace(/\.json$/i, '').replace(/-\d{4}-\d{2}-\d{2}$/, '');
+                    setCurrentScenarioName(scenarioName);
+                    setCurrentScenarioSource('file');
                     setIsLoading(false);
                     alert('Scenario loaded successfully!');
                 } catch (error) {
@@ -12660,8 +12681,13 @@ function AICSimulator() {
                     }}
                     onSave={() => {
                         setShowPauseMenu(false);
+                        quickSave();
+                    }}
+                    onSaveAs={() => {
+                        setShowPauseMenu(false);
                         setShowSaveDialog(true);
                     }}
+                    canSave={currentScenarioName !== null}
                     onLoad={() => {
                         setShowPauseMenu(false);
                         setShowLoadDialog(true);
@@ -19337,14 +19363,22 @@ function ThreatResult({ missedEvents }) {
     );
 }
 
-function PauseMenu({ onResume, onSave, onLoad, onControls, onSound, onMissionProducts, onDebrief, onScenario }) {
+function PauseMenu({ onResume, onSave, onSaveAs, canSave, onLoad, onControls, onSound, onMissionProducts, onDebrief, onScenario }) {
     return (
         <div className="modal-overlay">
             <div className="pause-menu">
                 <h2>PAUSED</h2>
                 <div className="pause-menu-buttons">
                     <button className="control-btn primary" onClick={onResume}>RESUME</button>
-                    <button className="control-btn" onClick={onSave}>SAVE FILE</button>
+                    <button
+                        className="control-btn"
+                        onClick={onSave}
+                        disabled={!canSave}
+                        style={{ opacity: canSave ? 1 : 0.4, cursor: canSave ? 'pointer' : 'not-allowed' }}
+                    >
+                        SAVE
+                    </button>
+                    <button className="control-btn" onClick={onSaveAs}>SAVE AS</button>
                     <button className="control-btn" onClick={onLoad}>LOAD FILE</button>
                     <button className="control-btn" onClick={onScenario}>SCENARIO</button>
                     <button className="control-btn" onClick={onMissionProducts}>MISSION PRODUCTS</button>
