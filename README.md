@@ -18,6 +18,12 @@ A web-based tactical training application designed for military aviation student
 - Download Python from https://www.python.org/downloads/
 - Or download Node.js from https://nodejs.org/
 
+**Troubleshooting (Windows)**: If Python or Node.js is installed but the script says "not found":
+- **Python**: When installing from python.org, make sure to check **"Add Python to PATH"** at the bottom of the installer — it is unchecked by default. If you missed it, reinstall and check the box.
+- **Python Launcher**: Windows may install Python as `py` instead of `python`. Try running `py -m http.server 8000` in Command Prompt.
+- **Node.js**: Reinstall from nodejs.org and ensure the installer adds it to PATH.
+- **Restart required**: After installing or reinstalling, you must **close and reopen** any Command Prompt or terminal windows for PATH changes to take effect.
+
 **Antivirus Warning**: Some antivirus software may block or quarantine `start-server.bat` shortly after it runs. If you experience issues (such as images not loading or the app behaving unexpectedly):
 1. Add an exception for `start-server.bat` in your antivirus software
 2. Close the command window running the server

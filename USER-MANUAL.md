@@ -62,6 +62,12 @@ The Project Judy is a web-based tactical training application for practicing Air
 
 > **Note**: A local server is required because browsers block loading local JavaScript files for security (CORS policy).
 
+> **Troubleshooting (Windows)**: If the script says Python or Node.js is "not found" even though you installed it:
+> - **Python**: When installing from python.org, check **"Add Python to PATH"** at the bottom of the installer (unchecked by default). If you missed it, reinstall and check the box.
+> - **Python Launcher**: Windows may install Python as `py` instead of `python`. Try running `py -m http.server 8000` in Command Prompt.
+> - **Node.js**: Reinstall from nodejs.org and ensure the installer adds it to PATH.
+> - **Restart required**: After installing, **close and reopen** any Command Prompt or terminal windows for PATH changes to take effect.
+
 ### Selecting Your Mode
 
 Before the simulation starts, you must choose a mode:
