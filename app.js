@@ -600,6 +600,7 @@ function detectGroupManeuverType(contacts, assets) {
 const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDeleteBehavior }) => {
     const [currentBehaviorIndex, setCurrentBehaviorIndex] = React.useState(0);
     const [editMode, setEditMode] = React.useState(false); // false = view, true = create/edit
+    const [editingBehaviorId, setEditingBehaviorId] = React.useState(null); // null = new, id = editing existing
     const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false); // Styled confirmation dialog
     const [formData, setFormData] = React.useState({
         triggerType: 'missionTime',
@@ -617,6 +618,7 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
             triggerConfig: { missionTimeDisplay: '00:00:00' },
             actions: []
         });
+        setEditingBehaviorId(null);
         setEditMode(true);
     };
 
@@ -633,6 +635,7 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                 triggerConfig: config,
                 actions: [...currentBehavior.actions]
             });
+            setEditingBehaviorId(currentBehavior.id);
             setEditMode(true);
         }
     };
@@ -647,13 +650,14 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
             };
         }
 
-        if (currentBehavior) {
+        if (editingBehaviorId !== null) {
             // Update existing
-            onUpdateBehavior(currentBehavior.id, dataToSave);
+            onUpdateBehavior(editingBehaviorId, dataToSave);
         } else {
             // Create new
             onAddBehavior(dataToSave);
         }
+        setEditingBehaviorId(null);
         setEditMode(false);
     };
 
