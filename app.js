@@ -3376,8 +3376,9 @@ function AICSimulator() {
             return; // Broadcast handled, no further processing
         }
 
-        // Find the friendly asset being addressed (exclude ownship)
-        const friendlyAssets = assets.filter(a => a.identity === 'friendly' && a.type !== 'ownship');
+        // Find the friendly AIR asset being addressed (exclude ownship and non-air assets)
+        // Only air domain assets can be directed via AIC voice commands (commit, picture, etc.)
+        const friendlyAssets = assets.filter(a => a.identity === 'friendly' && a.type !== 'ownship' && a.domain === 'air');
         let targetAsset = findAssetByCallsign(text, friendlyAssets);
 
         // If no explicit callsign found but we're in an active intercept, use the engaging fighter
