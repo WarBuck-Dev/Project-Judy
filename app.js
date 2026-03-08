@@ -1124,6 +1124,7 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                             React.createElement('option', { value: 'changeHeading' }, 'Change Heading'),
                             React.createElement('option', { value: 'changeSpeed' }, 'Change Speed'),
                             React.createElement('option', { value: 'changeAltitude' }, 'Change Altitude'),
+                            React.createElement('option', { value: 'interceptAsset' }, 'Intercept Asset'),
                             React.createElement('option', { value: 'turnEmitterOn' }, 'Turn Emitter On'),
                             React.createElement('option', { value: 'turnEmitterOff' }, 'Turn Emitter Off'),
                             React.createElement('option', { value: 'makeVisible' }, 'Make Visible'),
@@ -1241,6 +1242,27 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                                     fontSize: '11px'
                                 }
                             })
+                        ),
+
+                        action.type === 'interceptAsset' && React.createElement('div', {},
+                            React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '11px' } }, 'TARGET ASSET:'),
+                            React.createElement('select', {
+                                value: action.value || '',
+                                onChange: (e) => handleUpdateAction(idx, 'value', parseInt(e.target.value)),
+                                style: {
+                                    width: '100%',
+                                    padding: '6px',
+                                    backgroundColor: '#000',
+                                    color: '#00FF00',
+                                    border: '1px solid #00FF00',
+                                    fontSize: '11px'
+                                }
+                            },
+                                React.createElement('option', { value: '' }, 'Select Target Asset...'),
+                                ...assets.filter(a => a.id !== asset.id).map(a =>
+                                    React.createElement('option', { key: a.id, value: a.id }, a.name || `Asset ${a.id}`)
+                                )
+                            )
                         )
                     )
                 ),
@@ -1503,6 +1525,7 @@ function AICSimulator() {
             targetedAssetId: null, // ID of the asset being targeted
             targetDeclaration: null, // 'hostile' | 'bandit' | 'bogeySpades'
             interceptCommitted: false, // True from commit until picture clean/reset - pauses waypoints
+            behaviorInterceptTargetId: null, // ID of asset to continuously intercept (set by behavior action)
             // VID (Visual ID) state for Bogey Spades intercepts
             vidCalled20nm: false,  // Has called "V-I-D, group" at 20nm
             vidCalled2nm: false,   // Has called "V-I-D group, group NATO name" at 2nm
@@ -5690,6 +5713,17 @@ function AICSimulator() {
                 }
             }
 
+            // Behavior-triggered intercept: continuously track toward target asset
+            if (asset.behaviorInterceptTargetId && !asset.targetingState) {
+                const interceptTarget = prevAssets.find(a => a.id === asset.behaviorInterceptTargetId);
+                if (interceptTarget && !interceptTarget.isDestroyed) {
+                    updated.targetHeading = calculateBearing(
+                        asset.lat, asset.lon,
+                        interceptTarget.lat, interceptTarget.lon
+                    );
+                }
+            }
+
             // Update heading
             if (asset.targetHeading !== null) {
                 const turnAmount = shortestTurn(asset.heading, asset.targetHeading);
@@ -5998,6 +6032,11 @@ function AICSimulator() {
                                             speakResponse(message);
                                             addToRadioLog(assetName, message, 'incoming');
                                         }, 100);
+                                    }
+                                    break;
+                                case 'interceptAsset':
+                                    if (action.value) {
+                                        updated.behaviorInterceptTargetId = parseInt(action.value);
                                     }
                                     break;
                             }
@@ -7567,6 +7606,7 @@ function AICSimulator() {
             targetedAssetId: null, // ID of the asset being targeted
             targetDeclaration: null, // 'hostile' | 'bandit' | 'bogeySpades'
             interceptCommitted: false, // True from commit until picture clean/reset - pauses waypoints
+            behaviorInterceptTargetId: null, // ID of asset to continuously intercept (set by behavior action)
             // VID (Visual ID) state for Bogey Spades intercepts
             vidCalled20nm: false,  // Has called "V-I-D, group" at 20nm
             vidCalled2nm: false,   // Has called "V-I-D group, group NATO name" at 2nm
