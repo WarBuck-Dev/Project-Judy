@@ -597,7 +597,7 @@ function detectGroupManeuverType(contacts, assets) {
 // BEHAVIORS TAB COMPONENT
 // ============================================================================
 
-const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDeleteBehavior }) => {
+const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDeleteBehavior, bullseyePosition, bullseyeName, geoPoints, shapes }) => {
     const [currentBehaviorIndex, setCurrentBehaviorIndex] = React.useState(0);
     const [editMode, setEditMode] = React.useState(false); // false = view, true = create/edit
     const [editingBehaviorId, setEditingBehaviorId] = React.useState(null); // null = new, id = editing existing
@@ -753,6 +753,29 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                     'Distance: ' + currentBehavior.triggerConfig.distance + ' NM'
                 ),
                 currentBehavior.triggerType === 'atWaypoint' && React.createElement('div', {}, 'Waypoint: #' + (currentBehavior.triggerConfig.waypointIndex + 1)),
+                currentBehavior.triggerType === 'distanceFromGeoPoint' && React.createElement('div', {},
+                    'Target: ' + (() => {
+                        const gt = currentBehavior.triggerConfig.geoTarget || '';
+                        if (gt === 'bullseye') return bullseyeName ? `Bullseye (${bullseyeName})` : 'Bullseye';
+                        if (gt.startsWith('geo-')) {
+                            const gp = (geoPoints || []).find(g => g.id === parseInt(gt.split('-')[1]));
+                            return gp ? (gp.name || `Geo-Point ${gp.id}`) : 'Unknown';
+                        }
+                        if (gt.startsWith('circle-')) {
+                            const s = (shapes || []).find(s => s.id === parseInt(gt.split('-')[1]) && s.type === 'circle');
+                            return s ? (s.label ? `Circle: ${s.label}` : `Circle ${s.id}`) : 'Unknown';
+                        }
+                        if (gt.startsWith('line-')) {
+                            const parts = gt.split('-');
+                            const s = (shapes || []).find(s => s.id === parseInt(parts[1]) && s.type === 'lineSegment');
+                            const pt = s && s.points[parseInt(parts[2])];
+                            return pt ? (pt.name ? `Line Pt: ${pt.name}` : `Line ${parts[1]} Pt ${parseInt(parts[2]) + 1}`) : 'Unknown';
+                        }
+                        return 'Unknown';
+                    })(),
+                    React.createElement('br'),
+                    'Distance: ' + currentBehavior.triggerConfig.distance + ' NM'
+                ),
                 React.createElement('div', { style: { marginTop: '5px', color: currentBehavior.fired ? '#FFFF00' : '#00FF00' } },
                     'Status: ' + (currentBehavior.fired ? 'FIRED' : 'ACTIVE')
                 )
@@ -858,6 +881,7 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                 },
                     React.createElement('option', { value: 'missionTime' }, 'Mission Time'),
                     React.createElement('option', { value: 'distanceFromAsset' }, 'Distance from Asset'),
+                    React.createElement('option', { value: 'distanceFromGeoPoint' }, 'Distance from Geo-Point'),
                     React.createElement('option', { value: 'atWaypoint' }, 'At Waypoint')
                 )
             ),
@@ -979,6 +1003,70 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                         style: { color: '#FFAA00', fontSize: '10px', marginTop: '5px' }
                     }, 'No waypoints assigned to this asset')
                 )
+            ),
+
+            formData.triggerType === 'distanceFromGeoPoint' && React.createElement('div', {},
+                React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '12px' } }, 'GEO-POINT:'),
+                React.createElement('select', {
+                    value: formData.triggerConfig.geoTarget || '',
+                    onChange: (e) => setFormData(prev => ({
+                        ...prev,
+                        triggerConfig: { ...prev.triggerConfig, geoTarget: e.target.value }
+                    })),
+                    style: {
+                        width: '100%',
+                        padding: '8px',
+                        backgroundColor: '#000',
+                        color: '#00FF00',
+                        border: '1px solid #00FF00',
+                        fontSize: '12px',
+                        marginBottom: '10px'
+                    }
+                },
+                    React.createElement('option', { value: '' }, 'Select Geo-Point...'),
+                    // Bullseye
+                    bullseyePosition && React.createElement('option', { key: 'bullseye', value: 'bullseye' },
+                        bullseyeName ? `Bullseye (${bullseyeName})` : 'Bullseye'
+                    ),
+                    // Geo-Points
+                    ...(geoPoints || []).map(gp =>
+                        React.createElement('option', { key: `geo-${gp.id}`, value: `geo-${gp.id}` },
+                            gp.name ? `${gp.name} (${gp.type})` : `Geo-Point ${gp.id}`
+                        )
+                    ),
+                    // Circle shapes
+                    ...(shapes || []).filter(s => s.type === 'circle').map(s =>
+                        React.createElement('option', { key: `circle-${s.id}`, value: `circle-${s.id}` },
+                            s.label ? `Circle: ${s.label}` : `Circle ${s.id}`
+                        )
+                    ),
+                    // Line segment points
+                    ...(shapes || []).filter(s => s.type === 'lineSegment').flatMap(s =>
+                        (s.points || []).map((pt, idx) =>
+                            React.createElement('option', { key: `line-${s.id}-${idx}`, value: `line-${s.id}-${idx}` },
+                                pt.name ? `Line Pt: ${pt.name}` : `Line ${s.id} Pt ${idx + 1}`
+                            )
+                        )
+                    )
+                ),
+                React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '12px' } }, 'DISTANCE (NM):'),
+                React.createElement('input', {
+                    type: 'number',
+                    step: '0.1',
+                    value: formData.triggerConfig.distance || '',
+                    onChange: (e) => setFormData(prev => ({
+                        ...prev,
+                        triggerConfig: { ...prev.triggerConfig, distance: parseFloat(e.target.value) || 0 }
+                    })),
+                    style: {
+                        width: '100%',
+                        padding: '8px',
+                        backgroundColor: '#000',
+                        color: '#00FF00',
+                        border: '1px solid #00FF00',
+                        fontSize: '12px'
+                    }
+                })
             ),
 
             // Actions Section - Will add in continuation
@@ -5825,6 +5913,46 @@ function AICSimulator() {
                                 }
                             }
                             break;
+
+                        case 'distanceFromGeoPoint': {
+                            const geoTarget = behavior.triggerConfig.geoTarget;
+                            let targetLat, targetLon, circleRadius = 0;
+
+                            if (geoTarget === 'bullseye') {
+                                targetLat = bullseyePosition.lat;
+                                targetLon = bullseyePosition.lon;
+                            } else if (geoTarget && geoTarget.startsWith('geo-')) {
+                                const geoId = parseInt(geoTarget.split('-')[1]);
+                                const gp = geoPoints.find(g => g.id === geoId);
+                                if (gp) { targetLat = gp.lat; targetLon = gp.lon; }
+                            } else if (geoTarget && geoTarget.startsWith('circle-')) {
+                                const shapeId = parseInt(geoTarget.split('-')[1]);
+                                const circle = shapes.find(s => s.id === shapeId && s.type === 'circle');
+                                if (circle) {
+                                    targetLat = circle.centerLat;
+                                    targetLon = circle.centerLon;
+                                    circleRadius = circle.radius || 0;
+                                }
+                            } else if (geoTarget && geoTarget.startsWith('line-')) {
+                                const parts = geoTarget.split('-');
+                                const shapeId = parseInt(parts[1]);
+                                const ptIdx = parseInt(parts[2]);
+                                const line = shapes.find(s => s.id === shapeId && s.type === 'lineSegment');
+                                if (line && line.points[ptIdx]) {
+                                    targetLat = line.points[ptIdx].lat;
+                                    targetLon = line.points[ptIdx].lon;
+                                }
+                            }
+
+                            if (targetLat !== undefined && targetLon !== undefined) {
+                                const dist = calculateDistance(updated.lat, updated.lon, targetLat, targetLon);
+                                const effectiveDist = Math.max(0, dist - circleRadius);
+                                if (effectiveDist <= behavior.triggerConfig.distance) {
+                                    shouldFire = true;
+                                }
+                            }
+                            break;
+                        }
                     }
 
                     // Execute actions if trigger fired
@@ -17624,6 +17752,10 @@ function ControlPanel({
                             onAddBehavior={(behavior) => addBehavior(selectedAsset.id, behavior)}
                             onUpdateBehavior={(behaviorId, updates) => updateBehavior(selectedAsset.id, behaviorId, updates)}
                             onDeleteBehavior={(behaviorId) => deleteBehavior(selectedAsset.id, behaviorId)}
+                            bullseyePosition={bullseyePosition}
+                            bullseyeName={bullseyeName}
+                            geoPoints={geoPoints}
+                            shapes={shapes}
                         />
                     )}
 
