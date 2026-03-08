@@ -7103,38 +7103,39 @@ function AICSimulator() {
     useEffect(() => {
         if (simulatorMode !== 'student' || !isRunning) return;
 
-        // Update all datalink-active tracks with actual asset positions
-        const datalinkTracks = studentTracks.filter(t => t.datalinkActive);
-        if (datalinkTracks.length === 0) return;
+        // Only run if there are datalink tracks (checked from closure for efficiency)
+        const hasDatalinkTracks = studentTracks.some(t => t.datalinkActive);
+        if (!hasDatalinkTracks) return;
 
-        let hasUpdates = false;
-        const updatedTracks = studentTracks.map(track => {
-            if (!track.datalinkActive) return track;
+        // Use functional updater to avoid overwriting tracks created by other effects
+        setStudentTracks(prev => {
+            let hasUpdates = false;
+            const updatedTracks = prev.map(track => {
+                if (!track.datalinkActive) return track;
 
-            const asset = assets.find(a => a.id === track.assetId);
-            if (!asset) return track;
+                const asset = assets.find(a => a.id === track.assetId);
+                if (!asset) return track;
 
-            // Check if position has changed
-            if (Math.abs(asset.lat - track.lat) > 0.0001 ||
-                Math.abs(asset.lon - track.lon) > 0.0001 ||
-                Math.abs((asset.heading || 0) - track.estimatedHeading) > 0.1 ||
-                Math.abs((asset.speed || 0) - track.estimatedSpeed) > 0.1) {
-                hasUpdates = true;
-                return {
-                    ...track,
-                    lat: asset.lat,
-                    lon: asset.lon,
-                    estimatedHeading: asset.heading || 0,
-                    estimatedSpeed: asset.speed || 0,
-                    lastDetectionTime: missionTime
-                };
-            }
-            return track;
+                // Check if position has changed
+                if (Math.abs(asset.lat - track.lat) > 0.0001 ||
+                    Math.abs(asset.lon - track.lon) > 0.0001 ||
+                    Math.abs((asset.heading || 0) - track.estimatedHeading) > 0.1 ||
+                    Math.abs((asset.speed || 0) - track.estimatedSpeed) > 0.1) {
+                    hasUpdates = true;
+                    return {
+                        ...track,
+                        lat: asset.lat,
+                        lon: asset.lon,
+                        estimatedHeading: asset.heading || 0,
+                        estimatedSpeed: asset.speed || 0,
+                        lastDetectionTime: missionTime
+                    };
+                }
+                return track;
+            });
+
+            return hasUpdates ? updatedTracks : prev;
         });
-
-        if (hasUpdates) {
-            setStudentTracks(updatedTracks);
-        }
     }, [simulatorMode, isRunning, assets, studentTracks, missionTime]);
 
     // STUDENT MODE: Immediate position sync when assets are moved (dragged)
