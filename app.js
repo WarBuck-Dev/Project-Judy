@@ -1410,6 +1410,7 @@ function AICSimulator() {
             targetingState: null,  // null | 'intercepting' | 'engaging' | 'escorting'
             targetedAssetId: null, // ID of the asset being targeted
             targetDeclaration: null, // 'hostile' | 'bandit' | 'bogeySpades'
+            interceptCommitted: false, // True from commit until picture clean/reset - pauses waypoints
             // VID (Visual ID) state for Bogey Spades intercepts
             vidCalled20nm: false,  // Has called "V-I-D, group" at 20nm
             vidCalled2nm: false,   // Has called "V-I-D group, group NATO name" at 2nm
@@ -3528,6 +3529,7 @@ function AICSimulator() {
                     targetingState: null,
                     targetedAssetId: null,
                     targetGroupName: null,
+                    interceptCommitted: false,
                     fox3Called25nm: false,
                     declareCalled28nm: false,
                     declareResponseReceived: false,
@@ -3826,6 +3828,7 @@ function AICSimulator() {
                         targetedAssetId: targetGroup.id,
                         targetGroupName: priorityGroupName,
                         targetDeclaration: newGroup.declaration,
+                        interceptCommitted: true, // Pause waypoints until picture clean/reset
                         vidCalled20nm: false,
                         vidCalled2nm: false,
                         declareCalled28nm: false, // Reset AIC training flags for new intercept
@@ -4901,14 +4904,15 @@ function AICSimulator() {
         if (!commandExecuted && pictureCleanMatch && interceptState.phase === 'post-merge') {
             let capStation = null;
             const stationName = resetMatchInClean ? resetMatchInClean[1] : null;
+            const hasResetCommand = resetMatchInClean !== null;
 
             // If station name provided and it's not "say" (from "say state"), look it up
             if (stationName && stationName.toLowerCase() !== 'say') {
                 capStation = findGeoPointByName(stationName, geoPoints);
             }
 
-            // If no station found, find nearest CAP to the engaging fighter
-            if (!capStation && targetAsset) {
+            // Only auto-find nearest CAP if "reset" was explicitly said
+            if (!capStation && hasResetCommand && targetAsset) {
                 capStation = findNearestCapStation(targetAsset, geoPoints);
             }
 
@@ -4922,11 +4926,57 @@ function AICSimulator() {
                 updateAsset(targetAsset.id, {
                     targetingState: null,
                     targetedAssetId: null,
-                    targetGroupName: null
+                    targetGroupName: null,
+                    interceptCommitted: false
                 });
 
                 // Add orbit point to return to CAP station
                 addOrbitPoint(targetAsset.id, capStation.lat, capStation.lon);
+            } else if (targetAsset) {
+                // No reset command — fighter acknowledges and resumes waypoints
+                const response = `${formatCallsignForRadio(targetAsset.name)}.`;
+                speakResponse(response);
+                addToRadioLog(targetAsset.name, response, 'incoming');
+
+                updateAsset(targetAsset.id, {
+                    targetingState: null,
+                    targetedAssetId: null,
+                    targetGroupName: null,
+                    interceptCommitted: false
+                });
+            }
+
+            // AIC DEBRIEF: Finalize intercept on picture clean
+            if (currentIntercept) {
+                const missedManeuvers = maneuverTracking.maneuvers
+                    .filter(m => !m.aicCalled)
+                    .map(m => ({
+                        type: 'missedManeuverCall',
+                        time: m.time,
+                        groupName: m.groupName,
+                        maneuverType: m.maneuverType,
+                        description: m.description
+                    }));
+
+                const tacRangeMissed = currentIntercept.tacRangeCalls.length === 0;
+                const interceptRadioLog = radioLog.slice(currentIntercept.radioLogStartIndex || 0);
+
+                const finalDebrief = {
+                    ...currentIntercept,
+                    endTime: missionTime,
+                    radioLog: interceptRadioLog,
+                    vanishAssessments: currentIntercept.vanishAssessments || [],
+                    missedEvents: [
+                        ...(currentIntercept.missedEvents || []),
+                        ...missedManeuvers,
+                        ...(tacRangeMissed ? [{ type: 'missedTacRange', time: null }] : [])
+                    ]
+                };
+
+                setDebriefData(prev => [...prev, finalDebrief]);
+                setCurrentIntercept(null);
+                setGroupManeuvers({});
+                console.log(`[DEBRIEF] Intercept #${finalDebrief.interceptNumber} finalized via picture clean`);
             }
 
             // Reset intercept state
@@ -5630,7 +5680,9 @@ function AICSimulator() {
 
             // Check waypoint arrival FIRST - mark waypoints as reached
             // LAND DOMAIN: Skip waypoint processing (stationary assets don't navigate)
-            if (asset.domain !== 'land' && asset.waypoints && asset.waypoints.length > 0) {
+            // Skip waypoint navigation when committed on a group - intercept heading takes priority
+            // interceptCommitted stays true from commit until picture clean/reset, even after target is destroyed
+            if (asset.domain !== 'land' && asset.waypoints && asset.waypoints.length > 0 && !asset.targetingState && !asset.interceptCommitted) {
                 // Backwards compatibility: ensure all waypoints have reached flag
                 if (asset.waypoints.some(wp => wp.reached === undefined)) {
                     updated.waypoints = asset.waypoints.map(wp => ({
@@ -7373,6 +7425,7 @@ function AICSimulator() {
             targetingState: null,  // null | 'intercepting' | 'engaging' | 'escorting'
             targetedAssetId: null, // ID of the asset being targeted
             targetDeclaration: null, // 'hostile' | 'bandit' | 'bogeySpades'
+            interceptCommitted: false, // True from commit until picture clean/reset - pauses waypoints
             // VID (Visual ID) state for Bogey Spades intercepts
             vidCalled20nm: false,  // Has called "V-I-D, group" at 20nm
             vidCalled2nm: false,   // Has called "V-I-D group, group NATO name" at 2nm
@@ -8251,7 +8304,8 @@ function AICSimulator() {
                 centerLat: lat,
                 centerLon: lon,
                 radius: 10, // Default 10 NM radius
-                identity: 'unknown'
+                identity: 'unknown',
+                label: ''
             };
             setShapes(prev => [...prev, newShape]);
             setNextShapeId(prev => prev + 1);
@@ -11650,6 +11704,21 @@ function AICSimulator() {
                         strokeWidth="2"
                         opacity="0.8"
                     />
+                    {/* Label */}
+                    {shape.label && (
+                        <text
+                            x={centerPos.x}
+                            y={centerPos.y - radiusInPixels - 12}
+                            fill={identityColor}
+                            fontSize="12"
+                            fontFamily="Orbitron, monospace"
+                            textAnchor="middle"
+                            opacity="0.9"
+                            style={{ textShadow: `0 0 4px ${identityColor}` }}
+                        >
+                            {shape.label}
+                        </text>
+                    )}
                 </g>
             );
         } else if (shape.type === 'lineSegment') {
@@ -14929,6 +14998,16 @@ function ControlPanel({
 
                         {selectedShape.type === 'circle' && (
                             <>
+                                <div className="input-group">
+                                    <label className="input-label">Label</label>
+                                    <input
+                                        type="text"
+                                        className="input-field"
+                                        value={selectedShape.label || ''}
+                                        onChange={(e) => updateShape(selectedShape.id, { label: e.target.value })}
+                                        placeholder="Enter label..."
+                                    />
+                                </div>
                                 <div className="input-group">
                                     <label className="input-label">Center Latitude</label>
                                     <input
