@@ -1863,6 +1863,9 @@ function AICSimulator() {
             'banished': 'vanished',
             'vanish': 'vanished',
             'finished': 'vanished',
+            'fated': 'faded',
+            'faith': 'faded',
+            'fayed': 'faded',
             // Group name mishearings
             'lee group': 'lead group',
             'league group': 'lead group',
@@ -1994,13 +1997,13 @@ function AICSimulator() {
         return { valid: false, error: `Missing: ${missing.join(', ')}` };
     };
 
-    // Validate Vanish Assessment format (context-aware based on remaining groups)
+    // Validate Vanish/Fade Assessment format (context-aware based on remaining groups)
     const validateVanishAssessment = (transcript, remainingActiveGroups) => {
-        const hasVanished = /vanished/i.test(transcript);
+        const hasVanishedOrFaded = /vanished|faded/i.test(transcript);
         const hasGroupName = /(north|south|lead|trail|single)\s*group/i.test(transcript);
 
-        if (!hasVanished || !hasGroupName) {
-            return { valid: false, error: 'Missing vanished or group name' };
+        if (!hasVanishedOrFaded || !hasGroupName) {
+            return { valid: false, error: 'Missing vanished/faded or group name' };
         }
 
         // If there are still groups remaining after this vanish, need a retarget directive
@@ -3332,7 +3335,7 @@ function AICSimulator() {
         // Once committed, similar calls are labeled pictures, not broadcasts
         // Vanished calls should never be treated as broadcasts - they are directive targeting calls
         const isCommitCall = text.includes('commit');
-        const isVanishedBroadcast = text.includes('vanished');
+        const isVanishedBroadcast = text.includes('vanished') || text.includes('faded');
         const isSeparationCall = text.includes('separation');
         const isDeclareResponse = text.match(/(\w+\s*group).*?(rock|bullseye).*?(hostile|friendly|neutral|bogey)/i);
         const isTacRangeCall = text.match(/(\w+\s*group)\s*(\d+)\s*miles/i);
@@ -3509,7 +3512,7 @@ function AICSimulator() {
                 // This is a procedural error - should wait for fighter's anchor-flow-picture request
                 // We store this locally and add it to finalDebrief since setState is async
                 let combinedVanishAssessment = null;
-                const combinedVanishedMatch = text.match(/(\w+\s*(?:group|arm))\s*vanished/i);
+                const combinedVanishedMatch = text.match(/(\w+\s*(?:group|arm))\s*(?:vanished|faded)/i);
                 if (combinedVanishedMatch && currentIntercept) {
                     const vanishedGroupName = combinedVanishedMatch[1];
                     combinedVanishAssessment = {
@@ -3517,8 +3520,9 @@ function AICSimulator() {
                         transcript: text,
                         fromGroup: vanishedGroupName,
                         toGroup: null,
+                        callType: /faded/i.test(text) ? 'faded' : 'vanished',
                         valid: false,
-                        error: "Good vanish call, but wait for the fighter's Anchor-Flow-Picture request before giving picture clean/reset"
+                        error: "Good vanish/fade call, but wait for the fighter's Anchor-Flow-Picture request before giving picture clean/reset"
                     };
                     console.log(`[DEBRIEF] Vanished+Reset combined - procedural error logged for ${vanishedGroupName}`);
                 }
@@ -3618,9 +3622,9 @@ function AICSimulator() {
 
         // TARGET: "Heat 11 target single group ROCK 120/30 twenty-four thousand track east hostile"
         // Directs asset to intercept group at bullseye position
-        // IMPORTANT: Exclude vanished calls - they use "target" but should be handled by the vanished handler
+        // IMPORTANT: Exclude vanished/faded calls - they use "target" but should be handled by the vanished/faded handler
         const targetMatch = text.match(/\btarget\b/i);
-        const isVanishedForTarget = text.match(/vanished/i);
+        const isVanishedForTarget = text.match(/vanished|faded/i);
         console.log('[HANDLER DEBUG] TARGET check - targetMatch:', targetMatch, 'isVanishedForTarget:', isVanishedForTarget, 'commandExecuted:', commandExecuted);
         if (!commandExecuted && targetMatch && !isVanishedForTarget) {
             console.log('[HANDLER DEBUG] >>> TARGET handler ENTERED');
@@ -4236,10 +4240,10 @@ function AICSimulator() {
 
         // DECLARE RESPONSE: "Closeout, North Group Rock 090/28, twenty-five thousand, track west, hostile"
         // Fighter acknowledges - works in engagement phase, when intercepting, OR in active intercept scenario (loaded saves)
-        // IMPORTANT: Exclude vanished calls and new picture calls - they should be handled by their own handlers
+        // IMPORTANT: Exclude vanished/faded calls and new picture calls - they should be handled by their own handlers
         const declareResponseMatch = text.match(/(\w+\s*group).*?(rock|bullseye)/i);
         const isNotCommit = !text.match(/commit/i);
-        const isVanishedCall = text.match(/vanished/i);
+        const isVanishedCall = text.match(/vanished|faded/i);
         const isNewPictureCall = text.match(/new\s*picture/i);
         console.log('[HANDLER DEBUG] DECLARE check - declareResponseMatch:', declareResponseMatch, 'isVanishedCall:', isVanishedCall, 'isNewPictureCall:', isNewPictureCall, 'commandExecuted:', commandExecuted, 'isIntercepting:', isIntercepting, 'isActiveInterceptScenario:', isActiveInterceptScenario);
         if (!commandExecuted && declareResponseMatch && isNotCommit && !isVanishedCall && !isNewPictureCall && (interceptState.phase === 'engagement' || isIntercepting || isActiveInterceptScenario)) {
@@ -4335,10 +4339,11 @@ function AICSimulator() {
             commandExecuted = true;
         }
 
-        // VANISHED + Directive Targeting: "Closeout, North Group vanished. Heat one one, target South Group Rock 100/22..."
-        const vanishedMatch = text.match(/(\w+\s*(?:group|arm))\s*vanished/i);
-        // DEBUG: Log vanished handler entry conditions
-        console.log('[HANDLER DEBUG] VANISHED check - vanishedMatch:', vanishedMatch, 'commandExecuted:', commandExecuted, 'isActiveInterceptScenario:', isActiveInterceptScenario);
+        // VANISHED/FADED + Directive Targeting: "Closeout, North Group vanished/faded. Heat one one, target South Group Rock 100/22..."
+        // "faded" is used over land, "vanished" over water - both mean the group is no longer alive
+        const vanishedMatch = text.match(/(\w+\s*(?:group|arm))\s*(?:vanished|faded)/i);
+        // DEBUG: Log vanished/faded handler entry conditions
+        console.log('[HANDLER DEBUG] VANISHED/FADED check - vanishedMatch:', vanishedMatch, 'commandExecuted:', commandExecuted, 'isActiveInterceptScenario:', isActiveInterceptScenario);
         console.log('[VANISHED DEBUG] Text:', text);
         console.log('[VANISHED DEBUG] vanishedMatch:', vanishedMatch);
         console.log('[VANISHED DEBUG] commandExecuted:', commandExecuted);
@@ -4492,9 +4497,10 @@ function AICSimulator() {
                 }, 2000);
             }
 
-            // AIC DEBRIEF: Log vanished assessment and validate format
+            // AIC DEBRIEF: Log vanished/faded assessment and validate format
+            const usedFaded = /faded/i.test(text);
             if (currentIntercept) {
-                // Count remaining active groups AFTER this vanish
+                // Count remaining active groups AFTER this vanish/fade
                 // We can't rely on interceptState.groups because React state updates are async
                 // Instead, count total groups minus groups already vanished minus this one
                 const totalGroups = interceptState.groups.length;
@@ -4513,6 +4519,7 @@ function AICSimulator() {
                             transcript: text,
                             fromGroup: vanishedGroupName,
                             toGroup: toGroup,
+                            callType: usedFaded ? 'faded' : 'vanished',
                             valid: vanishValid.valid,
                             error: vanishValid.error
                         }
@@ -5002,8 +5009,8 @@ function AICSimulator() {
             const isTacRangeCall = /\d+\s*miles/i.test(text);
             // Exclude separation calls (contain "rock" bullseye + altitude, OR word "separation") - unless explicit maneuver
             const isSeparationCall = (/rock\s*\d+.*?(thousand|angels)/i.test(text) || /\bseparation\b/i.test(text)) && !isExplicitManeuverCall;
-            // Exclude vanish calls - unless explicit maneuver
-            const isVanishCall = /vanished/i.test(text) && !isExplicitManeuverCall;
+            // Exclude vanish/fade calls - unless explicit maneuver
+            const isVanishCall = /vanished|faded/i.test(text) && !isExplicitManeuverCall;
             // Exclude new picture calls - unless explicit maneuver (e.g., "single group maneuver range, new picture...")
             const isNewPictureCall = /new\s*picture/i.test(text) && !isExplicitManeuverCall;
 
@@ -19216,7 +19223,7 @@ function InterceptScorecard({ data }) {
             </div>
 
             <div className="scorecard-row">
-                <label>Vanish Assessments:</label>
+                <label>Vanish/Fade Assessments:</label>
                 <VanishResult calls={data.vanishAssessments} />
             </div>
 
@@ -19323,14 +19330,14 @@ function DirectiveResult({ calls }) {
 
 function VanishResult({ calls }) {
     if (!calls || calls.length === 0) {
-        return <span className="na">No vanish assessments</span>;
+        return <span className="na">No vanish/fade assessments</span>;
     }
 
     return (
         <div className="result-list">
             {calls.map((call, i) => (
                 <div key={i} className={call.valid ? 'success' : 'error'}>
-                    {call.fromGroup} vanished{call.toGroup ? ` → ${call.toGroup}` : ''}
+                    {call.fromGroup} {call.callType === 'faded' ? 'faded' : 'vanished'}{call.toGroup ? ` → ${call.toGroup}` : ''}
                     {!call.valid && <span className="error-detail"> - {call.error}</span>}
                 </div>
             ))}
