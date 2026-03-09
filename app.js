@@ -6,7 +6,7 @@ const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 // BULLSEYE position is now stored in state (bullseyePosition)
 const INITIAL_SCALE = 100; // nautical miles
-const MIN_SCALE = 5;
+const MIN_SCALE = 2;
 const MAX_SCALE = 360;
 const PHYSICS_UPDATE_RATE = 1000 / 60; // 60 Hz
 const WAYPOINT_ARRIVAL_THRESHOLD = 0.5; // nautical miles
@@ -18905,7 +18905,7 @@ function ControlsDialog({ onClose }) {
                         <p><strong>Right-click on map:</strong> Open context menu (add assets, waypoints)</p>
                         <p><strong>Right-click on waypoint:</strong> Delete waypoint</p>
                         <p><strong>Click + drag on empty space:</strong> Pan the map view</p>
-                        <p><strong>Mouse wheel:</strong> Zoom in/out (10-360 NM scale)</p>
+                        <p><strong>Mouse wheel:</strong> Zoom in/out (2-360 NM scale)</p>
                     </div>
 
                     <h3 style={{ color: '#00FF00', fontSize: '12px', marginTop: '15px', marginBottom: '10px' }}>KEYBOARD SHORTCUTS</h3>
