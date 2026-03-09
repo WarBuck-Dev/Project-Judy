@@ -17991,7 +17991,7 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                 if (contextMenu.assetId !== undefined) {
                     const randomHeading = Math.floor(Math.random() * 360);
                     const randomSpeed = 240 + Math.floor(Math.random() * 14) * 20; // 240-500, divisible by 20
-                    updateAsset(contextMenu.assetId, { targetHeading: randomHeading, targetSpeed: randomSpeed });
+                    updateAsset(contextMenu.assetId, { targetHeading: randomHeading, speed: randomSpeed, targetSpeed: randomSpeed });
                 }
                 break;
         }
