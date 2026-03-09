@@ -9499,11 +9499,14 @@ function AICSimulator() {
             if (dist < 15) {
                 const retAsset = assets.find(a => a.id === ret.assetId);
                 if (retAsset && retAsset.trackFileEnabled === false) {
+                    const retLatLon = screenToLatLon(x, y, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
                     setContextMenu({
                         x: e.clientX,
                         y: e.clientY,
                         type: 'radarReturn',
-                        assetId: retAsset.id
+                        assetId: retAsset.id,
+                        lat: retLatLon.lat,
+                        lon: retLatLon.lon
                     });
                     return;
                 }
@@ -10590,6 +10593,24 @@ function AICSimulator() {
                         setSelectedEsmId(emitter.id);
                     };
 
+                    const handleEsmRightClick = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const svg = svgRef.current;
+                        if (!svg) return;
+                        const rect = svg.getBoundingClientRect();
+                        const clickX = e.clientX - rect.left;
+                        const clickY = e.clientY - rect.top;
+                        const latLon = screenToLatLon(clickX, clickY, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                        setContextMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            type: 'esmLine',
+                            lat: latLon.lat,
+                            lon: latLon.lon
+                        });
+                    };
+
                     return (
                         <g key={emitter.id}>
                             {/* LOB Line - only show when selected */}
@@ -10605,6 +10626,7 @@ function AICSimulator() {
                                         opacity={isActive ? 0.8 : 0.6}
                                         style={{ cursor: 'pointer' }}
                                         onClick={handleEsmClick}
+                                        onContextMenu={handleEsmRightClick}
                                     />
                                     {/* Invisible wider line for easier clicking */}
                                     <line
@@ -10616,6 +10638,7 @@ function AICSimulator() {
                                         strokeWidth={10}
                                         style={{ cursor: 'pointer' }}
                                         onClick={handleEsmClick}
+                                        onContextMenu={handleEsmRightClick}
                                     />
                                 </>
                             )}
@@ -10623,6 +10646,7 @@ function AICSimulator() {
                             <g
                                 style={{ cursor: 'pointer' }}
                                 onClick={handleEsmClick}
+                                onContextMenu={handleEsmRightClick}
                             >
                                 <rect
                                     x={labelX - 18}
@@ -10728,12 +10752,24 @@ function AICSimulator() {
                     const handleManualLineRightClick = (e) => {
                         e.preventDefault();
                         e.stopPropagation();
+                        const svg = svgRef.current;
+                        let lat, lon;
+                        if (svg) {
+                            const rect = svg.getBoundingClientRect();
+                            const clickX = e.clientX - rect.left;
+                            const clickY = e.clientY - rect.top;
+                            const latLon = screenToLatLon(clickX, clickY, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                            lat = latLon.lat;
+                            lon = latLon.lon;
+                        }
                         setContextMenu({
                             x: e.clientX,
                             y: e.clientY,
                             type: 'manualBearingLine',
                             id: line.id,
-                            serialNumber: line.serialNumber
+                            serialNumber: line.serialNumber,
+                            lat,
+                            lon
                         });
                     };
 
@@ -11576,9 +11612,34 @@ function AICSimulator() {
                     const endX = sonoPos.x + tMin * cos;
                     const endY = sonoPos.y + tMin * sin;
 
+                    const handleSonoLineRightClick = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const svg = svgRef.current;
+                        if (!svg) return;
+                        const rect = svg.getBoundingClientRect();
+                        const clickX = e.clientX - rect.left;
+                        const clickY = e.clientY - rect.top;
+                        const latLon = screenToLatLon(clickX, clickY, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+                        setContextMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            type: 'sonobuoyLine',
+                            lat: latLon.lat,
+                            lon: latLon.lon
+                        });
+                    };
+
                     return (
                         <g key={detection.id}>
                             <line x1={sonoPos.x} y1={sonoPos.y} x2={endX} y2={endY} stroke="#FF0000" strokeWidth={2} opacity={0.8} />
+                            {/* Invisible wider line for easier right-clicking */}
+                            <line
+                                x1={sonoPos.x} y1={sonoPos.y} x2={endX} y2={endY}
+                                stroke="transparent" strokeWidth={10}
+                                style={{ cursor: 'pointer' }}
+                                onContextMenu={handleSonoLineRightClick}
+                            />
                         </g>
                     );
                 })}
@@ -18212,15 +18273,135 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             )}
 
             {contextMenu.type === 'manualBearingLine' && (
-                <div className="context-menu-item" onClick={() => handleClick('deleteManualBearingLine')}>
-                    Delete M{contextMenu.serialNumber.toString().padStart(2, '0')}
-                </div>
+                <>
+                    <div className="context-menu-item" onClick={() => handleClick('deleteManualBearingLine')}>
+                        Delete M{contextMenu.serialNumber.toString().padStart(2, '0')}
+                    </div>
+                    {simulatorMode === 'student' && (
+                        <div className="context-menu-item" onClick={() => handleClick('createOperatorTrack')}>
+                            Create Operator Track
+                        </div>
+                    )}
+                    <div
+                        className="context-menu-item context-menu-parent"
+                        onMouseEnter={() => setShowGeoPointSubmenu(true)}
+                        onMouseLeave={() => setShowGeoPointSubmenu(false)}
+                    >
+                        Create Geo-Point ›
+                        {showGeoPointSubmenu && (
+                            <div className="context-menu-submenu">
+                                {Object.entries(GEOPOINT_TYPES).map(([key, config]) => (
+                                    <div key={key} className="context-menu-item" onClick={() => handleClick('createGeoPoint', key)}>
+                                        {config.label}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <div
+                        className="context-menu-item context-menu-parent"
+                        onMouseEnter={() => setShowShapeSubmenu(true)}
+                        onMouseLeave={() => setShowShapeSubmenu(false)}
+                    >
+                        Create Shape ›
+                        {showShapeSubmenu && (
+                            <div className="context-menu-submenu">
+                                {Object.entries(SHAPE_TYPES).map(([key, config]) => (
+                                    <div key={key} className="context-menu-item" onClick={() => handleClick('createShape', key)}>
+                                        {config.label}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </>
             )}
 
             {contextMenu.type === 'radarReturn' && (
-                <div className="context-menu-item" onClick={() => handleClick('generateRandomCourseSpeed')}>
-                    Generate Random Course/Speed
-                </div>
+                <>
+                    <div className="context-menu-item" onClick={() => handleClick('generateRandomCourseSpeed')}>
+                        Generate Random Course/Speed
+                    </div>
+                    {simulatorMode === 'student' && (
+                        <div className="context-menu-item" onClick={() => handleClick('createOperatorTrack')}>
+                            Create Operator Track
+                        </div>
+                    )}
+                    <div
+                        className="context-menu-item context-menu-parent"
+                        onMouseEnter={() => setShowGeoPointSubmenu(true)}
+                        onMouseLeave={() => setShowGeoPointSubmenu(false)}
+                    >
+                        Create Geo-Point ›
+                        {showGeoPointSubmenu && (
+                            <div className="context-menu-submenu">
+                                {Object.entries(GEOPOINT_TYPES).map(([key, config]) => (
+                                    <div key={key} className="context-menu-item" onClick={() => handleClick('createGeoPoint', key)}>
+                                        {config.label}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <div
+                        className="context-menu-item context-menu-parent"
+                        onMouseEnter={() => setShowShapeSubmenu(true)}
+                        onMouseLeave={() => setShowShapeSubmenu(false)}
+                    >
+                        Create Shape ›
+                        {showShapeSubmenu && (
+                            <div className="context-menu-submenu">
+                                {Object.entries(SHAPE_TYPES).map(([key, config]) => (
+                                    <div key={key} className="context-menu-item" onClick={() => handleClick('createShape', key)}>
+                                        {config.label}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+
+            {(contextMenu.type === 'esmLine' || contextMenu.type === 'sonobuoyLine') && (
+                <>
+                    {simulatorMode === 'student' && (
+                        <div className="context-menu-item" onClick={() => handleClick('createOperatorTrack')}>
+                            Create Operator Track
+                        </div>
+                    )}
+                    <div
+                        className="context-menu-item context-menu-parent"
+                        onMouseEnter={() => setShowGeoPointSubmenu(true)}
+                        onMouseLeave={() => setShowGeoPointSubmenu(false)}
+                    >
+                        Create Geo-Point ›
+                        {showGeoPointSubmenu && (
+                            <div className="context-menu-submenu">
+                                {Object.entries(GEOPOINT_TYPES).map(([key, config]) => (
+                                    <div key={key} className="context-menu-item" onClick={() => handleClick('createGeoPoint', key)}>
+                                        {config.label}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <div
+                        className="context-menu-item context-menu-parent"
+                        onMouseEnter={() => setShowShapeSubmenu(true)}
+                        onMouseLeave={() => setShowShapeSubmenu(false)}
+                    >
+                        Create Shape ›
+                        {showShapeSubmenu && (
+                            <div className="context-menu-submenu">
+                                {Object.entries(SHAPE_TYPES).map(([key, config]) => (
+                                    <div key={key} className="context-menu-item" onClick={() => handleClick('createShape', key)}>
+                                        {config.label}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </>
             )}
 
             {/* Engage/Target - Instructor OR Friendly in Student */}
