@@ -630,6 +630,11 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
             if (currentBehavior.triggerType === 'missionTime' && config.missionTime !== undefined) {
                 config.missionTimeDisplay = formatMissionTime(config.missionTime);
             }
+            // Convert randomTime min/max from seconds to HH:MM:SS for editing
+            if (currentBehavior.triggerType === 'randomTime') {
+                if (config.minTime !== undefined) config.minTimeDisplay = formatMissionTime(config.minTime);
+                if (config.maxTime !== undefined) config.maxTimeDisplay = formatMissionTime(config.maxTime);
+            }
             setFormData({
                 triggerType: currentBehavior.triggerType,
                 triggerConfig: config,
@@ -648,6 +653,13 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
             dataToSave.triggerConfig = {
                 missionTime: parseTimeToSeconds(formData.triggerConfig.missionTimeDisplay)
             };
+        }
+        // Convert randomTime display strings back to seconds and compute initial random time
+        if (formData.triggerType === 'randomTime') {
+            const minTime = parseTimeToSeconds(formData.triggerConfig.minTimeDisplay || '00:00:00');
+            const maxTime = parseTimeToSeconds(formData.triggerConfig.maxTimeDisplay || '00:00:00');
+            const randomMissionTime = minTime + Math.floor(Math.random() * (maxTime - minTime + 1));
+            dataToSave.triggerConfig = { minTime, maxTime, randomMissionTime };
         }
 
         if (editingBehaviorId !== null) {
@@ -747,6 +759,13 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                 React.createElement('div', { style: { fontWeight: 'bold', marginBottom: '5px' } }, 'TRIGGER:'),
                 React.createElement('div', {}, 'Type: ' + currentBehavior.triggerType),
                 currentBehavior.triggerType === 'missionTime' && React.createElement('div', {}, 'Time: ' + formatMissionTime(currentBehavior.triggerConfig.missionTime)),
+                currentBehavior.triggerType === 'randomTime' && React.createElement('div', {},
+                    'Min: ' + formatMissionTime(currentBehavior.triggerConfig.minTime),
+                    React.createElement('br'),
+                    'Max: ' + formatMissionTime(currentBehavior.triggerConfig.maxTime),
+                    React.createElement('br'),
+                    'Random: ' + formatMissionTime(currentBehavior.triggerConfig.randomMissionTime)
+                ),
                 currentBehavior.triggerType === 'distanceFromAsset' && React.createElement('div', {},
                     'Target: ' + (assets.find(a => a.id === currentBehavior.triggerConfig.targetAssetId)?.name || 'Unknown'),
                     React.createElement('br'),
@@ -867,7 +886,9 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                     value: formData.triggerType,
                     onChange: (e) => {
                         const newType = e.target.value;
-                        const newConfig = newType === 'missionTime' ? { missionTimeDisplay: '00:00:00' } : {};
+                        let newConfig = {};
+                        if (newType === 'missionTime') newConfig = { missionTimeDisplay: '00:00:00' };
+                        else if (newType === 'randomTime') newConfig = { minTimeDisplay: '00:00:00', maxTimeDisplay: '00:00:00' };
                         setFormData(prev => ({ ...prev, triggerType: newType, triggerConfig: newConfig }));
                     },
                     style: {
@@ -880,6 +901,7 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                     }
                 },
                     React.createElement('option', { value: 'missionTime' }, 'Mission Time'),
+                    React.createElement('option', { value: 'randomTime' }, 'Random Time'),
                     React.createElement('option', { value: 'distanceFromAsset' }, 'Distance from Asset'),
                     React.createElement('option', { value: 'distanceFromGeoPoint' }, 'Distance from Geo-Point'),
                     React.createElement('option', { value: 'atWaypoint' }, 'At Waypoint')
@@ -915,6 +937,84 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                                 setFormData(prev => ({
                                     ...prev,
                                     triggerConfig: { ...prev.triggerConfig, missionTimeDisplay: formatted }
+                                }));
+                            }
+                        },
+                        style: {
+                            width: '100%',
+                            padding: '8px',
+                            backgroundColor: '#000',
+                            color: '#00FF00',
+                            border: '1px solid #00FF00',
+                            fontSize: '12px',
+                            fontFamily: 'monospace'
+                        }
+                    })
+                ),
+
+                formData.triggerType === 'randomTime' && React.createElement('div', {},
+                    React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '12px' } }, 'MIN TIME (HH:MM:SS):'),
+                    React.createElement('input', {
+                        type: 'text',
+                        placeholder: '00:00:00',
+                        value: formData.triggerConfig.minTimeDisplay || '',
+                        onChange: (e) => {
+                            const value = e.target.value;
+                            if (/^[0-9:]*$/.test(value)) {
+                                setFormData(prev => ({
+                                    ...prev,
+                                    triggerConfig: { ...prev.triggerConfig, minTimeDisplay: value }
+                                }));
+                            }
+                        },
+                        onBlur: (e) => {
+                            const parts = e.target.value.split(':');
+                            if (parts.length > 0) {
+                                const hours = (parseInt(parts[0]) || 0).toString().padStart(2, '0');
+                                const minutes = (parseInt(parts[1]) || 0).toString().padStart(2, '0');
+                                const seconds = (parseInt(parts[2]) || 0).toString().padStart(2, '0');
+                                const formatted = `${hours}:${minutes}:${seconds}`;
+                                setFormData(prev => ({
+                                    ...prev,
+                                    triggerConfig: { ...prev.triggerConfig, minTimeDisplay: formatted }
+                                }));
+                            }
+                        },
+                        style: {
+                            width: '100%',
+                            padding: '8px',
+                            backgroundColor: '#000',
+                            color: '#00FF00',
+                            border: '1px solid #00FF00',
+                            fontSize: '12px',
+                            fontFamily: 'monospace',
+                            marginBottom: '10px'
+                        }
+                    }),
+                    React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '12px' } }, 'MAX TIME (HH:MM:SS):'),
+                    React.createElement('input', {
+                        type: 'text',
+                        placeholder: '00:00:00',
+                        value: formData.triggerConfig.maxTimeDisplay || '',
+                        onChange: (e) => {
+                            const value = e.target.value;
+                            if (/^[0-9:]*$/.test(value)) {
+                                setFormData(prev => ({
+                                    ...prev,
+                                    triggerConfig: { ...prev.triggerConfig, maxTimeDisplay: value }
+                                }));
+                            }
+                        },
+                        onBlur: (e) => {
+                            const parts = e.target.value.split(':');
+                            if (parts.length > 0) {
+                                const hours = (parseInt(parts[0]) || 0).toString().padStart(2, '0');
+                                const minutes = (parseInt(parts[1]) || 0).toString().padStart(2, '0');
+                                const seconds = (parseInt(parts[2]) || 0).toString().padStart(2, '0');
+                                const formatted = `${hours}:${minutes}:${seconds}`;
+                                setFormData(prev => ({
+                                    ...prev,
+                                    triggerConfig: { ...prev.triggerConfig, maxTimeDisplay: formatted }
                                 }));
                             }
                         },
@@ -5933,6 +6033,12 @@ function AICSimulator() {
                             }
                             break;
 
+                        case 'randomTime':
+                            if (behavior.triggerConfig.randomMissionTime !== undefined && missionTime >= behavior.triggerConfig.randomMissionTime) {
+                                shouldFire = true;
+                            }
+                            break;
+
                         case 'distanceFromAsset':
                             const targetAsset = prevAssets.find(a => a.id === behavior.triggerConfig.targetAssetId);
                             if (targetAsset) {
@@ -8910,6 +9016,19 @@ function AICSimulator() {
                 loadedAssets[ownshipIndex].id = 0;
             }
 
+            // Recalculate random trigger times on load
+            loadedAssets.forEach(asset => {
+                if (asset.behaviors) {
+                    asset.behaviors.forEach(behavior => {
+                        if (behavior.triggerType === 'randomTime' && behavior.triggerConfig) {
+                            const { minTime, maxTime } = behavior.triggerConfig;
+                            behavior.triggerConfig.randomMissionTime = minTime + Math.floor(Math.random() * (maxTime - minTime + 1));
+                            behavior.fired = false;
+                        }
+                    });
+                }
+            });
+
             setAssets(loadedAssets);
             setScale(saveData.scale || INITIAL_SCALE);
             setMapCenter(saveData.mapCenter || loadedBullseye);
@@ -9072,6 +9191,19 @@ function AICSimulator() {
                         // Ownship exists but has wrong ID, fix it
                         loadedAssets[ownshipIndex].id = 0;
                     }
+
+                    // Recalculate random trigger times on load
+                    loadedAssets.forEach(asset => {
+                        if (asset.behaviors) {
+                            asset.behaviors.forEach(behavior => {
+                                if (behavior.triggerType === 'randomTime' && behavior.triggerConfig) {
+                                    const { minTime, maxTime } = behavior.triggerConfig;
+                                    behavior.triggerConfig.randomMissionTime = minTime + Math.floor(Math.random() * (maxTime - minTime + 1));
+                                    behavior.fired = false;
+                                }
+                            });
+                        }
+                    });
 
                     setAssets(loadedAssets);
                     setScale(saveData.scale || INITIAL_SCALE);
