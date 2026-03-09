@@ -3431,6 +3431,15 @@ function AICSimulator() {
 
                 return; // AW command handled, exit early
             }
+        } else if (awMatch && !checkPrintMatch) {
+            // AW courtesy call - "AW, Tango, over" — gets AW's attention before passing checkprint lines
+            addToRadioLog(ownshipAirDefenseCallsign, transcript, 'outgoing');
+            const awCourtesyResponse = `${ownshipAirDefenseCallsign}, Alpha Whiskey, go ahead, over.`;
+            setTimeout(() => {
+                speakResponse(awCourtesyResponse);
+                addToRadioLog('Alpha Whiskey', awCourtesyResponse, 'incoming');
+            }, 500);
+            return;
         }
 
         // Check if this is a BROADCAST call (AIC uses their own callsign, not asset callsign)
