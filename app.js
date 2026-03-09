@@ -9492,6 +9492,24 @@ function AICSimulator() {
             }
         }
 
+        // Check if clicking on a radar return for a trackFileEnabled=false asset
+        for (const ret of radarReturns) {
+            const retPos = latLonToScreen(ret.lat, ret.lon, mapCenter.lat, mapCenter.lon, scale, rect.width, rect.height);
+            const dist = Math.sqrt((x - retPos.x) ** 2 + (y - retPos.y) ** 2);
+            if (dist < 15) {
+                const retAsset = assets.find(a => a.id === ret.assetId);
+                if (retAsset && retAsset.trackFileEnabled === false) {
+                    setContextMenu({
+                        x: e.clientX,
+                        y: e.clientY,
+                        type: 'radarReturn',
+                        assetId: retAsset.id
+                    });
+                    return;
+                }
+            }
+        }
+
         // Check if clicking on an asset for weapon engagement or targeting
         let clickedTargetAsset = null;
         for (const asset of assets) {
@@ -9634,7 +9652,7 @@ function AICSimulator() {
             lat: latLon.lat,
             lon: latLon.lon
         });
-    }, [selectedAsset, assets, geoPoints, shapes, mapCenter, scale, selectedAssetId, simulatorMode, selectedTrackId, studentTracks, selectedSystemTab]);
+    }, [selectedAsset, assets, geoPoints, shapes, mapCenter, scale, selectedAssetId, simulatorMode, selectedTrackId, studentTracks, selectedSystemTab, radarReturns]);
 
     const handleMouseMove = useCallback((e) => {
         const svg = svgRef.current;
@@ -12462,6 +12480,7 @@ function AICSimulator() {
                     setShowCreateOperatorTrackDialog={setShowCreateOperatorTrackDialog}
                     fuseTrack={fuseTrack}
                     addOrbitPoint={addOrbitPoint}
+                    updateAsset={updateAsset}
                 />
             )}
 
@@ -17848,7 +17867,7 @@ function ControlPanel({
 // CONTEXT MENU COMPONENT
 // ============================================================================
 
-function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, clearWaypoints, deleteWaypoint, wrapWaypoint, unwrapWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType, setSelectedOperatorTrackTarget, simulatorMode, studentTracks, setShowCreateOperatorTrackDialog, fuseTrack, addOrbitPoint }) {
+function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, addWaypoint, clearWaypoints, deleteWaypoint, wrapWaypoint, unwrapWaypoint, addGeoPoint, deleteGeoPoint, startCreatingShape, deleteShape, platforms, setShowPlatformDialog, deleteManualBearingLine, assets, weaponInventory, weaponConfigs, fireWeapon, setSelectedTargetAssetId, setSelectedWeaponType, setSelectedOperatorTrackTarget, simulatorMode, studentTracks, setShowCreateOperatorTrackDialog, fuseTrack, addOrbitPoint, updateAsset }) {
     const [showDomainSubmenu, setShowDomainSubmenu] = useState(false);
     const [showGeoPointSubmenu, setShowGeoPointSubmenu] = useState(false);
     const [showShapeSubmenu, setShowShapeSubmenu] = useState(false);
@@ -17967,6 +17986,13 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
                 break;
             case 'fuseTrack':
                 fuseTrack(param.operatorTrackId, param.radarTrackId);
+                break;
+            case 'generateRandomCourseSpeed':
+                if (contextMenu.assetId !== undefined) {
+                    const randomHeading = Math.floor(Math.random() * 360);
+                    const randomSpeed = 240 + Math.floor(Math.random() * 14) * 20; // 240-500, divisible by 20
+                    updateAsset(contextMenu.assetId, { targetHeading: randomHeading, targetSpeed: randomSpeed });
+                }
                 break;
         }
         setContextMenu(null);
@@ -18188,6 +18214,12 @@ function ContextMenu({ contextMenu, setContextMenu, selectedAsset, addAsset, add
             {contextMenu.type === 'manualBearingLine' && (
                 <div className="context-menu-item" onClick={() => handleClick('deleteManualBearingLine')}>
                     Delete M{contextMenu.serialNumber.toString().padStart(2, '0')}
+                </div>
+            )}
+
+            {contextMenu.type === 'radarReturn' && (
+                <div className="context-menu-item" onClick={() => handleClick('generateRandomCourseSpeed')}>
+                    Generate Random Course/Speed
                 </div>
             )}
 
