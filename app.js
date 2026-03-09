@@ -9977,7 +9977,7 @@ function AICSimulator() {
 
     const handleWheel = useCallback((e) => {
         e.preventDefault();
-        const delta = e.deltaY > 0 ? 10 : -10;
+        const zoomIn = e.deltaY < 0;
 
         // Zoom toward cursor position
         const svg = svgRef.current;
@@ -9989,7 +9989,10 @@ function AICSimulator() {
             const height = rect.height;
 
             setScale(prevScale => {
-                const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, prevScale + delta));
+                const step = prevScale <= 10 ? 5 : 10;
+                const delta = zoomIn ? -step : step;
+                const raw = prevScale + delta;
+                const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, raw));
                 if (newScale === prevScale) return prevScale;
 
                 // Get the lat/lon under the cursor at the old scale
@@ -10015,7 +10018,11 @@ function AICSimulator() {
                 return newScale;
             });
         } else {
-            setScale(prev => Math.max(MIN_SCALE, Math.min(MAX_SCALE, prev + delta)));
+            setScale(prev => {
+                const step = prev <= 10 ? 5 : 10;
+                const delta = zoomIn ? -step : step;
+                return Math.max(MIN_SCALE, Math.min(MAX_SCALE, prev + delta));
+            });
         }
     }, [mapCenter]);
 
