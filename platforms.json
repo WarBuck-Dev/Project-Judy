@@ -243,6 +243,25 @@
       "natoReportingName": "ORION"
     },
     {
+      "name": "P-8",
+      "domain": "air",
+      "weapons": ["Mk 54 Torpedo", "AGM-84 Harpoon"],
+      "emitters": ["APY-10"],
+      "numberOfAAM": 0,
+      "numberOfAGM": 0,
+      "numberOfASM": 4,
+      "numberOfSAM": 0,
+      "numberOfTorpedo": 5,
+      "maxSpeed": 490,
+      "maxAltitude": 41000,
+      "maxClimb": 2500,
+      "maxTurn": 6,
+      "image": "p-8.png",
+      "threatLevel": 2,
+      "hasDatalink": true,
+      "natoReportingName": "POSEIDON"
+    },
+    {
       "name": "E-2D",
       "domain": "air",
       "weapons": [],
