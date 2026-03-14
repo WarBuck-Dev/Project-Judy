@@ -17,8 +17,9 @@ When targeting groups, fighters provide a **planned flow** for that group. The t
 
 ### Banzai Flow
 - **Definition**: Fighters decide to go to the merge with the target group.
-- **Radio call**: "[Callsign] target [group], plan banzai"
-- **Execute call**: "[Callsign] banzai"
+- **Radio call**: "[Callsign] target [group], plan banzai" — AIC does NOT respond to this targeting call
+- **Execute call**: "[Callsign] banzai" — called when fighter physically commits to the merge (~5nm). THIS is when AIC responds with banzai QA.
+- **In simulator**: Since fighters always employ BVR (FOX-3), plan banzai simply means no skate turn — fighter stays hot, same as current non-skate flow. We do not implement actual merge/banzai execution.
 
 ---
 
@@ -32,17 +33,20 @@ Two situations drive fighters to execute skate flow:
    - 3 group wall
    - 3 group champagne
 
-2. **Any picture with a range component less than Factor Range:**
-   - 2 groups range (< Factor Range)
-   - 3 group vic (< Factor Range)
+2. **Any picture with a range component less than Factor Range (25 NM):**
+   - 2 groups range (< 25 NM separation)
+   - 3 group vic (< 25 NM separation between adjacent groups)
+   - 3 group ladder (< 25 NM separation between adjacent groups)
+
+**Note:** Factor Range is checked between **adjacent** groups, not the total formation span. Example: a 3-group ladder 30 deep with middle separation 10 — lead-to-middle is 10nm and middle-to-trail is 20nm, both < 25nm, so it's a standard ladder (not leading edge) and plan is skate.
 
 ### When to Banzai
 Two situations drive fighters to execute banzai flow:
 
 1. **Any single group picture**
 
-2. **Any picture with a range component greater than or equal to Factor Range:**
-   - Leading edge single group (>= Factor Range)
+2. **Any picture with a range component greater than or equal to Factor Range (25 NM) between adjacent groups:**
+   - Leading edge single group (>= 25 NM separation between adjacent groups)
 
 ---
 
@@ -83,7 +87,8 @@ When providing the new picture, AIC re-runs the group naming system:
 
 ## Fighter Re-Attack Flow
 
-After receiving the new picture:
+### After Skate (Cold Ops Picture Request)
+After receiving the new picture from AIC:
 
 1. Fighter makes targeting decision: "[Callsign] target [new group name], plan [skate/banzai]"
 2. Fighter calls in: "[Callsign] in [left/right]"
@@ -91,6 +96,15 @@ After receiving the new picture:
 4. Normal intercept flow resumes (declare, FOX-3, etc.)
 5. If plan skate: repeat cold ops cycle
 6. If plan banzai: flow to the merge
+
+### After Banzai (No Cold Ops)
+When the fighter plans banzai (stays hot, no skate turn), there is NO cold ops picture request:
+
+1. Fighter stays hot — continues flowing toward the target, employs FOX-3 (BVR)
+2. After weapon impacts and target vanishes, AIC directly redirects the fighter to the next group
+3. AIC call: "[vanished group] vanished, [callsign] target [next group] Rock xxx/yyy, [alt], [track] [declaration]"
+4. This is the same behavior as the current non-skate intercept flow — AIC retargets the fighter directly
+5. Fighter does NOT request a picture — no cold ops cycle occurs
 
 ---
 
@@ -151,7 +165,7 @@ When fighters call banzai, AIC must QA factor range to follow-on groups:
 
 ## Complete Skate Flow Example: 3 Group Wall
 
-1. **Post-commit picture**: "3 group wall, 10 wide track east. South Group Rock 220/40, 25K hostile robin. Middle Group separation 5, 25K hostile robin. North Group 25K hostile robin"
+1. **Post-commit picture**: "3 group wall, 10 wide, track east. South Group Rock 220/40, 25K hostile Robin. Middle Group separation 5, 25K hostile Robin. North Group 25K hostile Robin"
 2. **Fighter targets**: "Showtime target south group, plan skate"
 3. **Tac range / Declare / FOX-3**: Normal flow targeting south group
 4. **Skate**: "Showtime 11 skate left, pitbull single only south group"
@@ -183,6 +197,11 @@ When fighters call banzai, AIC must QA factor range to follow-on groups:
 - On the new picture call, the group naming system should be re-run
 - New group names are assigned based on the remaining group geometry
 - The simulator should assign new group names for the re-attack
+
+### Factor Range
+- Factor Range = **25 NM**
+- Range pictures with separation < 25 NM = plan skate (lead group)
+- Range pictures with separation >= 25 NM = plan banzai (lead group treated as leading edge single group)
 
 ### Toggle Lock
 - The Skate Flow Enable switch cannot be toggled during an active intercept

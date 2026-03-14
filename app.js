@@ -1674,6 +1674,9 @@ function AICSimulator() {
     const [initialScenario, setInitialScenario] = useState(null);
     const [hasStarted, setHasStarted] = useState(false);
     const [missionTime, setMissionTime] = useState(0);
+    const missionTimeRef = useRef(0);
+    // Keep ref in sync so setTimeout callbacks get current mission time
+    missionTimeRef.current = missionTime;
     const [bullseyeName, setBullseyeName] = useState('');
     const [bullseyePosition, setBullseyePosition] = useState({ lat: 26.5, lon: 54.0 });
     const [bullseyeLatInput, setBullseyeLatInput] = useState('N26 30.0');
@@ -1879,6 +1882,7 @@ function AICSimulator() {
     // Scenario settings
     const [warningWeaponStatus, setWarningWeaponStatus] = useState('yellow'); // 'white' | 'yellow' | 'red'
     const [showScenarioSettings, setShowScenarioSettings] = useState(false);
+    const [skateFlowEnabled, setSkateFlowEnabled] = useState(false);
 
     // FPS counter (uses ref + direct DOM update to avoid re-renders)
     const fpsRef = useRef(null);
@@ -2167,8 +2171,8 @@ function AICSimulator() {
     // Validate Separation call format: group name + altitude + track + declaration
     // Note: Separation calls do NOT require bullseye anchor
     const validateSeparation = (transcript) => {
-        const hasGroupName = /(north|south|lead|trail|single)\s*group/i.test(transcript) ||
-                            /(north|south|lead|trail)\s+separation/i.test(transcript);
+        const hasGroupName = /(north|south|middle|lead|trail|single)\s*group/i.test(transcript) ||
+                            /(north|south|middle|lead|trail)\s+separation/i.test(transcript);
         // Altitude for hostiles: "25 thousand", "25,000", "25000" (NOT angels/flight level - those are for friendlies)
         const hasAltitude = /thousand|\d{1,2},\d{3}|\b\d{5}\b/i.test(transcript);
         const hasTrack = /track\s*(north|south|east|west)/i.test(transcript);
@@ -2250,7 +2254,7 @@ function AICSimulator() {
 
         // Multi-group picture
         const hasGroupCount = /(\d+|two|three|four|five)\s*groups?/i.test(transcript);
-        const hasPictureType = /range|azimuth|wall|ladder|vic|champagne/i.test(transcript);
+        const hasPictureType = /range|azimuth|wall|ladder|vic|champagne|leading\s*edge/i.test(transcript);
         const hasBullseye = /rock|bullseye/i.test(transcript);
         // Altitude for hostiles: "25 thousand", "25,000", "25000" (NOT angels/flight level - those are for friendlies)
         const hasAltitude = /thousand|\d{1,2},\d{3}|\b\d{5}\b/i.test(transcript);
@@ -2297,7 +2301,8 @@ function AICSimulator() {
         // Determine picture type from transcript if not provided
         let detectedType = pictureType?.toLowerCase();
         if (!detectedType) {
-            if (/\brange\b/i.test(transcript)) detectedType = 'range';
+            if (/\bleading\s*edge\b/i.test(transcript)) detectedType = 'leading_edge';
+            else if (/\brange\b/i.test(transcript)) detectedType = 'range';
             else if (/\bazimuth\b/i.test(transcript)) detectedType = 'azimuth';
             else if (/\bladder\b/i.test(transcript)) detectedType = 'ladder';
             else if (/\bwall\b/i.test(transcript)) detectedType = 'wall';
@@ -2380,6 +2385,21 @@ function AICSimulator() {
                 const hasCardinal = hasNorth || hasSouth || hasEast || hasWest;
                 if (numGroups >= 4 && !hasCardinal) {
                     return { valid: false, error: 'champagne requires cardinal direction labels for flanking groups' };
+                }
+                break;
+
+            case 'leading_edge':
+                // Leading edge: labels depend on the leading edge sub-formation
+                // Could be "single group" + follow-on, or "north/south group" + follow-on, etc.
+                // Just need "follow-on" and valid group labels for the leading edge groups
+                const hasFollowOn = /follow[- ]?on/i.test(transcript);
+                const hasSingleGroup = /single\s*group/i.test(transcript);
+                if (!hasFollowOn) {
+                    return { valid: false, error: 'leading edge requires "follow-on [range]"' };
+                }
+                // Leading edge groups can use any valid labeling (single, cardinal, lead/trail)
+                if (!hasSingleGroup && groupLabelsCount === 0) {
+                    return { valid: false, error: 'leading edge requires group labels for leading edge groups' };
                 }
                 break;
 
@@ -3441,13 +3461,13 @@ function AICSimulator() {
     // Add entry to radio log
     const addToRadioLog = useCallback((callsign, message, type) => {
         const entry = {
-            time: formatMissionTime(missionTime),
+            time: formatMissionTime(missionTimeRef.current),
             callsign,
             message,
             type // 'outgoing', 'incoming', 'error'
         };
         setRadioLog(prev => [...prev.slice(-49), entry]); // Keep last 50 entries
-    }, [missionTime]);
+    }, []);
 
     // Main voice command processor
     const processVoiceCommand = useCallback((transcript) => {
@@ -3772,6 +3792,7 @@ function AICSimulator() {
                     currentTargetGroupId: null,
                     engagingFighterId: null
                 });
+                setWaitingForColdOpsPicture(false);
 
                 const sayState = text.includes('say state') || text.includes('state');
                 const readback = generateReadback(targetAsset.name, 'reset', capStation.name, sayState);
@@ -3957,6 +3978,19 @@ function AICSimulator() {
                             targetGroup.lat, targetGroup.lon
                         );
 
+                        // Determine planned flow for skate flow feature
+                        let plannedFlow = null;
+                        if (skateFlowEnabled) {
+                            // At commit time, interceptState.pictureType may not be set yet
+                            // Use hostile asset count as initial determination
+                            // This gets refined when the labeled picture is processed
+                            const hostileAssets = assets.filter(a =>
+                                a.identity === 'hostile' && a.status !== 'vanished' && a.status !== 'faded'
+                            );
+                            plannedFlow = hostileAssets.length > 1 ? 'skate' : 'banzai';
+                            console.log(`[SKATE DEBUG] Commit-time: skateFlowEnabled=${skateFlowEnabled}, hostileCount=${hostileAssets.length}, plannedFlow=${plannedFlow}`);
+                        }
+
                         // Update controlled asset with targeting info and heading
                         updateAsset(targetAsset.id, {
                             targetingState: 'intercepting',
@@ -3968,7 +4002,10 @@ function AICSimulator() {
                             vidCalled2nm: false,
                             declareCalled28nm: false, // Reset AIC training flags for new intercept
                             declareResponseReceived: false,
-                            fox3Called25nm: false
+                            fox3Called25nm: false,
+                            plannedFlow: plannedFlow,
+                            skateCold: false,
+                            skateDelayStart: null
                         });
 
                         // Generate readback
@@ -4064,7 +4101,12 @@ function AICSimulator() {
                         declareResponseReceived: false,
                         fox3Called25nm: false,
                         isOrbiting: false, // Break out of CAP orbit
-                        waypoints: nonOrbitWaypoints // Clear orbit waypoints
+                        waypoints: nonOrbitWaypoints, // Clear orbit waypoints
+                        // Reset skate flow properties for new intercept
+                        plannedFlow: null,
+                        skateCold: false,
+                        skateDelayStart: null,
+                        _skateDebugLogged: false
                     });
 
                     setInterceptState(prev => ({
@@ -4117,6 +4159,211 @@ function AICSimulator() {
             }
         }
 
+        // COLD OPS PICTURE CLEAN: "North group vanished, picture clean" (all groups gone)
+        if (!commandExecuted && waitingForColdOpsPicture && /picture\s*clean/i.test(text)) {
+            console.log('[COLD OPS] Picture clean during cold ops');
+            setWaitingForColdOpsPicture(false);
+            addToRadioLog(ownshipTacticalCallsign, text, 'outgoing');
+
+            // Mark all groups as vanished
+            setInterceptState(prev => ({
+                ...prev,
+                phase: 'idle',
+                groups: prev.groups.map(g => ({ ...g, status: 'vanished' }))
+            }));
+
+            // Fighter acknowledges and resets
+            if (targetAsset) {
+                setTimeout(() => {
+                    const ackCall = `${formatCallsignForRadio(targetAsset.name)}.`;
+                    speakResponse(ackCall);
+                    addToRadioLog(targetAsset.name, ackCall, 'incoming');
+                    updateAsset(targetAsset.id, {
+                        skateCold: false, skateDelayStart: null, plannedFlow: null,
+                        targetingState: null, targetedAssetId: null, interceptCommitted: false,
+                        _skateDebugLogged: false
+                    });
+                }, 1500);
+            }
+            commandExecuted = true;
+        }
+
+        // COLD OPS NEW PICTURE: User (AIC) speaks vanished + new picture after fighter requests picture
+        // Example: "North group vanished. New picture, single group Rock 211/11, 25K, track west, hostile"
+        // Must match BEFORE the regular labeled picture handler
+        const coldOpsPictureMatch = text.match(/vanished.*?(\d+|single|one|two|to|three|free|four|for)\s*group/i);
+        if (!commandExecuted && coldOpsPictureMatch && waitingForColdOpsPicture) {
+            console.log('[COLD OPS] Processing user new picture call:', text);
+            setWaitingForColdOpsPicture(false);
+
+            // Extract vanished group names
+            const vanishedMatch = text.match(/(\w+\s*group)\s*vanished/gi);
+            const vanishedNames = vanishedMatch ? vanishedMatch.map(m => m.replace(/\s*vanished/i, '').trim()) : [];
+
+            // Mark vanished groups in interceptState
+            if (vanishedNames.length > 0) {
+                setInterceptState(prev => {
+                    const updatedGroups = prev.groups.map(g => {
+                        const isVanished = vanishedNames.some(vn =>
+                            g.name.toLowerCase() === vn.toLowerCase()
+                        );
+                        return isVanished ? { ...g, status: 'vanished', timeoutCalled: true } : g;
+                    });
+                    return { ...prev, groups: updatedGroups };
+                });
+            }
+
+            // Extract new group names and picture type from the "new picture" portion
+            const newPicturePortion = text.substring(text.indexOf('new picture') !== -1 ? text.indexOf('new picture') : text.indexOf('vanished'));
+            const groupNames = extractGroupNames(newPicturePortion);
+            const isSingleGroup = /single\s*group/i.test(text) || groupNames.length <= 1;
+
+            // Detect picture type
+            let detectedPictureType = 'single';
+            if (/\bazimuth\s+\d+/i.test(text) || /\bazma\s+\d+/i.test(text)) detectedPictureType = 'azimuth';
+            else if (/\brange\s+\d+/i.test(text)) detectedPictureType = 'range';
+            else if (/\bladder\b/i.test(text)) detectedPictureType = 'ladder';
+            else if (/\bwall\s+\d+/i.test(text)) detectedPictureType = 'wall';
+            else if (/\bvic\b/i.test(text)) detectedPictureType = 'vic';
+            else if (/\bchampagne\b/i.test(text)) detectedPictureType = 'champagne';
+            else if (isSingleGroup) detectedPictureType = 'single';
+            else detectedPictureType = 'azimuth';
+
+            const priorityGroup = groupNames[0] || (isSingleGroup ? 'single group' : 'group');
+            const planFlow = isSingleGroup ? 'banzai' : 'skate';
+
+            console.log('[COLD OPS] Vanished:', vanishedNames, 'New groups:', groupNames, 'Priority:', priorityGroup, 'Plan:', planFlow);
+
+            // Log AIC call
+            addToRadioLog(ownshipTacticalCallsign, text, 'outgoing');
+
+            // Associate new groups with hostile assets using bullseye anchor
+            const anchor = parseBullseyeAnchor(newPicturePortion);
+            let targetGroupAsset = null;
+            console.log('[COLD OPS] Anchor parsed:', anchor, 'from:', newPicturePortion);
+            if (anchor) {
+                targetGroupAsset = findAssetByBullseyeAnchor(anchor.bearing, anchor.range, anchor.altitude ? anchor.altitude / 1000 : null);
+                console.log('[COLD OPS] Bullseye match:', targetGroupAsset?.name || 'NONE');
+            }
+            // Fallback: find nearest non-vanished hostile
+            if (!targetGroupAsset) {
+                const nonVanishedHostiles = assets.filter(a =>
+                    a.identity === 'hostile' && !a.isDestroyed && !a.hidden
+                );
+                console.log('[COLD OPS] Fallback hostiles:', nonVanishedHostiles.map(a => a.name), 'fighter:', targetAsset?.name);
+                if (nonVanishedHostiles.length > 0 && targetAsset) {
+                    targetGroupAsset = nonVanishedHostiles.sort((a, b) =>
+                        calculateDistance(targetAsset.lat, targetAsset.lon, a.lat, a.lon) -
+                        calculateDistance(targetAsset.lat, targetAsset.lon, b.lat, b.lon)
+                    )[0];
+                    console.log('[COLD OPS] Fallback selected:', targetGroupAsset?.name);
+                }
+            }
+
+            // Build new groups for interceptState
+            const newInterceptGroups = [];
+            if (isSingleGroup && targetGroupAsset) {
+                newInterceptGroups.push({
+                    id: `reattack-0`,
+                    name: priorityGroup,
+                    assetId: targetGroupAsset.id,
+                    status: 'active',
+                    priority: 0,
+                    position: { lat: targetGroupAsset.lat, lon: targetGroupAsset.lon },
+                    altitude: targetGroupAsset.altitude,
+                    track: getTrackDirection(targetGroupAsset.heading),
+                    declaration: 'hostile',
+                    timeoutCalled: false,
+                    fox3Called: false,
+                    declareCalled: false
+                });
+            } else {
+                // Multi-group: associate by name using existing group association logic
+                groupNames.forEach((gName, i) => {
+                    const hostileAsset = i === 0 && targetGroupAsset ? targetGroupAsset :
+                        assets.find(a => a.identity === 'hostile' && !a.isDestroyed && !a.hidden &&
+                            a.status !== 'vanished' && a.id !== targetGroupAsset?.id);
+                    if (hostileAsset) {
+                        newInterceptGroups.push({
+                            id: `reattack-${i}`,
+                            name: gName,
+                            assetId: hostileAsset.id,
+                            status: 'active',
+                            priority: i,
+                            position: { lat: hostileAsset.lat, lon: hostileAsset.lon },
+                            altitude: hostileAsset.altitude,
+                            track: getTrackDirection(hostileAsset.heading),
+                            declaration: 'hostile',
+                            timeoutCalled: false,
+                            fox3Called: false,
+                            declareCalled: false
+                        });
+                    }
+                });
+            }
+
+            // Update interceptState with vanished + new groups
+            setInterceptState(prev => ({
+                ...prev,
+                pictureType: detectedPictureType,
+                groups: [
+                    ...prev.groups.filter(g => vanishedNames.some(vn => g.name.toLowerCase() === vn.toLowerCase()))
+                        .map(g => ({ ...g, status: 'vanished' })),
+                    ...newInterceptGroups
+                ],
+                currentTargetGroupId: newInterceptGroups[0]?.id || null
+            }));
+
+            // Fighter targeting call (3 seconds after AIC picture)
+            if (targetAsset) {
+                setTimeout(() => {
+                    let targetCall = `${formatCallsignForRadio(targetAsset.name)}, target ${priorityGroup}, plan ${planFlow}`;
+                    speakResponse(targetCall);
+                    addToRadioLog(targetAsset.name, targetCall, 'incoming');
+                }, 3000);
+
+                // Fighter "in left/right" call (6 seconds after AIC picture)
+                setTimeout(() => {
+                    const reattackTarget = targetGroupAsset || (newInterceptGroups[0] ? assets.find(a => a.id === newInterceptGroups[0].assetId) : null);
+                    if (reattackTarget) {
+                        const bearingToNewTarget = calculateBearing(
+                            targetAsset.lat, targetAsset.lon,
+                            reattackTarget.lat, reattackTarget.lon
+                        );
+                        const turnAmount = shortestTurn(targetAsset.heading, bearingToNewTarget);
+                        const inDir = turnAmount < 0 ? 'left' : 'right';
+                        const inCall = `${formatCallsignForRadio(targetAsset.name)} in ${inDir}`;
+                        speakResponse(inCall);
+                        addToRadioLog(targetAsset.name, inCall, 'incoming');
+
+                        // Re-engage: turn back toward target, reset engagement flags
+                        const interceptHeading = calculateBearing(
+                            targetAsset.lat, targetAsset.lon,
+                            reattackTarget.lat, reattackTarget.lon
+                        );
+                        updateAsset(targetAsset.id, {
+                            skateCold: false,
+                            skateDelayStart: null,
+                            plannedFlow: planFlow,
+                            targetedAssetId: reattackTarget.id,
+                            targetGroupName: priorityGroup,
+                            targetDeclaration: 'hostile',
+                            targetingState: 'intercepting',
+                            targetHeading: interceptHeading,
+                            fox3Called25nm: false,
+                            declareCalled28nm: true,
+                            declareResponseReceived: true,
+                            engageAttempted: false,
+                            retargetDelayUntil: Date.now() + 12000, // 12s acquisition delay after "in"
+                            _skateDebugLogged: false
+                        });
+                    }
+                }, 6000);
+            }
+
+            commandExecuted = true;
+        }
+
         // LABELED PICTURE: "Closeout, 2 groups azimuth 10, track west. North Group Rock 090/40..."
         // Fighter responds "Heat one one, target North Group"
         // Match both digit and word numbers: "2 groups", "two groups", "three groups", etc.
@@ -4136,10 +4383,36 @@ function AICSimulator() {
             // - "champagne" = champagne formation (3+ groups with both azimuth and range separation)
             let detectedPictureType = 'azimuth'; // default
             const isRangePicture = /\brange\s+\d+/i.test(text);
+            const isLeadingEdge = /\bleading\s*edge\b/i.test(text);
             const isLadder = /\bladder\b/i.test(text);
             const isVic = /\bvic\b/i.test(text);
             const isWall = /\bwall\s+\d+/i.test(text);
             const isChampagne = /\bchampagne\b/i.test(text);
+
+            // Extract range separation for skate/banzai factor range check (25nm)
+            // Extract range separation for skate/banzai factor range check (25nm)
+            let rangeSeparation = null;
+            if (isRangePicture) {
+                const sepMatch = text.match(/\brange\s+(\d+)/i);
+                if (sepMatch) rangeSeparation = parseInt(sepMatch[1]);
+            }
+
+            // Leading edge sub-type: extract the sub-formation within the leading edge
+            // e.g. "leading edge single group" → sub-type = single
+            // e.g. "leading edge 2 groups azimuth" → sub-type = azimuth
+            // e.g. "leading edge 2 groups range 10" → sub-type = range, rangeSeparation = 10
+            let leadingEdgeSubType = null;
+            if (isLeadingEdge) {
+                if (/single\s*group/i.test(text)) leadingEdgeSubType = 'single';
+                else if (/\bazimuth/i.test(text) || /\bazma/i.test(text)) leadingEdgeSubType = 'azimuth';
+                else if (/\bwall/i.test(text)) leadingEdgeSubType = 'wall';
+                else if (/\brange\s+\d+/i.test(text)) {
+                    leadingEdgeSubType = 'range';
+                    const subRangeMatch = text.match(/\brange\s+(\d+)/i);
+                    if (subRangeMatch) rangeSeparation = parseInt(subRangeMatch[1]);
+                }
+                else leadingEdgeSubType = 'single'; // default if unrecognized
+            }
 
             // Check for number of groups (including "single" = 1)
             const numGroupsMatch = pictureMatch[1];
@@ -4147,7 +4420,9 @@ function AICSimulator() {
                 {'single':1,'one':1,'two':2,'to':2,'three':3,'free':3,'four':4,'for':4,'five':5,'six':6,'seven':7,'eight':8,'nine':9,'ten':10}[numGroupsMatch.toLowerCase()] || 2;
 
             // Determine picture type - explicit keywords take priority
-            if (isRangePicture) {
+            if (isLeadingEdge) {
+                detectedPictureType = 'leading_edge';
+            } else if (isRangePicture) {
                 detectedPictureType = 'range';
             } else if (isLadder) {
                 detectedPictureType = 'ladder';
@@ -4167,8 +4442,13 @@ function AICSimulator() {
                 detectedPictureType = 'single';
             }
 
+            // For skate/banzai and targeting, use the effective picture type
+            // Leading edge wraps a sub-formation — fighters deal with the leading edge groups
+            const effectivePictureType = isLeadingEdge ? leadingEdgeSubType : detectedPictureType;
+
             // POST-COMMIT TARGETING DECISION:
             // - Single group = "single group"
+            // - Leading edge: depends on sub-formation
             // - 2 groups range = ALWAYS lead group
             // - 3 group ladder = ALWAYS lead group
             // - 3 group vic = ALWAYS lead group
@@ -4177,28 +4457,57 @@ function AICSimulator() {
             // - 3 group champagne = First group AIC calls
             let priorityGroup;
             if (isSingleGroup) {
-                // Single group intercept - just "single group"
                 priorityGroup = 'single group';
+            } else if (isLeadingEdge) {
+                // Leading edge targeting based on sub-formation
+                if (leadingEdgeSubType === 'single') {
+                    priorityGroup = 'single group';
+                } else if (leadingEdgeSubType === 'range') {
+                    priorityGroup = 'lead group';
+                } else {
+                    // Azimuth/wall sub-type: use the order AIC called them
+                    priorityGroup = groupNames[0] || 'north group';
+                }
             } else if (isRangePicture || isLadder || isVic) {
-                // For range, ladder, vic: always target lead group
                 priorityGroup = 'lead group';
             } else {
                 // For azimuth, wall, champagne: use the order AIC called them
                 priorityGroup = groupNames[0] || interceptState.groups[0]?.name || 'group';
             }
 
-            console.log('[LABELED PICTURE] Picture type:', detectedPictureType, 'isRange:', isRangePicture, 'isLadder:', isLadder, 'isWall:', isWall, 'isVic:', isVic);
+            console.log('[LABELED PICTURE] Picture type:', detectedPictureType, 'subType:', leadingEdgeSubType, 'effective:', effectivePictureType);
             console.log('[LABELED PICTURE] Group names from text:', groupNames);
             console.log('[LABELED PICTURE] Selected priority group:', priorityGroup);
 
             // Update fighter's target group name based on labeled picture
             // This ensures declare/fox-3 calls use the correct group name
+            // Also refine plannedFlow now that picture type is known
+            // Skate/Banzai rules (based on effective picture type):
+            // - Single group → banzai
+            // - Azimuth component (azimuth, wall, champagne) → skate
+            // - Range component < 25nm factor range (range, vic, ladder) → skate
+            // - Range component >= 25nm factor range → banzai
+            const refinedPlannedFlow = skateFlowEnabled
+                ? (() => {
+                    if (effectivePictureType === 'single') return 'banzai';
+                    // Azimuth component pictures always skate
+                    if (effectivePictureType === 'azimuth' || effectivePictureType === 'wall' || effectivePictureType === 'champagne') return 'skate';
+                    // Range component pictures: check factor range (25nm)
+                    if (rangeSeparation !== null && rangeSeparation >= 25) return 'banzai';
+                    return 'skate'; // Default to skate for multi-group if range < 25 or unknown
+                })()
+                : null;
+            console.log(`[SKATE DEBUG] Labeled picture: skateFlowEnabled=${skateFlowEnabled}, pictureType=${detectedPictureType}, effectiveType=${effectivePictureType}, rangeSeparation=${rangeSeparation}, refinedPlannedFlow=${refinedPlannedFlow}, targetAsset=${targetAsset?.name}`);
             updateAsset(targetAsset.id, {
-                targetGroupName: priorityGroup
+                targetGroupName: priorityGroup,
+                ...(skateFlowEnabled ? { plannedFlow: refinedPlannedFlow } : {})
             });
 
-            // Fighter acknowledges with target
-            const response = generateFighterTargetAck(targetAsset.name, priorityGroup);
+            // Fighter acknowledges with target + plan flow if skate enabled
+            let response = generateFighterTargetAck(targetAsset.name, priorityGroup);
+            if (skateFlowEnabled && refinedPlannedFlow) {
+                response += `, plan ${refinedPlannedFlow}`;
+            }
             speakResponse(response);
             addToRadioLog(targetAsset.name, response, 'incoming');
 
@@ -4540,6 +4849,11 @@ function AICSimulator() {
             speakResponse(response);
             addToRadioLog(targetAsset.name, response, 'incoming');
 
+            // Skate flow: start 5-second skate delay timer after separation response
+            if (skateFlowEnabled && targetAsset.plannedFlow === 'skate' && !targetAsset.skateDelayStart) {
+                updateAsset(targetAsset.id, { skateDelayStart: Date.now() });
+            }
+
             // AIC DEBRIEF: Log separation call and validate format
             if (currentIntercept) {
                 const sepValid = validateSeparation(text);
@@ -4725,11 +5039,9 @@ function AICSimulator() {
             const usedFaded = /faded/i.test(text);
             if (currentIntercept) {
                 // Count remaining active groups AFTER this vanish/fade
-                // We can't rely on interceptState.groups because React state updates are async
-                // Instead, count total groups minus groups already vanished minus this one
-                const totalGroups = interceptState.groups.length;
-                const alreadyVanished = currentIntercept.vanishAssessments?.length || 0;
-                const remainingActiveGroups = totalGroups - alreadyVanished - 1; // -1 for current vanish
+                // Use active group count (not total) to handle cold ops rebuilds correctly
+                const activeGroups = interceptState.groups.filter(g => g.status === 'active').length;
+                const remainingActiveGroups = activeGroups - 1; // -1 for current vanish
                 console.log(`[DEBRIEF] Vanish count: total=${totalGroups}, alreadyVanished=${alreadyVanished}, remaining=${remainingActiveGroups}`);
                 const vanishValid = validateVanishAssessment(text, remainingActiveGroups);
                 const toGroup = directive?.groupName || null;
@@ -5159,7 +5471,11 @@ function AICSimulator() {
                     targetingState: null,
                     targetedAssetId: null,
                     targetGroupName: null,
-                    interceptCommitted: false
+                    interceptCommitted: false,
+                    skateCold: false,
+                    skateDelayStart: null,
+                    plannedFlow: null,
+                    _skateDebugLogged: false
                 });
 
                 // Add orbit point to return to CAP station
@@ -5174,7 +5490,11 @@ function AICSimulator() {
                     targetingState: null,
                     targetedAssetId: null,
                     targetGroupName: null,
-                    interceptCommitted: false
+                    interceptCommitted: false,
+                    skateCold: false,
+                    skateDelayStart: null,
+                    plannedFlow: null,
+                    _skateDebugLogged: false
                 });
             }
 
@@ -5218,6 +5538,7 @@ function AICSimulator() {
                 currentTargetGroupId: null,
                 engagingFighterId: null
             });
+            setWaitingForColdOpsPicture(false);
             commandExecuted = true;
         }
 
@@ -5379,7 +5700,7 @@ function AICSimulator() {
             speakResponse(readback);
             addToRadioLog(targetAsset.name, readback, 'incoming');
         }
-    }, [assets, geoPoints, findAssetByCallsign, findGeoPointByName, addToRadioLog, ownshipTacticalCallsign, speakResponse, updateAsset, addOrbitPoint, bullseyeName, containsBullseyeName, findAssetByBullseyeAnchor, bullseyePosition, interceptState, setInterceptState, parseBullseyeAnchor, extractGroupNames, parseDeclarationFromText, getTrackDirection, parseDirectiveTarget, generateFighterCommitResponse, generateFighterTargetAck, generateFighterReadback, generateFighterResetAck, currentIntercept, groupManeuvers, missionTime, debriefData]);
+    }, [assets, geoPoints, findAssetByCallsign, findGeoPointByName, addToRadioLog, ownshipTacticalCallsign, speakResponse, updateAsset, addOrbitPoint, bullseyeName, containsBullseyeName, findAssetByBullseyeAnchor, bullseyePosition, interceptState, setInterceptState, parseBullseyeAnchor, extractGroupNames, parseDeclarationFromText, getTrackDirection, parseDirectiveTarget, generateFighterCommitResponse, generateFighterTargetAck, generateFighterReadback, generateFighterResetAck, currentIntercept, groupManeuvers, missionTime, debriefData, skateFlowEnabled, waitingForColdOpsPicture, formatCallsignForRadio]);
 
     // Keep a ref to the latest processVoiceCommand to avoid recreating speech recognition
     const processVoiceCommandRef = useRef(processVoiceCommand);
@@ -5761,8 +6082,39 @@ function AICSimulator() {
                     }
 
                     if (asset.targetingState === 'engaging') {
-                        // Continue to close on target while engaging
-                        updated.targetHeading = bearingToTarget;
+                        if (!asset._skateDebugLogged) {
+                            console.log(`[SKATE DEBUG] Engaging: skateFlowEnabled=${skateFlowEnabled}, fox3Called=${asset.fox3Called25nm}, plannedFlow=${asset.plannedFlow}, skateCold=${asset.skateCold}`);
+                            updated._skateDebugLogged = true;
+                        }
+                        if (skateFlowEnabled && asset.fox3Called25nm && asset.plannedFlow === 'skate') {
+                            // Skate flow: wait 5s after separation response, then turn 180° away
+                            // skateDelayStart is set by the separation response handler
+                            if (asset.skateDelayStart && (Date.now() - asset.skateDelayStart >= 5000)) {
+                                // Execute skate: turn 180° away from threat
+                                const skateHeading = (bearingToTarget + 180) % 360;
+                                updated.targetHeading = skateHeading;
+                                if (!asset.skateCold) {
+                                    updated.skateCold = true;
+                                    // Determine skate direction (left/right) based on shortest turn
+                                    const turnAmount = shortestTurn(asset.heading, skateHeading);
+                                    const skateDir = turnAmount < 0 ? 'left' : 'right';
+                                    const groupName = asset.targetGroupName || 'group';
+                                    const altK = Math.round(asset.altitude / 1000);
+                                    const callsign = formatCallsignForRadio(asset.name);
+                                    setTimeout(() => {
+                                        const skateCall = `${callsign}, skate ${skateDir}, pitbull, ${altK} thousand, ${groupName}`;
+                                        speakResponse(skateCall);
+                                        addToRadioLog(asset.name, skateCall, 'incoming');
+                                    }, 500);
+                                }
+                            } else {
+                                // Waiting for separation response or 5s delay not elapsed: continue toward target
+                                updated.targetHeading = bearingToTarget;
+                            }
+                        } else {
+                            // Current behavior (banzai or skate disabled): continue toward target
+                            updated.targetHeading = bearingToTarget;
+                        }
 
                         // If target destroyed or escaped, clear targeting
                         if (distanceToTarget > 50) {
@@ -5774,6 +6126,10 @@ function AICSimulator() {
                             updated.declareCalled28nm = false;
                             updated.declareResponseReceived = false;
                             updated.fox3Called25nm = false;
+                            updated.skateCold = false;
+                            updated.skateDelayStart = null;
+                            updated.plannedFlow = null;
+                            updated._skateDebugLogged = false;
                         }
                     }
 
@@ -6717,8 +7073,10 @@ function AICSimulator() {
         if (!engagingFighter) return;
 
         // Check each active group that is NOT the current target
+        // Also skip groups whose asset is the fighter's targetedAssetId (handles cold ops re-attacks)
         interceptState.groups.forEach(group => {
             if (group.status !== 'active' || group.id === interceptState.currentTargetGroupId) return;
+            if (group.assetId && group.assetId === engagingFighter.targetedAssetId) return;
 
             const groupAsset = assets.find(a => a.id === group.assetId);
             if (!groupAsset || groupAsset.hidden) return;
@@ -8119,6 +8477,9 @@ function AICSimulator() {
         });
     }, [assets, fireWeapon, weaponConfigs, speakResponse, addToRadioLog, formatCallsignForRadio, interceptState.phase]);
 
+    // Cold ops: true when fighter has requested picture and we're waiting for user (AIC) to speak the new picture
+    const [waitingForColdOpsPicture, setWaitingForColdOpsPicture] = useState(false);
+
     // Process pending timeout calls (weapon impact announcements)
     useEffect(() => {
         if (pendingTimeoutCalls.length > 0) {
@@ -8142,11 +8503,29 @@ function AICSimulator() {
 
                     return { ...prev, groups: updatedGroups };
                 });
+
+                // Skate flow: after timeout, wait 10 seconds then request picture (only if fighter skated cold)
+                if (skateFlowEnabled) {
+                    const fighterAsset = assets.find(a => a.name === call.assetName);
+                    console.log(`[SKATE DEBUG] Timeout: skateFlowEnabled=${skateFlowEnabled}, fighter=${fighterAsset?.name}, skateCold=${fighterAsset?.skateCold}, plannedFlow=${fighterAsset?.plannedFlow}`);
+                    if (fighterAsset && fighterAsset.skateCold) {
+                        setTimeout(() => {
+                            const pictureRequest = `${ownshipTacticalCallsign}, ${formatCallsignForRadio(call.assetName)} picture`;
+                            speakResponse(pictureRequest);
+                            addToRadioLog(call.assetName, pictureRequest, 'incoming');
+                            setWaitingForColdOpsPicture(true);
+                        }, 10000);
+                    }
+                }
             });
             // Clear the queue
             setPendingTimeoutCalls([]);
         }
-    }, [pendingTimeoutCalls, speakResponse, addToRadioLog, formatCallsignForRadio]);
+    }, [pendingTimeoutCalls, speakResponse, addToRadioLog, formatCallsignForRadio, skateFlowEnabled, assets, ownshipTacticalCallsign]);
+
+    // Cold Ops new picture is now handled by the voice command processor
+    // when waitingForColdOpsPicture is true. The user (as AIC) speaks the
+    // vanished + new picture call, and the voice handler processes it.
 
     // Process pending VID calls (Visual ID announcements for Bogey Spades intercepts)
     useEffect(() => {
@@ -8848,7 +9227,8 @@ function AICSimulator() {
             radarDetectionCounts,
             detectionThresholds,
             trackAgingTimers,
-            nextStudentTrackId
+            nextStudentTrackId,
+            skateFlowEnabled
             // missionProducts excluded - too large for localStorage
         };
 
@@ -8901,6 +9281,7 @@ function AICSimulator() {
             detectionThresholds,
             trackAgingTimers,
             nextStudentTrackId,
+            skateFlowEnabled,
             missionProducts
         };
 
@@ -9066,6 +9447,7 @@ function AICSimulator() {
             setTrackAgingTimers(saveData.trackAgingTimers || {});
             setNextStudentTrackId(saveData.nextStudentTrackId || 1);
             setSelectedTrackId(null);
+            setSkateFlowEnabled(saveData.skateFlowEnabled || false);
 
             // Load mission products (with backward compatibility)
             setMissionProducts(saveData.missionProducts || []);
@@ -9242,6 +9624,7 @@ function AICSimulator() {
                     setTrackAgingTimers(saveData.trackAgingTimers || {});
                     setNextStudentTrackId(saveData.nextStudentTrackId || 1);
                     setSelectedTrackId(null);
+                    setSkateFlowEnabled(saveData.skateFlowEnabled || false);
 
                     // Load mission products (with backward compatibility)
                     setMissionProducts(saveData.missionProducts || []);
@@ -9362,6 +9745,7 @@ function AICSimulator() {
                 setRadioLog([]);
                 setPendingTimeoutCalls([]);
                 setPendingVIDCalls([]);
+                setWaitingForColdOpsPicture(false);
 
                 // Reset sensor detections
                 setRadarDetectionCounts({});
@@ -13202,6 +13586,9 @@ function AICSimulator() {
                     setOwnshipTacticalCallsign={setOwnshipTacticalCallsign}
                     ownshipAirDefenseCallsign={ownshipAirDefenseCallsign}
                     setOwnshipAirDefenseCallsign={setOwnshipAirDefenseCallsign}
+                    skateFlowEnabled={skateFlowEnabled}
+                    setSkateFlowEnabled={setSkateFlowEnabled}
+                    interceptPhase={interceptState.phase}
                     onClose={() => setShowScenarioSettings(false)}
                 />
             )}
@@ -20026,6 +20413,7 @@ function ScenarioSettings({
     warningWeaponStatus, setWarningWeaponStatus,
     ownshipTacticalCallsign, setOwnshipTacticalCallsign,
     ownshipAirDefenseCallsign, setOwnshipAirDefenseCallsign,
+    skateFlowEnabled, setSkateFlowEnabled, interceptPhase,
     onClose
 }) {
     return React.createElement('div', { className: 'modal-overlay' },
@@ -20096,6 +20484,22 @@ function ScenarioSettings({
                     React.createElement('option', { value: 'Tango' }, 'Tango'),
                     React.createElement('option', { value: 'Uniform' }, 'Uniform'),
                     React.createElement('option', { value: 'Victor' }, 'Victor')
+                )
+            ),
+
+            // Skate Flow Enable Section
+            React.createElement('div', { className: 'settings-section' },
+                React.createElement('h3', null, 'Skate Flow'),
+                React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } },
+                    React.createElement('button', {
+                        className: `control-btn ${skateFlowEnabled ? 'primary' : 'danger'}`,
+                        onClick: () => setSkateFlowEnabled(!skateFlowEnabled),
+                        disabled: interceptPhase !== 'idle',
+                        style: { width: '80px', opacity: interceptPhase !== 'idle' ? 0.5 : 1 }
+                    }, skateFlowEnabled ? 'ON' : 'OFF'),
+                    interceptPhase !== 'idle' ? React.createElement('span', {
+                        style: { color: '#888', fontSize: '12px', fontStyle: 'italic' }
+                    }, 'Locked during active intercept') : null
                 )
             ),
 
