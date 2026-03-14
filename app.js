@@ -1791,6 +1791,9 @@ function AICSimulator() {
     const [radioLog, setRadioLog] = useState([]); // Communication history
     const [pendingTimeoutCalls, setPendingTimeoutCalls] = useState([]); // Queue for timeout announcements
     const [pendingVIDCalls, setPendingVIDCalls] = useState([]); // Queue for VID announcements
+    const [birdsCoverage, setBirdsCoverage] = useState([]); // Tracks covered with birds (SAM)
+    const [pendingGrandSlamCalls, setPendingGrandSlamCalls] = useState([]); // Queue for grand slam announcements
+    const nextBirdsCoverageIdRef = useRef(1);
 
     // ElevenLabs TTS settings
     const [elevenLabsApiKey, setElevenLabsApiKey] = useState(() => {
@@ -2124,6 +2127,15 @@ function AICSimulator() {
             'alfa whisky': 'alpha whiskey',
             'apple whiskey': 'alpha whiskey',
             'apple whisky': 'alpha whiskey',
+            // Cover with birds variations
+            'covered with birds': 'cover with birds',
+            'cover with bird': 'cover with birds',
+            'covered with bird': 'cover with birds',
+            'cupboard with birds': 'cover with birds',
+            'covered birds': 'cover with birds',
+            'cover birds': 'cover with birds',
+            'governor birds': 'cover with birds',
+            'grand slams': 'grand slam',
             // Check print variations
             'checkprint': 'check print',
             'check-print': 'check print',
@@ -3551,6 +3563,120 @@ function AICSimulator() {
 
                 return; // AW command handled, exit early
             }
+        } else if (awMatch && /cover.*bird|bird.*cover/i.test(text)) {
+            // ========================================================================
+            // AW COVER WITH BIRDS: "AW, Tango, cover track 6001 with birds, over"
+            // Supports multiple tracks: "cover track 6001 and 6002 with birds"
+            // Assigns SAM coverage (SM-2/SM-6) from nearest friendly DDG/CG
+            // ========================================================================
+
+            // Extract all track numbers — supports formats:
+            // "track 6001 and 6002", "track 6001, 6002", "track 6001 and track 6002"
+            const trackSection = text.match(/cover\s+(.*?)\s*(?:with\s*)?bird/i);
+            const trackNums = [];
+            if (trackSection) {
+                const nums = [...trackSection[1].matchAll(/(\d{3,5})/g)];
+                nums.forEach(m => trackNums.push(parseInt(m[1]).toString().padStart(4, '0')));
+            }
+
+            if (trackNums.length === 0) {
+                // Fallback: try matching track numbers anywhere in text
+                const fallback = [...text.matchAll(/tracks?\s*(\d+)/gi)];
+                fallback.forEach(m => trackNums.push(parseInt(m[1]).toString().padStart(4, '0')));
+            }
+
+            if (trackNums.length > 0) {
+                // Resolve each track number to a target asset
+                const resolvedTracks = [];
+                const notFound = [];
+                trackNums.forEach(trackNum => {
+                    let targetAssetId = null;
+                    if (simulatorMode === 'student') {
+                        const studentTrack = studentTracks.find(t =>
+                            t.trackNumber !== null && t.trackNumber.toString() === trackNum
+                        );
+                        if (studentTrack) targetAssetId = studentTrack.assetId;
+                    } else {
+                        const asset = assets.find(a =>
+                            a.trackNumber !== null && a.trackNumber.toString() === trackNum
+                        );
+                        if (asset) targetAssetId = asset.id;
+                    }
+                    const targetAsset = targetAssetId ? assets.find(a => a.id === targetAssetId) : null;
+                    if (targetAsset) {
+                        resolvedTracks.push({ trackNum, targetAssetId, targetAsset });
+                    } else {
+                        notFound.push(trackNum);
+                    }
+                });
+
+                if (resolvedTracks.length === 0) {
+                    addToRadioLog(ownshipAirDefenseCallsign, transcript, 'outgoing');
+                    const trackList = trackNums.map(t => `track ${t}`).join(', ');
+                    const errorResponse = `${ownshipAirDefenseCallsign}, Alpha Whiskey, unable, ${trackList} not held, over.`;
+                    setTimeout(() => {
+                        speakResponse(errorResponse);
+                        addToRadioLog('Alpha Whiskey', errorResponse, 'incoming');
+                    }, 500);
+                    return;
+                }
+
+                // Find nearest friendly DDG or CG with SAM capability
+                const samCapableShips = assets.filter(a =>
+                    a.identity === 'friendly' &&
+                    a.platform &&
+                    a.platform.weapons &&
+                    a.platform.weapons.some(w => w === 'SM-2' || w === 'SM-6')
+                );
+
+                if (samCapableShips.length === 0) {
+                    addToRadioLog(ownshipAirDefenseCallsign, transcript, 'outgoing');
+                    const errorResponse = `${ownshipAirDefenseCallsign}, Alpha Whiskey, unable, no air defense assets available, over.`;
+                    setTimeout(() => {
+                        speakResponse(errorResponse);
+                        addToRadioLog('Alpha Whiskey', errorResponse, 'incoming');
+                    }, 500);
+                    return;
+                }
+
+                // Create coverage entries — each track gets nearest ship to its target
+                const now = Date.now();
+                const batchId = nextBirdsCoverageIdRef.current;
+                const newEntries = resolvedTracks.map(({ trackNum, targetAssetId, targetAsset }) => {
+                    let nearestShip = null;
+                    let nearestDistance = Infinity;
+                    samCapableShips.forEach(ship => {
+                        const dist = calculateDistance(ship.lat, ship.lon, targetAsset.lat, targetAsset.lon);
+                        if (dist < nearestDistance) {
+                            nearestDistance = dist;
+                            nearestShip = ship;
+                        }
+                    });
+                    const coverageId = nextBirdsCoverageIdRef.current++;
+                    return {
+                        id: coverageId,
+                        batchId: batchId,
+                        trackNumber: trackNum,
+                        targetAssetId: targetAssetId,
+                        assignedShipId: nearestShip.id,
+                        assignedShipName: nearestShip.name,
+                        coveredAt: now,
+                        weaponFired: false,
+                        weaponId: null,
+                    };
+                });
+                setBirdsCoverage(prev => [...prev, ...newEntries]);
+
+                // Log and respond
+                addToRadioLog(ownshipAirDefenseCallsign, transcript, 'outgoing');
+                const trackList = resolvedTracks.map(t => t.trackNum).join(', ');
+                const awResponse = `${ownshipAirDefenseCallsign}, Alpha Whiskey, roger, track ${trackList} covered with birds, over.`;
+                setTimeout(() => {
+                    speakResponse(awResponse);
+                    addToRadioLog('Alpha Whiskey', awResponse, 'incoming');
+                }, 500);
+            }
+            return;
         } else if (awMatch && !checkPrintMatch) {
             // AW courtesy call - "AW, Tango, over" — gets AW's attention before passing checkprint lines
             addToRadioLog(ownshipAirDefenseCallsign, transcript, 'outgoing');
@@ -6762,6 +6888,21 @@ function AICSimulator() {
                         }
                     });
 
+                    // Check for "cover with birds" impacts — announce "grand slam"
+                    impactedWeapons.forEach(weapon => {
+                        const coverage = birdsCoverage.find(c =>
+                            c.weaponFired &&
+                            c.targetAssetId === weapon.impactTargetId &&
+                            weapon.firingAssetId === c.assignedShipId
+                        );
+                        if (coverage) {
+                            setPendingGrandSlamCalls(prev => [...prev, {
+                                trackNumber: coverage.trackNumber,
+                            }]);
+                            setBirdsCoverage(prev => prev.filter(c => c.id !== coverage.id));
+                        }
+                    });
+
                     // Remove destroyed targets
                     updatedAssets = updatedAssets.filter(a => !targetIdsToRemove.includes(a.id));
 
@@ -6790,7 +6931,7 @@ function AICSimulator() {
 
             return updatedWeapons.filter(w => !w.impact);
         });
-    }, [weaponConfigs, assets, missionTime, simulatorMode, studentTracks]);
+    }, [weaponConfigs, assets, missionTime, simulatorMode, studentTracks, birdsCoverage]);
 
     // Keep updatePhysicsRef in sync (updated every render, avoids effect teardown)
     updatePhysicsRef.current = updatePhysics;
@@ -8477,6 +8618,90 @@ function AICSimulator() {
         });
     }, [assets, fireWeapon, weaponConfigs, speakResponse, addToRadioLog, formatCallsignForRadio, interceptState.phase]);
 
+    // Handle "cover with birds" — auto-fire SAM when target enters weapon range
+    // Groups tracks from the same batch into a single "birds away" call
+    useEffect(() => {
+        if (birdsCoverage.length === 0) return;
+
+        // Collect all tracks ready to fire this tick, grouped by batchId
+        const readyToFire = [];
+        const toCleanUp = [];
+
+        birdsCoverage.forEach(coverage => {
+            if (coverage.weaponFired) return;
+
+            const ship = assets.find(a => a.id === coverage.assignedShipId);
+            const target = assets.find(a => a.id === coverage.targetAssetId);
+
+            if (!ship || !target) {
+                toCleanUp.push(coverage.id);
+                return;
+            }
+
+            // Wait 15 seconds after cover call before firing (simulates lock-up time)
+            if (Date.now() - coverage.coveredAt < 15000) return;
+
+            const range = calculateDistance(ship.lat, ship.lon, target.lat, target.lon);
+
+            // Find best SAM weapon range (prefer SM-6 at 130nm over SM-2 at 90nm)
+            let bestWeaponRange = 0;
+            ['SM-6', 'SM-2'].forEach(weaponName => {
+                if (ship.platform?.weapons?.includes(weaponName)) {
+                    const config = weaponConfigs[weaponName];
+                    if (config && config.maxRange > bestWeaponRange) {
+                        bestWeaponRange = config.maxRange;
+                    }
+                }
+            });
+
+            if (bestWeaponRange === 0) return;
+
+            // Fire when target enters 95% of max range
+            if (range <= bestWeaponRange * 0.95) {
+                readyToFire.push(coverage);
+            }
+        });
+
+        // Clean up orphaned entries
+        if (toCleanUp.length > 0) {
+            setBirdsCoverage(prev => prev.filter(c => !toCleanUp.includes(c.id)));
+        }
+
+        if (readyToFire.length > 0) {
+            // Fire all ready weapons
+            readyToFire.forEach(coverage => {
+                const ship = assets.find(a => a.id === coverage.assignedShipId);
+                const target = assets.find(a => a.id === coverage.targetAssetId);
+                if (ship && target) {
+                    fireWeapon(ship.id, target.id, 'SAM');
+                }
+            });
+
+            // Mark all as fired
+            const firedIds = new Set(readyToFire.map(c => c.id));
+            setBirdsCoverage(prev => prev.map(c =>
+                firedIds.has(c.id) ? { ...c, weaponFired: true } : c
+            ));
+
+            // Group by batchId for combined radio calls
+            const batches = {};
+            readyToFire.forEach(c => {
+                if (!batches[c.batchId]) batches[c.batchId] = [];
+                batches[c.batchId].push(c.trackNumber);
+            });
+
+            // One "birds away" call per batch
+            Object.values(batches).forEach(trackNumbers => {
+                const trackList = trackNumbers.join(', ');
+                const birdsAwayCall = `${ownshipAirDefenseCallsign}, Alpha Whiskey, birds away track ${trackList}, over.`;
+                setTimeout(() => {
+                    speakResponse(birdsAwayCall);
+                    addToRadioLog('Alpha Whiskey', birdsAwayCall, 'incoming');
+                }, 500);
+            });
+        }
+    }, [birdsCoverage, assets, weaponConfigs, fireWeapon, speakResponse, addToRadioLog, ownshipAirDefenseCallsign]);
+
     // Cold ops: true when fighter has requested picture and we're waiting for user (AIC) to speak the new picture
     const [waitingForColdOpsPicture, setWaitingForColdOpsPicture] = useState(false);
 
@@ -8522,6 +8747,18 @@ function AICSimulator() {
             setPendingTimeoutCalls([]);
         }
     }, [pendingTimeoutCalls, speakResponse, addToRadioLog, formatCallsignForRadio, skateFlowEnabled, assets, ownshipTacticalCallsign]);
+
+    // Process pending "grand slam" calls (birds coverage impact announcements)
+    useEffect(() => {
+        if (pendingGrandSlamCalls.length > 0) {
+            pendingGrandSlamCalls.forEach(call => {
+                const grandSlamCall = `${ownshipAirDefenseCallsign}, Alpha Whiskey, track ${call.trackNumber}, grand slam, over.`;
+                speakResponse(grandSlamCall);
+                addToRadioLog('Alpha Whiskey', grandSlamCall, 'incoming');
+            });
+            setPendingGrandSlamCalls([]);
+        }
+    }, [pendingGrandSlamCalls, speakResponse, addToRadioLog, ownshipAirDefenseCallsign]);
 
     // Cold Ops new picture is now handled by the voice command processor
     // when waitingForColdOpsPicture is true. The user (as AIC) speaks the
@@ -9746,6 +9983,9 @@ function AICSimulator() {
                 setPendingTimeoutCalls([]);
                 setPendingVIDCalls([]);
                 setWaitingForColdOpsPicture(false);
+                setBirdsCoverage([]);
+                setPendingGrandSlamCalls([]);
+                nextBirdsCoverageIdRef.current = 1;
 
                 // Reset sensor detections
                 setRadarDetectionCounts({});
