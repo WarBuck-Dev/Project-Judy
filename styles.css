@@ -887,6 +887,101 @@ select.input-field {
     margin-right: 5px;
 }
 
+/* Chat Message Window */
+.chat-message-window {
+    position: fixed;
+    background: rgba(0, 0, 0, 0.85);
+    border: 1px solid #00FF00;
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    z-index: 10000;
+    min-width: 250px;
+    min-height: 100px;
+}
+
+.chat-message-header {
+    background: #003300;
+    color: #00FF00;
+    padding: 5px 10px;
+    font-weight: bold;
+    border-bottom: 1px solid #00FF00;
+    user-select: none;
+}
+
+.chat-message-header.flashing {
+    animation: headerFlash 0.5s infinite alternate;
+}
+
+@keyframes headerFlash {
+    0% { background: #003300; }
+    100% { background: #AA0000; }
+}
+
+.chat-message-messages {
+    overflow-y: auto;
+    padding: 5px;
+}
+
+.chat-message-resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 15px;
+    height: 15px;
+    cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, #00FF00 50%);
+    opacity: 0.6;
+}
+
+.chat-message-resize-handle:hover {
+    opacity: 1;
+}
+
+.chat-message-minimize-btn {
+    background: transparent;
+    border: 1px solid #00FF00;
+    color: #00FF00;
+    width: 18px;
+    height: 18px;
+    font-size: 14px;
+    line-height: 14px;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.chat-message-minimize-btn:hover {
+    background: rgba(0, 255, 0, 0.2);
+}
+
+.chat-message-window.minimized {
+    min-width: auto;
+    min-height: auto;
+}
+
+.chat-message-window.minimized .chat-message-header {
+    border-bottom: none;
+}
+
+.chat-entry {
+    padding: 3px 5px;
+    border-bottom: 1px solid #003300;
+    color: #00FF00;
+}
+
+.chat-time {
+    color: #888;
+    margin-right: 8px;
+}
+
+.chat-sender {
+    font-weight: bold;
+    margin-right: 5px;
+    color: #00BFFF;
+}
+
 /* Callsign Configuration */
 .callsign-config {
     border-top: 1px solid #00FF00;

@@ -1229,7 +1229,8 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                             React.createElement('option', { value: 'turnEmitterOff' }, 'Turn Emitter Off'),
                             React.createElement('option', { value: 'makeVisible' }, 'Make Visible'),
                             React.createElement('option', { value: 'makeInvisible' }, 'Make Invisible'),
-                            React.createElement('option', { value: 'transmitOnRadio' }, 'Transmit on Radio')
+                            React.createElement('option', { value: 'transmitOnRadio' }, 'Transmit on Radio'),
+                            React.createElement('option', { value: 'sendMessage' }, 'Send Message')
                         ),
 
                         // Action-specific inputs
@@ -1332,6 +1333,24 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                                 type: 'text',
                                 value: action.value || '',
                                 placeholder: 'Enter radio message...',
+                                onChange: (e) => handleUpdateAction(idx, 'value', e.target.value),
+                                style: {
+                                    width: '100%',
+                                    padding: '6px',
+                                    backgroundColor: '#000',
+                                    color: '#00FF00',
+                                    border: '1px solid #00FF00',
+                                    fontSize: '11px'
+                                }
+                            })
+                        ),
+
+                        action.type === 'sendMessage' && React.createElement('div', {},
+                            React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '11px' } }, 'MESSAGE:'),
+                            React.createElement('input', {
+                                type: 'text',
+                                value: action.value || '',
+                                placeholder: 'Enter chat message...',
                                 onChange: (e) => handleUpdateAction(idx, 'value', e.target.value),
                                 style: {
                                     width: '100%',
@@ -1876,6 +1895,16 @@ function AICSimulator() {
     const [isResizingRadioLog, setIsResizingRadioLog] = useState(false);
     const [isRadioLogMinimized, setIsRadioLogMinimized] = useState(true);
     const radioLogDragOffset = useRef({ x: 0, y: 0 });
+
+    // Chat message window (text messages from behaviors)
+    const [chatMessages, setChatMessages] = useState([]);
+    const [chatMessagePosition, setChatMessagePosition] = useState({ x: 830, y: 10 });
+    const [chatMessageSize, setChatMessageSize] = useState({ width: 400, height: 200 });
+    const [isDraggingChatMessage, setIsDraggingChatMessage] = useState(false);
+    const [isResizingChatMessage, setIsResizingChatMessage] = useState(false);
+    const [isChatMessageMinimized, setIsChatMessageMinimized] = useState(true);
+    const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
+    const chatMessageDragOffset = useRef({ x: 0, y: 0 });
 
     // Ownship callsign configuration
     const [ownshipTacticalCallsign, setOwnshipTacticalCallsign] = useState('Closeout');
@@ -3479,6 +3508,17 @@ function AICSimulator() {
             type // 'outgoing', 'incoming', 'error'
         };
         setRadioLog(prev => [...prev.slice(-49), entry]); // Keep last 50 entries
+    }, []);
+
+    // Add entry to chat message log
+    const addChatMessage = useCallback((sender, message) => {
+        const entry = {
+            time: formatMissionTime(missionTimeRef.current),
+            sender,
+            message
+        };
+        setChatMessages(prev => [...prev.slice(-49), entry]);
+        setHasUnreadMessages(true);
     }, []);
 
     // Main voice command processor
@@ -5927,6 +5967,44 @@ function AICSimulator() {
         };
     }, [isDraggingRadioLog, isResizingRadioLog, radioLogSize.width, radioLogSize.height]);
 
+    // Handle chat message window dragging and resizing
+    useEffect(() => {
+        const handleMouseMove = (e) => {
+            if (isDraggingChatMessage) {
+                const newX = e.clientX - chatMessageDragOffset.current.x;
+                const newY = e.clientY - chatMessageDragOffset.current.y;
+                const maxX = window.innerWidth - chatMessageSize.width;
+                const maxY = window.innerHeight - chatMessageSize.height;
+                setChatMessagePosition({
+                    x: Math.max(0, Math.min(newX, maxX)),
+                    y: Math.max(0, Math.min(newY, maxY))
+                });
+            }
+            if (isResizingChatMessage) {
+                const deltaX = e.clientX - chatMessageDragOffset.current.x;
+                const deltaY = e.clientY - chatMessageDragOffset.current.y;
+                const newWidth = Math.max(250, chatMessageDragOffset.current.startWidth + deltaX);
+                const newHeight = Math.max(100, chatMessageDragOffset.current.startHeight + deltaY);
+                setChatMessageSize({ width: newWidth, height: newHeight });
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsDraggingChatMessage(false);
+            setIsResizingChatMessage(false);
+        };
+
+        if (isDraggingChatMessage || isResizingChatMessage) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDraggingChatMessage, isResizingChatMessage, chatMessageSize.width, chatMessageSize.height]);
+
     // Initialize ownship weapon inventory when ownship platform is assigned
     useEffect(() => {
         const ownship = assets.find(a => a.type === 'ownship');
@@ -6634,6 +6712,15 @@ function AICSimulator() {
                                 case 'interceptAsset':
                                     if (action.value) {
                                         updated.behaviorInterceptTargetId = parseInt(action.value);
+                                    }
+                                    break;
+                                case 'sendMessage':
+                                    if (action.value) {
+                                        const senderName = updated.name || `Asset ${updated.id}`;
+                                        const msg = action.value;
+                                        setTimeout(() => {
+                                            addChatMessage(senderName, msg);
+                                        }, 100);
                                     }
                                     break;
                             }
@@ -9986,6 +10073,8 @@ function AICSimulator() {
                 setBirdsCoverage([]);
                 setPendingGrandSlamCalls([]);
                 nextBirdsCoverageIdRef.current = 1;
+                setChatMessages([]);
+                setHasUnreadMessages(false);
 
                 // Reset sensor detections
                 setRadarDetectionCounts({});
@@ -12939,6 +13028,77 @@ function AICSimulator() {
                                             y: e.clientY,
                                             startWidth: radioLogSize.width,
                                             startHeight: radioLogSize.height
+                                        };
+                                    }}
+                                />
+                            </>
+                        )}
+                    </div>
+                )}
+
+                {/* Chat Message Window - Student mode only (Draggable/Resizable) */}
+                {simulatorMode === 'student' && (
+                    <div
+                        className={`chat-message-window ${isChatMessageMinimized ? 'minimized' : ''}`}
+                        style={{
+                            left: chatMessagePosition.x,
+                            top: chatMessagePosition.y,
+                            width: isChatMessageMinimized ? 'auto' : chatMessageSize.width,
+                            height: isChatMessageMinimized ? 'auto' : chatMessageSize.height,
+                            cursor: isDraggingChatMessage ? 'grabbing' : 'default'
+                        }}
+                    >
+                        <div
+                            className={`chat-message-header ${isChatMessageMinimized && hasUnreadMessages ? 'flashing' : ''}`}
+                            style={{ cursor: 'grab' }}
+                            onMouseDown={(e) => {
+                                if (e.target.classList.contains('chat-message-minimize-btn')) return;
+                                e.preventDefault();
+                                setIsDraggingChatMessage(true);
+                                chatMessageDragOffset.current = {
+                                    x: e.clientX - chatMessagePosition.x,
+                                    y: e.clientY - chatMessagePosition.y
+                                };
+                            }}
+                        >
+                            MESSAGES
+                            <span style={{ float: 'right', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button
+                                    className="chat-message-minimize-btn"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsChatMessageMinimized(!isChatMessageMinimized);
+                                        if (isChatMessageMinimized) setHasUnreadMessages(false);
+                                    }}
+                                    title={isChatMessageMinimized ? 'Expand' : 'Minimize'}
+                                >
+                                    {isChatMessageMinimized ? '□' : '−'}
+                                </button>
+                                {!isChatMessageMinimized && <span style={{ fontSize: '9px', opacity: 0.6 }}>⋮⋮ drag</span>}
+                            </span>
+                        </div>
+                        {!isChatMessageMinimized && (
+                            <>
+                                <div className="chat-message-messages" style={{ height: chatMessageSize.height - 30 }}>
+                                    {chatMessages.map((entry, idx) => (
+                                        <div key={idx} className="chat-entry">
+                                            <span className="chat-time">{entry.time}</span>
+                                            <span className="chat-sender">{entry.sender}:</span>
+                                            <span className="chat-text">{entry.message}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div
+                                    className="chat-message-resize-handle"
+                                    onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setIsResizingChatMessage(true);
+                                        chatMessageDragOffset.current = {
+                                            x: e.clientX,
+                                            y: e.clientY,
+                                            startWidth: chatMessageSize.width,
+                                            startHeight: chatMessageSize.height
                                         };
                                     }}
                                 />
