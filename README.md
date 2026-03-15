@@ -520,6 +520,38 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ### Version 3.5 (March 2026)
 
+#### Skate Flow & Cold Ops
+- **Skate Flow Toggle**: Enable/disable in Scenario Settings (locked during active intercept)
+- **Skate/Banzai Decision**: Fighters automatically determine flow based on picture geometry and factor range (25nm):
+  - **Skate**: Any azimuth picture (azimuth, wall, champagne) or range picture with < 25nm separation
+  - **Banzai**: Single group pictures or range pictures with >= 25nm separation (leading edge)
+- **Skate Execution**: After FOX-3 employment, fighters turn 180° away from threat
+  - Radio call: "[Callsign] skate [left/right], pitbull single only [group]"
+  - 5-second delay after separation response before executing skate turn
+- **Cold Ops Procedures**: After skate, fighters rely on AIC for re-attack:
+  1. Fighter calls timeout on weapon impact
+  2. Fighter requests picture: "[AIC callsign], [callsign] picture"
+  3. AIC provides vanished assessments and new picture with renamed groups
+  4. Fighter re-targets and calls "in [left/right]" with 12-second acquisition delay
+- **Group Renaming on Re-Attack**: Remaining groups get new names based on reduced picture geometry
+- **Leading Edge Picture Support**: Sub-formation detection for range pictures >= 25nm
+
+#### AW (Alpha Whiskey) Cover With Birds
+- **SAM Engagement Command**: AW directs SAM coverage on hostile tracks
+  - Format: "Cover track [XXXX] with birds" or "Cover track [XXXX] and [YYYY] with birds"
+  - Nearest friendly DDG/CG auto-assigned and fires SM-2/SM-6 when target enters weapon range
+  - 15-second lock-up delay before firing
+- **Radio Calls**:
+  - AW confirms: "track [XXXX] covered with birds"
+  - Combined "birds away" call for tracks in same batch
+  - Individual "grand slam" call per impact
+
+#### Chat Message System
+- **Send Message Behavior Action**: New behavior action type for instructor-to-student communication
+  - Configure custom text messages triggered by mission time, distance, or waypoint arrival
+  - Messages appear in draggable/resizable Messages window in student mode
+  - Window minimized by default, flashes red when unread messages arrive
+
 #### MAC (Maritime Air Control) System
 - **Surface Surveillance Coordination (SSC)**: Full MAC controller functionality for directing aircraft to investigate, classify, and engage surface contacts
 - **MAC Investigate Command**: Direct controlled assets to identify surface contacts

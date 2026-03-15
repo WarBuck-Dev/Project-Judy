@@ -662,6 +662,39 @@ Fighter switches to new target.
 ```
 Fighter returns to CAP station orbit.
 
+### Skate Flow & Cold Ops Commands
+
+When Skate Flow is enabled (Scenario Settings), fighters automatically skate (turn away) after weapon employment on azimuth or close-range pictures, then rely on AIC for re-attack guidance.
+
+**New Picture (Cold Ops — after fighter requests picture):**
+```
+"South group vanished, new picture single group Rock 270/20, twenty-five thousand, track east, hostile"
+```
+Provide vanished assessments for destroyed groups and updated picture with renamed groups.
+
+**Picture Clean (Cold Ops — all groups destroyed):**
+```
+"Closeout picture clean, Showtime reset Tampa say state"
+```
+
+**Skate Flow Decision Criteria:**
+
+| Picture Type | Separation | Flow |
+|-------------|-----------|------|
+| Any azimuth (azimuth, wall, champagne) | Any | Skate |
+| Range/Ladder/Vic | < 25nm between adjacent groups | Skate |
+| Single group | N/A | Banzai |
+| Leading edge (range >= 25nm) | >= 25nm | Banzai |
+
+### AW Cover With Birds Command
+
+Direct SAM coverage on hostile tracks:
+```
+"Cover track 6001 with birds"
+"Cover track 6001 and 6002 with birds"
+```
+Nearest friendly DDG/CG auto-fires SM-2/SM-6 when target enters weapon range.
+
 ### MAC (Maritime Air Control) Voice Commands
 
 MAC commands direct controlled assets to investigate, target, and engage surface contacts.
@@ -857,6 +890,7 @@ Behaviors automate asset actions based on triggers.
 | **Turn Emitter Off** | Deactivate selected radar |
 | **Make Visible** | Uncheck HIDDEN (reveal to students) |
 | **Make Invisible** | Check HIDDEN (hide from students) |
+| **Send Message** | Display text message in student's Messages window |
 
 ### Behavior Management
 
@@ -951,6 +985,7 @@ Behaviors automate asset actions based on triggers.
 | **Single** | "Closeout single group track west" |
 | **Vanished** | "Closeout lead group vanished target trail group..." |
 | **Clean** | "Closeout picture clean Showtime reset Tampa" |
+| **Cover w/ Birds** | "Cover track 6001 and 6002 with birds" |
 | **Investigate** | "Chippy 11 Closeout investigate surface track 6001 Rock 270/30 track north skunk" |
 | **Target** | "Chippy 11 Closeout target surface track 6001" |
 | **Smack** | "Chippy 11 smack surface track 6000 Rock 149/28 track west hostile attack axis 272 IP DP track 6100" |
