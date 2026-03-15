@@ -662,6 +662,81 @@ Fighter switches to new target.
 ```
 Fighter returns to CAP station orbit.
 
+### MAC (Maritime Air Control) Voice Commands
+
+MAC commands direct controlled assets to investigate, target, and engage surface contacts.
+
+**Investigate Surface Track:**
+```
+"Chippy 11, Closeout, investigate surface track 6001, Rock 270/30, track north, skunk"
+"Chippy 11, Closeout, investigate surface track 6001, Rock 270/30, track north, skunk, follow on tracks 6002 and 6003"
+```
+Asset navigates to standoff range, identifies contact, and reports platform type, course, and speed.
+
+**Target Surface Track (Maverick):**
+```
+"Chippy 11, Closeout, target surface track 6001"
+```
+Asset navigates directly to target, fires AGM-65 Maverick at 14nm, reports BDA on impact.
+
+**Smack Surface Track (Harpoon via IP/DP):**
+```
+"Chippy 11, smack surface track 6000, Rock 149/28, track west, hostile, attack axis 272, IP DP track 6100"
+```
+Multi-phase Harpoon employment:
+1. Asset navigates to IP/DP (track 6100)
+2. Asset calls "Picture" — **you respond**: "picture clean recommend continue"
+3. Asset responds "attack" and turns inbound on attack axis (272°)
+4. At 55nm from target, asset calls "pinpoint" — **you respond**: "pinpoint"
+5. MAC provides target coordinates, asset reads back
+6. At 44nm, asset calls "bruisers away" and fires Harpoon
+
+**Picture Clean (during Smack flow):**
+```
+"picture clean recommend continue"
+```
+Respond to asset's "Picture" call at IP/DP to authorize inbound turn.
+
+**Pinpoint (during Smack flow):**
+```
+"pinpoint"
+```
+or
+```
+"target location is..."
+```
+Respond to asset's "pinpoint" call to provide target coordinates (auto-generated from track position).
+
+**AZ Check Print (Alpha Zulu Coordination):**
+```
+"Alpha Zulu, 600, surface track 6001, check print Line 9 from Chippy 11"
+```
+AZ responds based on Warning/Weapon Status with suspect or hostile declaration.
+
+### MAC Surface Declarations
+
+| Declaration | Meaning | AIC Equivalent |
+|-------------|---------|----------------|
+| **Skunk** | Unknown surface contact | Bogey Spades |
+| **Robber** | Positively identified enemy vessel | Bandit |
+| **Hostile** | Enemy vessel, weapons free met | Hostile |
+
+### MAC Tasking Types
+
+| Type | Command | Weapon | Description |
+|------|---------|--------|-------------|
+| **Investigate** | investigate | None | Identify contact at standoff |
+| **Target** | target | AGM-65 Maverick | Direct engagement at 14nm |
+| **Smack** | smack | AGM-84 Harpoon | IP/DP routed engagement at 44nm |
+
+### Geo-Point Track Numbers
+
+Geo-points can be assigned datalink track numbers for use as MAC references:
+1. Select a geo-point on the map
+2. Click **REPORT TRACK** in the geo-point panel
+3. Track number appears as "TN# XXXX" above the geo-point symbol
+4. Use the track number in MAC commands (e.g., IP/DP track reference)
+
 ### Voice Recognition Tips
 
 - Speak clearly and at moderate pace
@@ -672,6 +747,11 @@ Fighter returns to CAP station orbit.
   - "shingle" → "single"
   - "lee group" → "lead group"
   - "hostel" → "hostile"
+  - "surface trap" → "surface track"
+  - "snack" → "smack"
+  - "tech axis" → "attack axis"
+  - "ipd" → "ip dp"
+  - "should be" → "chippy"
 
 ### Sound Settings
 
@@ -871,6 +951,12 @@ Behaviors automate asset actions based on triggers.
 | **Single** | "Closeout single group track west" |
 | **Vanished** | "Closeout lead group vanished target trail group..." |
 | **Clean** | "Closeout picture clean Showtime reset Tampa" |
+| **Investigate** | "Chippy 11 Closeout investigate surface track 6001 Rock 270/30 track north skunk" |
+| **Target** | "Chippy 11 Closeout target surface track 6001" |
+| **Smack** | "Chippy 11 smack surface track 6000 Rock 149/28 track west hostile attack axis 272 IP DP track 6100" |
+| **Picture Clean** | "picture clean recommend continue" |
+| **Pinpoint** | "pinpoint" |
+| **AZ Check Print** | "Alpha Zulu 600 surface track 6001 check print Line 9 from Chippy 11" |
 
 ### Identity Colors
 
@@ -909,9 +995,9 @@ Behaviors automate asset actions based on triggers.
 
 ## Document Information
 
-**Project Judy Version:** 3.4
-**Manual Version:** 1.1
-**Last Updated:** February 2026
+**Project Judy Version:** 3.5
+**Manual Version:** 1.2
+**Last Updated:** March 2026
 
 For additional support, refer to:
 - `README.md` - Technical overview and version history

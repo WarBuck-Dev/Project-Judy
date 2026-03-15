@@ -437,6 +437,13 @@ Shapes use the same color coding as assets and geo-points:
 3. Practice threat assessment
 4. Allocate assets efficiently
 
+### Maritime Air Control (MAC) - Surface Investigation
+1. Create friendly MPA or fighter with appropriate weapons
+2. Create surface contacts (hostile/unknown) at various positions
+3. Create geo-points as IP/DP waypoints, assign track numbers via REPORT TRACK
+4. Practice investigate → target/smack engagement flow
+5. Use AZ check print to establish declarations before engagement
+
 ## Tips for Students
 
 1. **Use the bullseye system**: All position calls reference the bullseye (BE)
@@ -505,11 +512,71 @@ For issues or questions, refer to the complete documentation in `AIC-SIMULATOR-D
 
 ## Version
 
-**Version**: 3.4
-**Last Updated**: February 7, 2026
+**Version**: 3.5
+**Last Updated**: March 15, 2026
 **Status**: Production Ready
 
 ## Recent Updates
+
+### Version 3.5 (March 2026)
+
+#### MAC (Maritime Air Control) System
+- **Surface Surveillance Coordination (SSC)**: Full MAC controller functionality for directing aircraft to investigate, classify, and engage surface contacts
+- **MAC Investigate Command**: Direct controlled assets to identify surface contacts
+  - Format: "[Callsign], [MAC Callsign], investigate surface track [XXXX], Rock [BRG/RNG], track [direction], [declaration]"
+  - Supports follow-on tracks for sequential investigation
+  - Assets navigate to standoff range (15nm fighters / 30nm MPA), orbit, identify, and report back
+  - SSC report includes platform type, course, and speed
+  - Military vessel detection triggers "say intentions" hold
+- **MAC Target Command (AGM-65 Maverick)**:
+  - Format: "[Callsign], [MAC Callsign], target surface track [XXXX]"
+  - Asset navigates directly to target, fires AGM-65 Maverick at 14nm
+  - "Rifle" call on weapon release
+  - BDA report on impact: "good hit, track XXXX is on fire and sinking"
+  - Validates asset has Maverick via current platform definition
+- **MAC Smack Command (AGM-84 Harpoon via IP/DP)**:
+  - Format: "[Callsign], smack surface track [XXXX], Rock [BRG/RNG], track [direction], [declaration], attack axis [HDG], IP DP track [XXXX]"
+  - Multi-phase employment flow:
+    1. Asset navigates to IP/DP (Intermediate Point / Decision Point)
+    2. Asset calls "Picture" — waits for MAC to respond "picture clean, recommend continue"
+    3. Asset responds "attack" and turns inbound on attack axis heading
+    4. At 55nm from target, asset calls "pinpoint" — waits for MAC to provide target coordinates
+    5. MAC responds with lat/lon in voice format (e.g., "north 2630 decimal 5 east 05643 decimal 9")
+    6. Asset reads back coordinates
+    7. At 44nm, "bruisers away" call and Harpoon fires
+  - Validates asset has Harpoon via current platform definition
+  - No BDA from asset (too far to observe impact)
+- **AZ (Alpha Zulu) Coordination**:
+  - Check print voice command for surface track declarations
+  - Format: "Alpha Zulu, [side number], surface track [XXXX], check print Line [9/11] from [asset]"
+  - Responses based on Warning/Weapon Status:
+    - White/Safe + Line 9 or 11 → "suspect, maintain stand off"
+    - Yellow or Red/Tight + Line 9 or 11 → "hostile, target track XXXX"
+  - MAC Side Number configurable (600-604) in Scenario Settings
+- **Geo-Point Track Numbers**: Geo-points can be assigned datalink track numbers directly
+  - REPORT TRACK button on geo-point selection panel
+  - Track number displayed as "TN# XXXX" above geo-point symbol on map
+  - Geo-points with track numbers available as MAC command targets and IP/DP references
+
+#### Dynamic Tactical Callsign
+- Ownship asset name now syncs with Tactical Callsign in Scenario Settings
+- All asset radio calls use the configured callsign (no hardcoded "Closeout")
+- Works in both Instructor and Student mode
+- Change callsign to "King", "Banger", etc. — all MAC/AIC communications update automatically
+
+#### Weapon Physics Updates
+- AGM-65 Maverick: Extended fuel time (63s → 105s) for 15nm range
+- AGM-84 Harpoon: Extended fuel time (322s → 380s) for 45nm range
+- Old save file compatibility: Weapon lookup uses current platform definition instead of stale saved data
+
+#### Voice Recognition Improvements
+- "surface trap" → "surface track"
+- "snack" → "smack"
+- "tech axis" / "attack access" / "attack axes" → "attack axis"
+- "ipd" / "i p d p" / "ip/dp" → "ip dp"
+- "pin point" / "pen point" → "pinpoint"
+- "should be" → "chippy"
+- "hostel" → "hostile" (existing, used in MAC context)
 
 ### Version 3.4 (February 2026)
 
