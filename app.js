@@ -108,6 +108,28 @@ function decimalToDMM(decimal, isLatitude) {
     return `${direction}${degreesPadded} ${minutesPadded}`;
 }
 
+// Format lat/lon for voice pinpoint calls
+// Example: 38.797, 56.732 → "north 3847 decimal 8 east 05643 decimal 9"
+function formatLatLonForVoice(lat, lon) {
+    const latDir = lat >= 0 ? 'north' : 'south';
+    const absLat = Math.abs(lat);
+    const latDeg = Math.floor(absLat);
+    const latMin = (absLat - latDeg) * 60;
+    const latMinWhole = Math.floor(latMin);
+    const latMinDec = Math.round((latMin - latMinWhole) * 10);
+    const latStr = `${latDir} ${latDeg.toString().padStart(2,'0')}${latMinWhole.toString().padStart(2,'0')} decimal ${latMinDec}`;
+
+    const lonDir = lon >= 0 ? 'east' : 'west';
+    const absLon = Math.abs(lon);
+    const lonDeg = Math.floor(absLon);
+    const lonMin = (absLon - lonDeg) * 60;
+    const lonMinWhole = Math.floor(lonMin);
+    const lonMinDec = Math.round((lonMin - lonMinWhole) * 10);
+    const lonStr = `${lonDir} ${lonDeg.toString().padStart(3,'0')}${lonMinWhole.toString().padStart(2,'0')} decimal ${lonMinDec}`;
+
+    return { latStr, lonStr, full: `${latStr} ${lonStr}` };
+}
+
 // Convert DMM format to decimal degrees
 // Example: "N26 30.0" -> 26.5 or "S26 30.0" -> -26.5
 function dmmToDecimal(dmm) {
@@ -1809,6 +1831,8 @@ function AICSimulator() {
     const [alertMessage, setAlertMessage] = useState(null); // Styled alert popup message
 
     const [geoPoints, setGeoPoints] = useState([]); // Geo-points on the map
+    const geoPointsRef = useRef([]);
+    geoPointsRef.current = geoPoints;
     const [nextGeoPointId, setNextGeoPointId] = useState(1);
     const [selectedGeoPointId, setSelectedGeoPointId] = useState(null);
     const [draggedGeoPointId, setDraggedGeoPointId] = useState(null);
@@ -1936,8 +1960,16 @@ function AICSimulator() {
     const macTargetingRef = useRef({});
     macTargetingRef.current = macTargeting;
 
+    // MAC smack state - per-asset Harpoon employment (multi-phase)
+    // Phases: 'navigateToIP' → 'atIP' → 'inbound' → 'pinpoint' → 'firing'
+    const [macSmackState, setMacSmackState] = useState({});
+    const macSmackRef = useRef({});
+    macSmackRef.current = macSmackState;
+
     // Ownship callsign configuration
     const [ownshipTacticalCallsign, setOwnshipTacticalCallsign] = useState('Closeout');
+    const ownshipTacticalCallsignRef = useRef('Closeout');
+    ownshipTacticalCallsignRef.current = ownshipTacticalCallsign;
     const [ownshipAirDefenseCallsign, setOwnshipAirDefenseCallsign] = useState('Tango'); // Tango, Uniform, or Victor
     const [ownshipSideNumber, setOwnshipSideNumber] = useState(''); // 3-digit code
     const [macSideNumber, setMacSideNumber] = useState('600'); // MAC side number (600-604) for AZ coordination
@@ -2065,6 +2097,18 @@ function AICSimulator() {
             }
         }
     }, [platforms]);
+
+    // Sync ownship asset name with tactical callsign
+    useEffect(() => {
+        if (ownshipTacticalCallsign) {
+            setAssets(prev => prev.map(asset => {
+                if (asset.type === 'ownship' && asset.name !== ownshipTacticalCallsign.toUpperCase()) {
+                    return { ...asset, name: ownshipTacticalCallsign.toUpperCase() };
+                }
+                return asset;
+            }));
+        }
+    }, [ownshipTacticalCallsign]);
 
     // ========================================================================
     // VOICE COMMAND SYSTEM (Student Mode Only)
@@ -2222,6 +2266,21 @@ function AICSimulator() {
             'sir face track': 'surface track',
             'follow-on': 'follow on',
             'rifle': 'rifle',  // Maverick employment call (ensure consistency)
+            // Smack / Harpoon employment terms
+            'snack': 'smack',
+            'attack access': 'attack axis',
+            'attack axes': 'attack axis',
+            'tech axis': 'attack axis',
+            'i p d p': 'ip dp',
+            'ip/dp': 'ip dp',
+            'i p slash d p': 'ip dp',
+            'ipd': 'ip dp',
+            'pin point': 'pinpoint',
+            'pen point': 'pinpoint',
+
+            // Common voice mishearings
+            'surface trap': 'surface track',
+            'should be': 'chippy',
         };
 
         // Apply tactical corrections
@@ -3890,16 +3949,22 @@ function AICSimulator() {
             const controlledAsset = findAssetByCallsign(text, friendlyAssets);
 
             if (controlledAsset && anchor) {
-                // Find the surface track by track number in studentTracks
+                // Find the surface track by track number in studentTracks or geo-points
                 const targetTrack = studentTracks.find(t =>
                     t.trackNumber !== null && t.trackNumber.toString() === primaryTrackNum
                 );
+                const targetGeoPoint = !targetTrack ? geoPoints.find(gp =>
+                    gp.trackNumber !== null && gp.trackNumber !== undefined && gp.trackNumber.toString() === primaryTrackNum
+                ) : null;
 
                 // Find the underlying asset for the track (to get actual lat/lon)
                 let targetLat, targetLon;
                 if (targetTrack && targetTrack.assetId) {
                     const targetAsset = assets.find(a => a.id === targetTrack.assetId);
                     if (targetAsset) { targetLat = targetAsset.lat; targetLon = targetAsset.lon; }
+                } else if (targetGeoPoint) {
+                    targetLat = targetGeoPoint.lat;
+                    targetLon = targetGeoPoint.lon;
                 }
                 // Fallback: compute position from bullseye
                 if (targetLat === undefined) {
@@ -3914,6 +3979,10 @@ function AICSimulator() {
                 // Place orbit on bearing FROM track TO asset's current position
                 const bearingFromTrack = calculateBearing(targetLat, targetLon, controlledAsset.lat, controlledAsset.lon);
                 const orbitPos = computeDestinationPoint(targetLat, targetLon, bearingFromTrack, standoffNM);
+
+                // Clear any existing MAC targeting/smack states for this asset
+                setMacTargeting(prev => { const n = { ...prev }; delete n[controlledAsset.id]; return n; });
+                setMacSmackState(prev => { const n = { ...prev }; delete n[controlledAsset.id]; return n; });
 
                 // Set MAC investigation state for this asset (generation counter invalidates stale callbacks)
                 setMacInvestigations(prev => ({
@@ -3948,6 +4017,259 @@ function AICSimulator() {
         if (commandExecutedMAC) return;
 
         // ========================================================================
+        // MAC: SMACK SURFACE TRACK (AGM-84 Harpoon employment via IP/DP)
+        // "Mace 31, smack surface track 6009, rock 090/40, track east, hostile.
+        //  Attack axis 090, your target is the lead ship in a V formation.
+        //  IP DP track 6014. White shipping 15nm north east of the target."
+        // ========================================================================
+        const smackMatch = text.match(/\bsmack\s+(?:surface\s+)?track\s+([\d\s]+?)(?:\s+rock|\s+track|\s*,|$)/i);
+        if (smackMatch) {
+            const smackTrackNum = smackMatch[1].replace(/\s+/g, '');
+
+            // Parse attack axis heading
+            const attackAxisMatch = text.match(/attack\s+axis\s+(\d{1,3})/i);
+
+            // Parse IP/DP track number
+            const ipDpMatch = text.match(/ip\s*(?:\/?\s*)?dp\s+track\s+([\d\s]+)/i);
+            const ipTrackNum = ipDpMatch ? ipDpMatch[1].replace(/\s+/g, '') : null;
+
+            // Parse declaration
+            let smackDeclaration = 'hostile'; // default for smack
+            if (/\brobber\b/i.test(text)) smackDeclaration = 'robber';
+            if (/\bskunk\b/i.test(text)) smackDeclaration = 'skunk';
+
+            // Parse bullseye anchor
+            const smackAnchor = parseBullseyeAnchor(text);
+
+            // Parse optional formation description
+            const formationMatch = text.match(/your\s+target\s+is\s+(.+?)(?:\.\s*ip|,\s*ip|$)/i);
+            const formationDesc = formationMatch ? formationMatch[1].trim() : null;
+
+            // Parse optional white shipping info
+            const whiteShippingMatch = text.match(/white\s+shipping\s+(.+?)$/i);
+            const whiteShipping = whiteShippingMatch ? whiteShippingMatch[1].trim() : null;
+
+            // Find the controlled asset by callsign
+            const friendlyAirAssets = assets.filter(a => a.identity === 'friendly' && a.domain === 'air');
+            const controlledAsset = findAssetByCallsign(text, friendlyAirAssets);
+
+            if (controlledAsset && attackAxisMatch) {
+                const attackAxis = parseInt(attackAxisMatch[1]);
+
+                // Check if asset has Harpoon
+                const platformName = controlledAsset.platform?.name || '';
+                const allPlatforms = [...(platforms.air || []), ...(platforms.surface || []), ...(platforms.subSurface || [])];
+                const currentPlatformDef = allPlatforms.find(p => p.name === platformName);
+                const weaponsList = currentPlatformDef?.weapons || controlledAsset.platform?.weapons || [];
+                const hasHarpoon = weaponsList.some(w => w.includes('Harpoon') || w.includes('AGM-84'));
+                if (!hasHarpoon) {
+                    const noWeaponMsg = `${controlledAsset.name}, negative, no Harpoon onboard`;
+                    speakResponse(noWeaponMsg);
+                    addToRadioLog(controlledAsset.name, noWeaponMsg, 'incoming');
+                    return;
+                }
+
+                // Resolve target track (studentTracks or geoPoints)
+                const smackTargetTrack = studentTracks.find(t =>
+                    t.trackNumber !== null && t.trackNumber.toString() === smackTrackNum
+                );
+                const smackTargetGeoPoint = !smackTargetTrack ? geoPoints.find(gp =>
+                    gp.trackNumber !== null && gp.trackNumber !== undefined && gp.trackNumber.toString() === smackTrackNum
+                ) : null;
+                let smackTargetAssetId = null;
+                let smackTgtLat, smackTgtLon;
+                let smackIsGeoPointTarget = false;
+                if (smackTargetTrack && smackTargetTrack.assetId) {
+                    const tgtAsset = assets.find(a => a.id === smackTargetTrack.assetId);
+                    if (tgtAsset) {
+                        smackTargetAssetId = tgtAsset.id;
+                        smackTgtLat = tgtAsset.lat;
+                        smackTgtLon = tgtAsset.lon;
+                    }
+                } else if (smackTargetGeoPoint) {
+                    smackTgtLat = smackTargetGeoPoint.lat;
+                    smackTgtLon = smackTargetGeoPoint.lon;
+                    smackIsGeoPointTarget = true;
+                    smackTargetAssetId = `geopoint-${smackTargetGeoPoint.id}`;
+                } else if (smackAnchor) {
+                    // Fallback: compute from bullseye
+                    const pos = computeDestinationPoint(bullseyePosition.lat, bullseyePosition.lon, smackAnchor.bearing, smackAnchor.range);
+                    smackTgtLat = pos.lat;
+                    smackTgtLon = pos.lon;
+                    smackIsGeoPointTarget = true;
+                    smackTargetAssetId = 'bullseye-target';
+                }
+
+                // Resolve IP/DP track position
+                let ipLat, ipLon;
+                if (ipTrackNum) {
+                    const ipStudentTrack = studentTracks.find(t =>
+                        t.trackNumber !== null && t.trackNumber.toString() === ipTrackNum
+                    );
+                    const ipGeoPoint = !ipStudentTrack ? geoPoints.find(gp =>
+                        gp.trackNumber !== null && gp.trackNumber !== undefined && gp.trackNumber.toString() === ipTrackNum
+                    ) : null;
+                    if (ipStudentTrack && ipStudentTrack.assetId) {
+                        const ipAsset = assets.find(a => a.id === ipStudentTrack.assetId);
+                        if (ipAsset) { ipLat = ipAsset.lat; ipLon = ipAsset.lon; }
+                    } else if (ipStudentTrack) {
+                        ipLat = ipStudentTrack.lat; ipLon = ipStudentTrack.lon;
+                    } else if (ipGeoPoint) {
+                        ipLat = ipGeoPoint.lat; ipLon = ipGeoPoint.lon;
+                    }
+                }
+
+                if (smackTgtLat !== undefined && ipLat !== undefined) {
+                    // Clear any existing MAC states for this asset
+                    setMacInvestigations(prev => { const n = { ...prev }; delete n[controlledAsset.id]; return n; });
+                    setMacTargeting(prev => { const n = { ...prev }; delete n[controlledAsset.id]; return n; });
+
+                    // Set smack state
+                    setMacSmackState(prev => ({
+                        ...prev,
+                        [controlledAsset.id]: {
+                            trackNum: smackTrackNum,
+                            targetAssetId: smackTargetAssetId,
+                            isGeoPointTarget: smackIsGeoPointTarget,
+                            targetLat: smackTgtLat,
+                            targetLon: smackTgtLon,
+                            ipTrackNum: ipTrackNum,
+                            ipLat,
+                            ipLon,
+                            attackAxis,
+                            declaration: smackDeclaration,
+                            phase: 'navigateToIP',
+                            generation: (prev[controlledAsset.id]?.generation || 0) + 1,
+                            formationDesc,
+                            whiteShipping
+                        }
+                    }));
+
+                    // Navigate to IP/DP
+                    addOrbitPoint(controlledAsset.id, ipLat, ipLon);
+
+                    // Asset readback
+                    const assetName = controlledAsset.name;
+                    const readback = `${assetName}, roger, smack track ${smackTrackNum}, attack axis ${String(attackAxis).padStart(3, '0')}`;
+                    speakResponse(readback);
+                    addToRadioLog(assetName, readback, 'incoming');
+                    addToRadioLog('MAC', `smack surface track ${smackTrackNum}, attack axis ${String(attackAxis).padStart(3, '0')}, ip dp track ${ipTrackNum}`, 'outgoing');
+                    return;
+                } else {
+                    const notFoundMsg = `Unable to locate tracks for smack engagement`;
+                    speakResponse(notFoundMsg);
+                    addToRadioLog('MAC', notFoundMsg, 'system');
+                    return;
+                }
+            }
+        }
+
+        // ========================================================================
+        // MAC: PICTURE CLEAN — MAC responds to asset's "Picture" call during smack flow
+        // "picture clean recommend continue" or "[callsign] picture clean recommend continue"
+        // ========================================================================
+        if (/\bpicture\s+clean\b/i.test(text)) {
+            // Find which asset is waiting for picture clean
+            const waitingAssetId = Object.keys(macSmackState).find(id =>
+                macSmackState[id]?.phase === 'waitingPictureClean'
+            );
+            if (waitingAssetId) {
+                const smack = macSmackState[waitingAssetId];
+                const smackGen = smack.generation || 0;
+                const waitingAssetIdNum = parseInt(waitingAssetId);
+                const waitingAsset = assets.find(a => a.id === waitingAssetIdNum || a.id === waitingAssetId);
+                const assetName = waitingAsset?.name || 'Unknown';
+
+                // Log MAC's picture clean call
+                addToRadioLog('MAC', `${ownshipTacticalCallsign}, picture clean, recommend continue`, 'outgoing');
+
+                // Asset responds "attack" after brief delay, then turns inbound
+                setTimeout(() => {
+                    const cur = macSmackRef.current[waitingAssetId];
+                    if (!cur || (cur.generation || 0) !== smackGen) return;
+                    const attackCall = `${assetName}, attack`;
+                    speakResponse(attackCall);
+                    addToRadioLog(assetName, attackCall, 'incoming');
+
+                    // Transition to inbound — fly attack axis heading
+                    cur.phase = 'inbound';
+
+                    // Set waypoint along attack axis
+                    setAssets(currentAssets => {
+                        const ctrlAsset = currentAssets.find(a => a.id === waitingAssetIdNum || a.id === waitingAssetId);
+                        if (!ctrlAsset) return currentAssets;
+
+                        const inboundPos = computeDestinationPoint(ctrlAsset.lat, ctrlAsset.lon, cur.attackAxis, 200);
+                        const nextWpId = (ctrlAsset.nextWaypointId || 0) + 1;
+                        const inboundWp = { id: nextWpId, lat: inboundPos.lat, lon: inboundPos.lon, reached: false };
+
+                        return currentAssets.map(a => {
+                            if (a.id !== waitingAssetIdNum && a.id !== waitingAssetId) return a;
+                            return {
+                                ...a,
+                                waypoints: [inboundWp],
+                                nextWaypointId: nextWpId,
+                                targetHeading: cur.attackAxis,
+                                isOrbiting: false
+                            };
+                        });
+                    });
+                }, 2000);
+
+                return;
+            }
+        }
+
+        // ========================================================================
+        // MAC: PINPOINT RESPONSE — MAC provides target coordinates during smack flow
+        // "pinpoint [target location coords]" or "closeout target location is..."
+        // The asset requested pinpoint; MAC responds with lat/lon, asset reads back then continues
+        // ========================================================================
+        if (/\bpinpoint\b/i.test(text) || /\btarget\s+location\b/i.test(text)) {
+            // Find which asset is waiting for pinpoint
+            const pinpointAssetId = Object.keys(macSmackState).find(id =>
+                macSmackState[id]?.phase === 'waitingPinpoint'
+            );
+            if (pinpointAssetId) {
+                const smack = macSmackState[pinpointAssetId];
+                const smackGen = smack.generation || 0;
+                const pinpointAssetIdNum = parseInt(pinpointAssetId);
+                const waitingAsset = assets.find(a => a.id === pinpointAssetIdNum || a.id === pinpointAssetId);
+                const assetName = waitingAsset?.name || 'Unknown';
+
+                // Get current target position for pinpoint coordinates
+                let pinLat = smack.targetLat;
+                let pinLon = smack.targetLon;
+                if (!smack.isGeoPointTarget) {
+                    const tgtAsset = assets.find(a => a.id === smack.targetAssetId);
+                    if (tgtAsset) { pinLat = tgtAsset.lat; pinLon = tgtAsset.lon; }
+                }
+
+                const coords = formatLatLonForVoice(pinLat, pinLon);
+
+                // Log MAC's pinpoint response
+                addToRadioLog('MAC', `${ownshipTacticalCallsign}, target location is ${coords.full}`, 'outgoing');
+
+                // Update stored target position
+                setMacSmackState(prev => ({
+                    ...prev,
+                    [pinpointAssetId]: { ...prev[pinpointAssetId], targetLat: pinLat, targetLon: pinLon, phase: 'pinpoint' }
+                }));
+
+                // Asset reads back coordinates after brief delay
+                setTimeout(() => {
+                    const cur = macSmackRef.current[pinpointAssetId];
+                    if (!cur || (cur.generation || 0) !== smackGen) return;
+                    const readback = `${assetName}, target location is ${coords.full}`;
+                    speakResponse(readback);
+                    addToRadioLog(assetName, readback, 'incoming');
+                }, 2000);
+
+                return;
+            }
+        }
+
+        // ========================================================================
         // MAC: TARGET SURFACE TRACK (AGM-65 Maverick employment)
         // "Chippy 11, closeout, target surface track 6100"
         // Asset heads directly to target, fires AGM-65 when in range, reports BDA on impact
@@ -3974,12 +4296,16 @@ function AICSimulator() {
                     return;
                 }
 
-                // Find the surface track
+                // Find the surface track in studentTracks or geo-points
                 const surfaceTrack = studentTracks.find(t =>
                     t.trackNumber !== null && t.trackNumber.toString() === targetTrackNum
                 );
+                const targetGeoPoint = !surfaceTrack ? geoPoints.find(gp =>
+                    gp.trackNumber !== null && gp.trackNumber !== undefined && gp.trackNumber.toString() === targetTrackNum
+                ) : null;
                 let targetAssetId = null;
                 let tgtLat, tgtLon;
+                let isGeoPointTarget = false;
                 if (surfaceTrack && surfaceTrack.assetId) {
                     const tgtAsset = assets.find(a => a.id === surfaceTrack.assetId);
                     if (tgtAsset) {
@@ -3987,15 +4313,17 @@ function AICSimulator() {
                         tgtLat = tgtAsset.lat;
                         tgtLon = tgtAsset.lon;
                     }
+                } else if (targetGeoPoint) {
+                    tgtLat = targetGeoPoint.lat;
+                    tgtLon = targetGeoPoint.lon;
+                    isGeoPointTarget = true;
+                    targetAssetId = `geopoint-${targetGeoPoint.id}`;
                 }
 
-                if (targetAssetId && tgtLat !== undefined) {
-                    // Clear any existing MAC investigation for this asset
-                    setMacInvestigations(prev => {
-                        const next = { ...prev };
-                        delete next[controlledAsset.id];
-                        return next;
-                    });
+                if ((targetAssetId || isGeoPointTarget) && tgtLat !== undefined) {
+                    // Clear any existing MAC states for this asset
+                    setMacInvestigations(prev => { const n = { ...prev }; delete n[controlledAsset.id]; return n; });
+                    setMacSmackState(prev => { const n = { ...prev }; delete n[controlledAsset.id]; return n; });
 
                     // Set MAC targeting state
                     setMacTargeting(prev => ({
@@ -4003,6 +4331,9 @@ function AICSimulator() {
                         [controlledAsset.id]: {
                             trackNum: targetTrackNum,
                             targetAssetId,
+                            isGeoPointTarget,
+                            targetLat: tgtLat,
+                            targetLon: tgtLon,
                             phase: 'inbound',
                             generation: (prev[controlledAsset.id]?.generation || 0) + 1
                         }
@@ -6885,22 +7216,28 @@ function AICSimulator() {
                     const track = studentTracksRef.current.find(t =>
                         t.trackNumber !== null && t.trackNumber.toString() === trackNum
                     );
+                    // Also check geo-points for track number
+                    const trackGeoPoint = !track ? geoPointsRef.current.find(gp =>
+                        gp.trackNumber !== null && gp.trackNumber !== undefined && gp.trackNumber.toString() === trackNum
+                    ) : null;
                     let targetAsset = null;
                     if (track && track.assetId) {
                         targetAsset = prevAssets.find(a => a.id === track.assetId);
                     }
 
-                    const platformName = targetAsset?.platform?.name || targetAsset?.name || 'unknown vessel';
+                    const platformName = trackGeoPoint
+                        ? (trackGeoPoint.name || trackGeoPoint.type || 'unknown contact')
+                        : (targetAsset?.platform?.name || targetAsset?.name || 'unknown vessel');
                     const course = targetAsset ? Math.round(targetAsset.heading).toString().padStart(3, '0') : '000';
                     const spd = targetAsset ? Math.round(targetAsset.speed) : 0;
                     const assetName = updated.name || `Asset ${updated.id}`;
 
-                    // Check if target is a military vessel (has weapons)
-                    const isMilitaryVessel = targetAsset?.platform?.weapons && targetAsset.platform.weapons.length > 0;
+                    // Check if target is a military vessel (has weapons) — geo-points are not military vessels
+                    const isMilitaryVessel = !trackGeoPoint && targetAsset?.platform?.weapons && targetAsset.platform.weapons.length > 0;
 
-                    // SSC report: "Closeout, Chippy 11, surface track 6001 is a [platform], course XXX at X knots"
+                    // SSC report: "[callsign], asset, surface track 6001 is a [platform], course XXX at X knots"
                     // If military vessel, append "Say intentions" — asset holds position and awaits orders
-                    let idReport = `Closeout, ${assetName}, surface track ${trackNum} is a ${platformName}, course ${course} at ${spd} knots`;
+                    let idReport = `${ownshipTacticalCallsignRef.current}, ${assetName}, surface track ${trackNum} is a ${platformName}, course ${course} at ${spd} knots`;
                     if (isMilitaryVessel) {
                         idReport += `, say intentions`;
                     }
@@ -6944,12 +7281,22 @@ function AICSimulator() {
                             const nextTrack = studentTracksRef.current.find(t =>
                                 t.trackNumber !== null && t.trackNumber.toString() === nextTrackNum
                             );
+                            // Also check geo-points for follow-on track
+                            const nextGeoPoint = !nextTrack ? geoPointsRef.current.find(gp =>
+                                gp.trackNumber !== null && gp.trackNumber !== undefined && gp.trackNumber.toString() === nextTrackNum
+                            ) : null;
                             let nextLat, nextLon;
-                            if (nextTrack && nextTrack.assetId) {
-                                // Get current asset position from assets state
+                            if (nextGeoPoint) {
+                                nextLat = nextGeoPoint.lat;
+                                nextLon = nextGeoPoint.lon;
+                            }
+                            if ((nextTrack && nextTrack.assetId) || nextGeoPoint) {
+                                // Get current asset position from assets state and navigate to next track
                                 setAssets(currentAssets => {
-                                    const nextAsset = currentAssets.find(a => a.id === nextTrack.assetId);
-                                    if (nextAsset) { nextLat = nextAsset.lat; nextLon = nextAsset.lon; }
+                                    if (nextTrack && nextTrack.assetId) {
+                                        const nextAsset = currentAssets.find(a => a.id === nextTrack.assetId);
+                                        if (nextAsset) { nextLat = nextAsset.lat; nextLon = nextAsset.lon; }
+                                    }
                                     const controlledAsset = currentAssets.find(a => a.id === assetId);
 
                                     if (nextLat && controlledAsset) {
@@ -6999,17 +7346,29 @@ function AICSimulator() {
                 const targetingGen = targeting.generation || 0;
 
                 if (targeting.phase === 'inbound') {
-                    // Find the target asset to get current position and check range
-                    const tgtAsset = prevAssets.find(a => a.id === targeting.targetAssetId);
-                    if (tgtAsset) {
+                    // Get target position — either from asset or geo-point coordinates
+                    let tgtLat, tgtLon;
+                    let tgtAsset = null;
+                    if (targeting.isGeoPointTarget) {
+                        tgtLat = targeting.targetLat;
+                        tgtLon = targeting.targetLon;
+                    } else {
+                        tgtAsset = prevAssets.find(a => a.id === targeting.targetAssetId);
+                        if (tgtAsset) {
+                            tgtLat = tgtAsset.lat;
+                            tgtLon = tgtAsset.lon;
+                        }
+                    }
+
+                    if (tgtLat !== undefined) {
                         const rangeToTarget = calculateDistance(
                             updated.lat !== undefined ? updated.lat : asset.lat,
                             updated.lon !== undefined ? updated.lon : asset.lon,
-                            tgtAsset.lat, tgtAsset.lon
+                            tgtLat, tgtLon
                         );
 
-                        // Update waypoint to track moving target
-                        if (asset.waypoints && asset.waypoints.length > 0 && !asset.waypoints[0].reached) {
+                        // Update waypoint to track moving target (only for asset targets)
+                        if (!targeting.isGeoPointTarget && tgtAsset && asset.waypoints && asset.waypoints.length > 0 && !asset.waypoints[0].reached) {
                             updated.waypoints = asset.waypoints.map(wp => ({
                                 ...wp, lat: tgtAsset.lat, lon: tgtAsset.lon
                             }));
@@ -7038,8 +7397,24 @@ function AICSimulator() {
                                 speakResponse(rifleCall);
                                 addToRadioLog(assetName, rifleCall, 'incoming');
 
-                                // Fire the AGM-65 Maverick
-                                fireWeapon(assetId, targetId, 'AGM');
+                                // Fire the AGM-65 Maverick (only for asset targets)
+                                if (!targeting.isGeoPointTarget) {
+                                    fireWeapon(assetId, targetId, 'AGM');
+                                } else {
+                                    // Geo-point target — simulate impact after flight time
+                                    setTimeout(() => {
+                                        const cur2 = macTargetingRef.current[assetId];
+                                        if (!cur2 || (cur2.generation || 0) !== targetingGen) return;
+                                        const bdaReport = `${ownshipTacticalCallsignRef.current}, ${assetName}, good hit, track ${trackNum} is on fire and sinking`;
+                                        speakResponse(bdaReport);
+                                        addToRadioLog(assetName, bdaReport, 'incoming');
+                                        setMacTargeting(prev => {
+                                            const next = { ...prev };
+                                            delete next[assetId];
+                                            return next;
+                                        });
+                                    }, 5000);
+                                }
                             }, 500);
 
                             // Stop the asset (orbit at current position after firing)
@@ -7048,6 +7423,125 @@ function AICSimulator() {
                             const nextWpId = (asset.nextWaypointId || 0) + 1;
                             updated.waypoints = [{
                                 id: nextWpId, lat: assetLat, lon: assetLon,
+                                reached: true, isOrbitPoint: true
+                            }];
+                            updated.nextWaypointId = nextWpId;
+                            updated.isOrbiting = true;
+                        }
+                    }
+                }
+            }
+
+            // MAC SMACK: Multi-phase Harpoon employment via IP/DP
+            if (macSmackRef.current[asset.id]) {
+                const smack = macSmackRef.current[asset.id];
+                const smackGen = smack.generation || 0;
+                const smackAssetId = asset.id;
+                const smackAssetName = updated.name || asset.name;
+
+                if (smack.phase === 'navigateToIP') {
+                    // Check if asset has arrived at IP/DP (orbiting)
+                    if (updated.isOrbiting || asset.isOrbiting) {
+                        // Transition to atIP immediately
+                        smack.phase = 'atIP';
+
+                        // Asset calls "Picture" after arriving at IP/DP, then waits for MAC to respond
+                        setTimeout(() => {
+                            const cur = macSmackRef.current[smackAssetId];
+                            if (!cur || (cur.generation || 0) !== smackGen) return;
+                            const pictureReq = `${ownshipTacticalCallsignRef.current}, ${smackAssetName}, Picture`;
+                            speakResponse(pictureReq);
+                            addToRadioLog(smackAssetName, pictureReq, 'incoming');
+                            // Transition to waitingPictureClean — asset waits for MAC voice command
+                            cur.phase = 'waitingPictureClean';
+                        }, 1000);
+                    }
+                } else if (smack.phase === 'inbound') {
+                    // Compute range to target — update target position for moving targets
+                    let smkTgtLat = smack.targetLat;
+                    let smkTgtLon = smack.targetLon;
+                    if (!smack.isGeoPointTarget) {
+                        const smkTgtAsset = prevAssets.find(a => a.id === smack.targetAssetId);
+                        if (smkTgtAsset) {
+                            smkTgtLat = smkTgtAsset.lat;
+                            smkTgtLon = smkTgtAsset.lon;
+                            // Update stored position
+                            smack.targetLat = smkTgtLat;
+                            smack.targetLon = smkTgtLon;
+                        }
+                    }
+
+                    if (smkTgtLat !== undefined) {
+                        const assetLat = updated.lat !== undefined ? updated.lat : asset.lat;
+                        const assetLon = updated.lon !== undefined ? updated.lon : asset.lon;
+                        const rangeToSmackTarget = calculateDistance(assetLat, assetLon, smkTgtLat, smkTgtLon);
+
+                        // At 55nm (10nm before 45nm max Harpoon range), asset requests pinpoint
+                        if (rangeToSmackTarget <= 55) {
+                            smack.phase = 'requestingPinpoint';
+
+                            // Asset calls "pinpoint", then waits for MAC to respond with coordinates
+                            setTimeout(() => {
+                                const cur = macSmackRef.current[smackAssetId];
+                                if (!cur || (cur.generation || 0) !== smackGen) return;
+                                const pinpointReq = `${ownshipTacticalCallsignRef.current}, ${smackAssetName}, pinpoint`;
+                                speakResponse(pinpointReq);
+                                addToRadioLog(smackAssetName, pinpointReq, 'incoming');
+                                // Transition to waitingPinpoint — asset waits for MAC voice command
+                                cur.phase = 'waitingPinpoint';
+                            }, 500);
+                        }
+                    }
+                } else if (smack.phase === 'pinpoint') {
+                    // Compute range — fire Harpoon at 44nm
+                    let smkTgtLat = smack.targetLat;
+                    let smkTgtLon = smack.targetLon;
+                    if (!smack.isGeoPointTarget) {
+                        const smkTgtAsset = prevAssets.find(a => a.id === smack.targetAssetId);
+                        if (smkTgtAsset) {
+                            smkTgtLat = smkTgtAsset.lat;
+                            smkTgtLon = smkTgtAsset.lon;
+                            smack.targetLat = smkTgtLat;
+                            smack.targetLon = smkTgtLon;
+                        }
+                    }
+
+                    if (smkTgtLat !== undefined) {
+                        const assetLat = updated.lat !== undefined ? updated.lat : asset.lat;
+                        const assetLon = updated.lon !== undefined ? updated.lon : asset.lon;
+                        const rangeToSmackTarget = calculateDistance(assetLat, assetLon, smkTgtLat, smkTgtLon);
+
+                        if (rangeToSmackTarget <= 44) {
+                            smack.phase = 'firing';
+                            const trackNum = smack.trackNum;
+                            const targetId = smack.targetAssetId;
+
+                            // "Bruisers away" call and fire
+                            setTimeout(() => {
+                                const cur = macSmackRef.current[smackAssetId];
+                                if (!cur || (cur.generation || 0) !== smackGen) return;
+                                const bruiserCall = `${smackAssetName}, bruisers away track ${trackNum}`;
+                                speakResponse(bruiserCall);
+                                addToRadioLog(smackAssetName, bruiserCall, 'incoming');
+
+                                // Fire the Harpoon
+                                if (!smack.isGeoPointTarget) {
+                                    fireWeapon(smackAssetId, targetId, 'ASM');
+                                }
+                                // Clear smack state — no BDA from asset (too far to observe impact)
+                                setMacSmackState(prev => {
+                                    const next = { ...prev };
+                                    delete next[smackAssetId];
+                                    return next;
+                                });
+                            }, 500);
+
+                            // Stop the asset (orbit at current position after firing)
+                            const curLat = updated.lat !== undefined ? updated.lat : asset.lat;
+                            const curLon = updated.lon !== undefined ? updated.lon : asset.lon;
+                            const nextWpId = (asset.nextWaypointId || 0) + 1;
+                            updated.waypoints = [{
+                                id: nextWpId, lat: curLat, lon: curLon,
                                 reached: true, isOrbitPoint: true
                             }];
                             updated.nextWaypointId = nextWpId;
@@ -7486,7 +7980,7 @@ function AICSimulator() {
                             setTimeout(() => {
                                 const cur = macTargetingRef.current[firingId];
                                 if (!cur || (cur.generation || 0) !== tgtGen) return;
-                                const bdaReport = `Closeout, ${assetName}, good hit, track ${trackNum} is on fire and sinking`;
+                                const bdaReport = `${ownshipTacticalCallsignRef.current}, ${assetName}, good hit, track ${trackNum} is on fire and sinking`;
                                 speakResponse(bdaReport);
                                 addToRadioLog(assetName, bdaReport, 'incoming');
 
@@ -7499,6 +7993,7 @@ function AICSimulator() {
                             }, 2000);
                         }
                     });
+
 
                     // Remove destroyed targets
                     updatedAssets = updatedAssets.filter(a => !targetIdsToRemove.includes(a.id));
@@ -9622,6 +10117,42 @@ function AICSimulator() {
         setNextDatalinkTrackNumber(prev => prev + 1);
     }, [assets, updateAsset, datalinkEnabled, datalinkNet, datalinkJU, datalinkTrackBlockStart, datalinkTrackBlockEnd, nextDatalinkTrackNumber]);
 
+    // Report a geo-point into the datalink as a track
+    const reportGeoPoint = useCallback((geoPointId) => {
+        const geoPoint = geoPoints.find(gp => gp.id === geoPointId);
+        if (!geoPoint) return;
+
+        // Don't report if already has a track number
+        if (geoPoint.trackNumber) {
+            setAlertMessage(`Geo-point already reported as track ${geoPoint.trackNumber}`);
+            return;
+        }
+
+        // Validate datalink configuration
+        const datalinkActive = datalinkEnabled && datalinkNet && datalinkJU.length === 5 &&
+                               datalinkTrackBlockStart && datalinkTrackBlockEnd;
+        if (!datalinkActive) {
+            setAlertMessage('Datalink must be powered on with NET, JU, and Track Block configured');
+            return;
+        }
+
+        if (nextDatalinkTrackNumber === null) {
+            setAlertMessage('Track block start must be configured');
+            return;
+        }
+
+        const trackBlockEnd = parseInt(datalinkTrackBlockEnd);
+        if (nextDatalinkTrackNumber > trackBlockEnd) {
+            setAlertMessage('Track block exhausted. No more tracks available.');
+            return;
+        }
+
+        // Assign track number directly to the geo-point
+        updateGeoPoint(geoPointId, { trackNumber: nextDatalinkTrackNumber });
+        setNextDatalinkTrackNumber(prev => prev + 1);
+    }, [geoPoints, datalinkEnabled, datalinkNet, datalinkJU, datalinkTrackBlockStart,
+        datalinkTrackBlockEnd, nextDatalinkTrackNumber, updateGeoPoint]);
+
     // ========================================================================
     // WAYPOINT MANAGEMENT
     // ========================================================================
@@ -10591,6 +11122,7 @@ function AICSimulator() {
                 setHasUnreadMessages(false);
                 setMacInvestigations({});
                 setMacTargeting({});
+                setMacSmackState({});
 
                 // Reset sensor detections
                 setRadarDetectionCounts({});
@@ -13289,6 +13821,20 @@ function AICSimulator() {
                     </text>
                 )}
 
+                {/* Track number above */}
+                {geoPoint.trackNumber && (
+                    <text
+                        x={pos.x}
+                        y={pos.y - 16}
+                        fill={identityColor}
+                        fontSize="10"
+                        textAnchor="middle"
+                        fontWeight="700"
+                    >
+                        {`TN# ${geoPoint.trackNumber}`}
+                    </text>
+                )}
+
                 {/* Name label below */}
                 <text
                     x={pos.x}
@@ -13861,6 +14407,7 @@ function AICSimulator() {
                 selectedGeoPointId={selectedGeoPointId}
                 updateGeoPoint={updateGeoPoint}
                 deleteGeoPoint={deleteGeoPoint}
+                reportGeoPoint={reportGeoPoint}
                 shapes={shapes}
                 selectedShapeId={selectedShapeId}
                 updateShape={updateShape}
@@ -14614,7 +15161,7 @@ function ControlPanel({
     iffOwnshipModeIII, setIffOwnshipModeIII,
     iffOwnshipModeIV, setIffOwnshipModeIV,
     iffReturnIntensity, setIffReturnIntensity,
-    geoPoints, selectedGeoPointId, updateGeoPoint, deleteGeoPoint,
+    geoPoints, selectedGeoPointId, updateGeoPoint, deleteGeoPoint, reportGeoPoint,
     shapes, selectedShapeId, updateShape, deleteShape,
     platforms, missionTime,
     manualBearingLines, setManualBearingLines, nextManualLineSerialNumber, setNextManualLineSerialNumber,
@@ -16637,6 +17184,19 @@ function ControlPanel({
                             </select>
                         </div>
 
+                        {selectedGeoPoint.trackNumber && (
+                            <div className="input-group">
+                                <label className="input-label">Track Number</label>
+                                <input
+                                    className="input-field"
+                                    type="text"
+                                    value={selectedGeoPoint.trackNumber}
+                                    readOnly
+                                    style={{ opacity: 0.7 }}
+                                />
+                            </div>
+                        )}
+
                         <div className="input-group">
                             <label className="input-label">Latitude</label>
                             <input
@@ -16670,9 +17230,16 @@ function ControlPanel({
                         </div>
 
                         <button
+                            className="control-btn full-width"
+                            onClick={() => reportGeoPoint(selectedGeoPoint.id)}
+                            style={{ marginTop: '15px' }}
+                        >
+                            REPORT TRACK
+                        </button>
+                        <button
                             className="control-btn danger full-width"
                             onClick={() => deleteGeoPoint(selectedGeoPoint.id)}
-                            style={{ marginTop: '15px' }}
+                            style={{ marginTop: '5px' }}
                         >
                             DELETE GEO-POINT
                         </button>
