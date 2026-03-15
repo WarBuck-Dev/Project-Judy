@@ -160,6 +160,24 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
     return R * c;
 }
 
+// Compute destination lat/lon given origin, bearing (degrees), and distance (nautical miles)
+function computeDestinationPoint(lat, lon, bearingDeg, distanceNM) {
+    const R = 3440.065; // Earth radius in NM
+    const d = distanceNM / R;
+    const brng = bearingDeg * Math.PI / 180;
+    const lat1 = lat * Math.PI / 180;
+    const lon1 = lon * Math.PI / 180;
+    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(brng));
+    const lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(d) * Math.cos(lat1), Math.cos(d) - Math.sin(lat1) * Math.sin(lat2));
+    return { lat: lat2 * 180 / Math.PI, lon: lon2 * 180 / Math.PI };
+}
+
+// Determine if asset is Maritime Patrol Aircraft (P-3, P-8) vs fighter
+function isMPA(asset) {
+    const name = asset.platform?.name || '';
+    return name.startsWith('P-');
+}
+
 // ============================================================================
 // ISAR Flight Profile Validation Functions
 // ============================================================================
@@ -1906,6 +1924,12 @@ function AICSimulator() {
     const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
     const chatMessageDragOffset = useRef({ x: 0, y: 0 });
 
+    // MAC (Maritime Air Control) state - per-asset investigation queue
+    // Shape: { [assetId]: { tracks: [trackNum1, ...], currentIndex: 0, declaration: 'skunk', idPassed: false, standoffNM, targetLat, targetLon } }
+    const [macInvestigations, setMacInvestigations] = useState({});
+    const macInvestigationsRef = useRef({});
+    macInvestigationsRef.current = macInvestigations;
+
     // Ownship callsign configuration
     const [ownshipTacticalCallsign, setOwnshipTacticalCallsign] = useState('Closeout');
     const [ownshipAirDefenseCallsign, setOwnshipAirDefenseCallsign] = useState('Tango'); // Tango, Uniform, or Victor
@@ -2172,6 +2196,17 @@ function AICSimulator() {
             'czech-print': 'check print',
             'checkpoint': 'check print',
             'check point': 'check print',
+            // MAC (Maritime Air Control) term corrections
+            'investor gate': 'investigate',
+            'in vest a gate': 'investigate',
+            'invest a gate': 'investigate',
+            'in vestigate': 'investigate',
+            'rubber': 'robber',
+            'sunk': 'skunk',
+            'service track': 'surface track',
+            'surface tract': 'surface track',
+            'sir face track': 'surface track',
+            'follow-on': 'follow on',
         };
 
         // Apply tactical corrections
@@ -3727,6 +3762,94 @@ function AICSimulator() {
             }, 500);
             return;
         }
+
+        // ========================================================================
+        // MAC: INVESTIGATE SURFACE TRACK
+        // "Chippy 11, closeout, investigate surface track 6001, rock 270/30, track north, skunk"
+        // Optional follow-on: "follow on tracks 6002 and 6003"
+        // ========================================================================
+        let commandExecutedMAC = false;
+        const investigateMatch = text.match(/investigate\s+(?:surface\s+)?track\s+([\d\s]+?)(?:\s+rock|\s+track|\s*,|$)/i);
+        if (investigateMatch) {
+            // Remove spaces from track number (voice recognition may say "6 000" for "6000")
+            const primaryTrackNum = investigateMatch[1].replace(/\s+/g, '');
+
+            // Parse follow-on tracks: "follow on tracks 6002 and 6003" or "follow on track 6002, 6003"
+            const followOnMatch = text.match(/follow\s*on\s+tracks?\s+([\d\s,and]+)/i);
+            let allTrackNums = [primaryTrackNum];
+            if (followOnMatch) {
+                const followOnNums = followOnMatch[1].match(/\d+/g);
+                if (followOnNums) allTrackNums = allTrackNums.concat(followOnNums);
+            }
+
+            // Parse declaration (skunk/robber/hostile)
+            let declaration = 'skunk'; // default unknown
+            if (/\brobber\b/i.test(text)) declaration = 'robber';
+            if (/\bhostile\b/i.test(text)) declaration = 'hostile';
+
+            // Parse bullseye anchor
+            const anchor = parseBullseyeAnchor(text);
+
+            // Find the controlled asset by callsign
+            const friendlyAssets = assets.filter(a => a.identity === 'friendly' && a.domain === 'air');
+            const controlledAsset = findAssetByCallsign(text, friendlyAssets);
+
+            if (controlledAsset && anchor) {
+                // Find the surface track by track number in studentTracks
+                const targetTrack = studentTracks.find(t =>
+                    t.trackNumber !== null && t.trackNumber.toString() === primaryTrackNum
+                );
+
+                // Find the underlying asset for the track (to get actual lat/lon)
+                let targetLat, targetLon;
+                if (targetTrack && targetTrack.assetId) {
+                    const targetAsset = assets.find(a => a.id === targetTrack.assetId);
+                    if (targetAsset) { targetLat = targetAsset.lat; targetLon = targetAsset.lon; }
+                }
+                // Fallback: compute position from bullseye
+                if (targetLat === undefined) {
+                    const pos = computeDestinationPoint(bullseyePosition.lat, bullseyePosition.lon, anchor.bearing, anchor.range);
+                    targetLat = pos.lat; targetLon = pos.lon;
+                }
+
+                // Determine standoff distance based on platform type
+                const standoffNM = isMPA(controlledAsset) ? 30 : 15;
+
+                // Compute orbit point at standoff distance FROM the track
+                // Place orbit on bearing FROM track TO asset's current position
+                const bearingFromTrack = calculateBearing(targetLat, targetLon, controlledAsset.lat, controlledAsset.lon);
+                const orbitPos = computeDestinationPoint(targetLat, targetLon, bearingFromTrack, standoffNM);
+
+                // Set MAC investigation state for this asset
+                setMacInvestigations(prev => ({
+                    ...prev,
+                    [controlledAsset.id]: {
+                        tracks: allTrackNums,
+                        currentIndex: 0,
+                        declaration,
+                        idPassed: false,
+                        standoffNM,
+                        targetLat,
+                        targetLon
+                    }
+                }));
+
+                // Send asset to orbit point
+                addOrbitPoint(controlledAsset.id, orbitPos.lat, orbitPos.lon);
+
+                // Asset readback
+                const assetName = controlledAsset.name;
+                const trackDir = text.match(/track\s+(north|south|east|west)/i)?.[1] || '';
+                const readback = `${assetName} copy, investigate surface track ${primaryTrackNum}, ${declaration}`;
+                speakResponse(readback);
+                addToRadioLog(assetName, readback, 'incoming');
+                addToRadioLog('MAC', `investigate surface track ${primaryTrackNum}, rock ${String(anchor.bearing).padStart(3,'0')}/${anchor.range}${trackDir ? ', track ' + trackDir : ''}, ${declaration}${allTrackNums.length > 1 ? ', follow on tracks ' + allTrackNums.slice(1).join(', ') : ''}`, 'outgoing');
+
+                commandExecutedMAC = true;
+            }
+        }
+
+        if (commandExecutedMAC) return;
 
         // Check if this is a BROADCAST call (AIC uses their own callsign, not asset callsign)
         // Broadcast format: "Closeout, [N groups,] group ROCK 234/23, twenty-five thousand, track east hostile"
@@ -6573,6 +6696,95 @@ function AICSimulator() {
                     const currentHeading = updated.heading !== undefined ? updated.heading : asset.heading;
                     updated.targetHeading = (currentHeading + turnRate * 2) % 360;
                     updated.isOrbiting = true;
+                }
+            }
+
+            // MAC: Check if orbiting asset has reached investigation standoff
+            if ((updated.isOrbiting || asset.isOrbiting) && macInvestigationsRef.current[asset.id]) {
+                const macState = macInvestigationsRef.current[asset.id];
+                if (!macState.idPassed) {
+                    // Asset has arrived at standoff — pass the ID
+                    const trackNum = macState.tracks[macState.currentIndex];
+                    const track = studentTracksRef.current.find(t =>
+                        t.trackNumber !== null && t.trackNumber.toString() === trackNum
+                    );
+                    let targetAsset = null;
+                    if (track && track.assetId) {
+                        targetAsset = prevAssets.find(a => a.id === track.assetId);
+                    }
+
+                    const platformName = targetAsset?.platform?.name || targetAsset?.name || 'unknown vessel';
+                    const course = targetAsset ? Math.round(targetAsset.heading).toString().padStart(3, '0') : '000';
+                    const spd = targetAsset ? Math.round(targetAsset.speed) : 0;
+                    const assetName = updated.name || `Asset ${updated.id}`;
+
+                    // SSC report: "Closeout, Chippy 11, surface track 6001 is a [platform], course XXX at X knots"
+                    const idReport = `Closeout, ${assetName}, surface track ${trackNum} is a ${platformName}, course ${course} at ${spd} knots`;
+                    const reportMsg = idReport;
+                    const name = assetName;
+                    const assetId = asset.id;
+                    setTimeout(() => {
+                        speakResponse(reportMsg);
+                        addToRadioLog(name, reportMsg, 'incoming');
+                    }, 2000);
+
+                    // Mark ID as passed via ref (immediate) and schedule state update
+                    macState.idPassed = true;
+
+                    // Check for follow-on tracks
+                    if (macState.currentIndex < macState.tracks.length - 1) {
+                        const nextIndex = macState.currentIndex + 1;
+                        const nextTrackNum = macState.tracks[nextIndex];
+                        const standoff = macState.standoffNM;
+
+                        setTimeout(() => {
+                            const nextTrack = studentTracksRef.current.find(t =>
+                                t.trackNumber !== null && t.trackNumber.toString() === nextTrackNum
+                            );
+                            let nextLat, nextLon;
+                            if (nextTrack && nextTrack.assetId) {
+                                // Get current asset position from assets state
+                                setAssets(currentAssets => {
+                                    const nextAsset = currentAssets.find(a => a.id === nextTrack.assetId);
+                                    if (nextAsset) { nextLat = nextAsset.lat; nextLon = nextAsset.lon; }
+                                    const controlledAsset = currentAssets.find(a => a.id === assetId);
+
+                                    if (nextLat && controlledAsset) {
+                                        const bearingToNext = calculateBearing(nextLat, nextLon, controlledAsset.lat, controlledAsset.lon);
+                                        const orbitPos = computeDestinationPoint(nextLat, nextLon, bearingToNext, standoff);
+                                        // Can't call addOrbitPoint inside setAssets, so do it inline
+                                        const nextWaypointId = (controlledAsset.nextWaypointId || 0) + 1;
+                                        const orbitPoint = { id: nextWaypointId, lat: orbitPos.lat, lon: orbitPos.lon, reached: false, isOrbitPoint: true };
+                                        return currentAssets.map(a => {
+                                            if (a.id !== assetId) return a;
+                                            return {
+                                                ...a,
+                                                waypoints: [orbitPoint],
+                                                nextWaypointId: nextWaypointId,
+                                                targetHeading: calculateBearing(a.lat, a.lon, orbitPos.lat, orbitPos.lon),
+                                                isOrbiting: false
+                                            };
+                                        });
+                                    }
+                                    return currentAssets; // no change if positions not found
+                                });
+                            }
+
+                            setMacInvestigations(prev => ({
+                                ...prev,
+                                [assetId]: { ...prev[assetId], currentIndex: nextIndex, idPassed: false, targetLat: nextLat, targetLon: nextLon }
+                            }));
+                        }, 5000);
+                    } else {
+                        // All tracks investigated — clear MAC state after delay
+                        setTimeout(() => {
+                            setMacInvestigations(prev => {
+                                const next = { ...prev };
+                                delete next[assetId];
+                                return next;
+                            });
+                        }, 5000);
+                    }
                 }
             }
 
@@ -10075,6 +10287,7 @@ function AICSimulator() {
                 nextBirdsCoverageIdRef.current = 1;
                 setChatMessages([]);
                 setHasUnreadMessages(false);
+                setMacInvestigations({});
 
                 // Reset sensor detections
                 setRadarDetectionCounts({});
@@ -12080,8 +12293,8 @@ function AICSimulator() {
         const config = ASSET_TYPES[symbolType];
         const pos = latLonToScreen(track.lat, track.lon, mapCenter.lat, mapCenter.lon, scale, width, height);
 
-        // Viewport culling
-        if (pos.x < -150 || pos.x > width + 150 || pos.y < -150 || pos.y > height + 150) return null;
+        // No viewport culling for student tracks - small count makes it unnecessary,
+        // and culling during rapid panning can cause browser rendering artifacts
 
         const isSelected = track.id === selectedTrackId;
         const size = 12; // Consistent size for all tracks
@@ -13111,6 +13324,7 @@ function AICSimulator() {
                 <svg
                     ref={svgRef}
                     className="radar-svg"
+                    overflow="hidden"
                     onClick={handleSVGClick}
                     onContextMenu={handleSVGRightClick}
                     onMouseMove={handleMouseMove}
