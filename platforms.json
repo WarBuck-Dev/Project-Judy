@@ -21,7 +21,7 @@
     {
       "name": "F-18E",
       "domain": "air",
-      "weapons": ["AIM-120 AMRAAM", "AIM-9 Sidewinder", "AGM-84 Harpoon"],
+      "weapons": ["AIM-120 AMRAAM", "AIM-9 Sidewinder", "AGM-84 Harpoon", "AGM-65 Maverick"],
       "emitters": ["APG-79"],
       "numberOfAAM": 8,
       "numberOfAGM": 2,
@@ -39,7 +39,7 @@
     {
       "name": "F-18F",
       "domain": "air",
-      "weapons": ["AIM-120 AMRAAM", "AIM-9 Sidewinder", "AGM-84 Harpoon"],
+      "weapons": ["AIM-120 AMRAAM", "AIM-9 Sidewinder", "AGM-84 Harpoon", "AGM-65 Maverick"],
       "emitters": ["APG-79"],
       "numberOfAAM": 8,
       "numberOfAGM": 2,

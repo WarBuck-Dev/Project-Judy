@@ -107,14 +107,14 @@
     "name": "AGM-65 Maverick",
     "type": "AGM",
     "maxSpeed": 684,
-    "maxRange": 10,
+    "maxRange": 15,
     "targetType": "surface",
     "maxAcceleration": 60,
     "symbol": "missile",
-    "fuelTime": 63,
+    "fuelTime": 105,
     "boosterTime": 9,
     "boosterAcceleration": 120,
-    "selfDestructTime": 126
+    "selfDestructTime": 210
   },
   "Kh-25": {
     "name": "Kh-25",
@@ -172,27 +172,27 @@
     "name": "AGM-84 Harpoon",
     "type": "ASM",
     "maxSpeed": 537,
-    "maxRange": 40,
+    "maxRange": 45,
     "targetType": "surface",
     "maxAcceleration": 50,
     "symbol": "missile",
-    "fuelTime": 322,
+    "fuelTime": 380,
     "boosterTime": 45,
     "boosterAcceleration": 100,
-    "selfDestructTime": 644
+    "selfDestructTime": 760
   },
   "Harpoon": {
     "name": "Harpoon",
     "type": "ASM",
     "maxSpeed": 537,
-    "maxRange": 40,
+    "maxRange": 45,
     "targetType": "surface",
     "maxAcceleration": 50,
     "symbol": "missile",
-    "fuelTime": 322,
+    "fuelTime": 380,
     "boosterTime": 45,
     "boosterAcceleration": 100,
-    "selfDestructTime": 644
+    "selfDestructTime": 760
   },
   "C-802": {
     "name": "C-802",

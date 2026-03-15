@@ -1930,10 +1930,17 @@ function AICSimulator() {
     const macInvestigationsRef = useRef({});
     macInvestigationsRef.current = macInvestigations;
 
+    // MAC targeting state - per-asset weapon employment tracking
+    // Shape: { [assetId]: { trackNum, targetAssetId, phase: 'inbound'|'rifle'|'impact', generation } }
+    const [macTargeting, setMacTargeting] = useState({});
+    const macTargetingRef = useRef({});
+    macTargetingRef.current = macTargeting;
+
     // Ownship callsign configuration
     const [ownshipTacticalCallsign, setOwnshipTacticalCallsign] = useState('Closeout');
     const [ownshipAirDefenseCallsign, setOwnshipAirDefenseCallsign] = useState('Tango'); // Tango, Uniform, or Victor
     const [ownshipSideNumber, setOwnshipSideNumber] = useState(''); // 3-digit code
+    const [macSideNumber, setMacSideNumber] = useState('600'); // MAC side number (600-604) for AZ coordination
 
     // Scenario settings
     const [warningWeaponStatus, setWarningWeaponStatus] = useState('yellow'); // 'white' | 'yellow' | 'red'
@@ -2196,6 +2203,13 @@ function AICSimulator() {
             'czech-print': 'check print',
             'checkpoint': 'check print',
             'check point': 'check print',
+            // AZ (Alpha Zulu) term corrections
+            'alpha zulu': 'alpha zulu',
+            'alpha zoo loo': 'alpha zulu',
+            'alpha zoo lou': 'alpha zulu',
+            'alpha zoo': 'alpha zulu',
+            'alfazulu': 'alpha zulu',
+            'alfa zulu': 'alpha zulu',
             // MAC (Maritime Air Control) term corrections
             'investor gate': 'investigate',
             'in vest a gate': 'investigate',
@@ -2207,6 +2221,7 @@ function AICSimulator() {
             'surface tract': 'surface track',
             'sir face track': 'surface track',
             'follow-on': 'follow on',
+            'rifle': 'rifle',  // Maverick employment call (ensure consistency)
         };
 
         // Apply tactical corrections
@@ -3764,6 +3779,86 @@ function AICSimulator() {
         }
 
         // ========================================================================
+        // AZ (ALPHA ZULU) CHECK PRINT: MAC surface track coordination
+        // "Alpha zulu, 600, surface track 6001, check print line 9 and line 11 from Chippy 11"
+        // AZ responds based on warning/weapon status:
+        //   White/Safe + Line 9 or Line 11 → "suspect, maintain stand off"
+        //   Yellow/Tight or Red/Tight + Line 9 or Line 11 → "hostile, target track XXXX"
+        // ========================================================================
+        const azMatch = text.match(/\b(?:az|alpha\s*zulu)\b/i);
+        const azCheckPrintMatch = azMatch && /check\s*print/i.test(text);
+
+        if (azMatch && azCheckPrintMatch) {
+            // Parse surface track number(s)
+            const azTrackMatches = [...text.matchAll(/tracks?\s*(\d+)/gi)];
+            const azTrackNumbers = azTrackMatches.map(m => {
+                const num = parseInt(m[1]);
+                return num.toString().padStart(4, '0');
+            });
+
+            // Parse checkprint lines
+            const azLine9 = /line\s*9\b/i.test(text);   // Visual ID
+            const azLine11 = /line\s*1\s*1\b/i.test(text); // EO/IR
+            const azLine1 = /line\s*1\b/i.test(text) && !azLine11;  // Line 1 (ES) — but not if "line 11" matched
+            const azLine8 = /line\s*8\b/i.test(text);   // No IFF
+
+            if (azTrackNumbers.length > 0) {
+                // Determine declaration based on warning/weapon status and lines passed
+                let azDeclaration = 'unknown';
+                let azAction = '';
+
+                if (azLine9 || azLine11) {
+                    // Line 9 (VID) or Line 11 (EO/IR) — the key lines for suspect/hostile
+                    if (warningWeaponStatus === 'white') {
+                        azDeclaration = 'suspect';
+                        azAction = 'maintain stand off';
+                    } else {
+                        // Yellow/Tight or Red/Tight
+                        azDeclaration = 'hostile';
+                        azAction = `target ${azTrackNumbers.length === 1 ? 'track ' + azTrackNumbers[0] : 'tracks ' + azTrackNumbers.join(', ')}`;
+                    }
+                } else if (azLine1 || azLine8) {
+                    // Line 1 or Line 8 without Line 9/11 — not sufficient for suspect/hostile
+                    azDeclaration = 'unknown';
+                    azAction = 'continue to investigate';
+                }
+
+                // Format track list for response
+                const azTrackList = azTrackNumbers.length === 1
+                    ? `track ${azTrackNumbers[0]}`
+                    : `tracks ${azTrackNumbers.join(', ')}`;
+
+                // Generate AZ response
+                let azResponse;
+                if (azDeclaration === 'unknown') {
+                    azResponse = `${macSideNumber}, Alpha Zulu, roger, ${azTrackList} remains ${azDeclaration}, ${azAction}.`;
+                } else {
+                    azResponse = `${macSideNumber}, Alpha Zulu, roger, make ${azTrackList} ${azDeclaration}, ${azAction}.`;
+                }
+
+                // Log outgoing call (MAC to AZ)
+                addToRadioLog(macSideNumber, transcript, 'outgoing');
+
+                // Speak and log AZ response
+                setTimeout(() => {
+                    speakResponse(azResponse);
+                    addToRadioLog('Alpha Zulu', azResponse, 'incoming');
+                }, 500);
+
+                return; // AZ command handled, exit early
+            }
+        } else if (azMatch && !azCheckPrintMatch) {
+            // AZ courtesy call — "Alpha zulu, 600, over"
+            addToRadioLog(macSideNumber, transcript, 'outgoing');
+            const azCourtesyResponse = `${macSideNumber}, Alpha Zulu, go ahead, over.`;
+            setTimeout(() => {
+                speakResponse(azCourtesyResponse);
+                addToRadioLog('Alpha Zulu', azCourtesyResponse, 'incoming');
+            }, 500);
+            return;
+        }
+
+        // ========================================================================
         // MAC: INVESTIGATE SURFACE TRACK
         // "Chippy 11, closeout, investigate surface track 6001, rock 270/30, track north, skunk"
         // Optional follow-on: "follow on tracks 6002 and 6003"
@@ -3820,7 +3915,7 @@ function AICSimulator() {
                 const bearingFromTrack = calculateBearing(targetLat, targetLon, controlledAsset.lat, controlledAsset.lon);
                 const orbitPos = computeDestinationPoint(targetLat, targetLon, bearingFromTrack, standoffNM);
 
-                // Set MAC investigation state for this asset
+                // Set MAC investigation state for this asset (generation counter invalidates stale callbacks)
                 setMacInvestigations(prev => ({
                     ...prev,
                     [controlledAsset.id]: {
@@ -3830,7 +3925,8 @@ function AICSimulator() {
                         idPassed: false,
                         standoffNM,
                         targetLat,
-                        targetLon
+                        targetLon,
+                        generation: (prev[controlledAsset.id]?.generation || 0) + 1
                     }
                 }));
 
@@ -3850,6 +3946,86 @@ function AICSimulator() {
         }
 
         if (commandExecutedMAC) return;
+
+        // ========================================================================
+        // MAC: TARGET SURFACE TRACK (AGM-65 Maverick employment)
+        // "Chippy 11, closeout, target surface track 6100"
+        // Asset heads directly to target, fires AGM-65 when in range, reports BDA on impact
+        // ========================================================================
+        const targetSurfaceMatch = text.match(/\btarget\s+(?:surface\s+)?track\s+([\d\s]+?)(?:\s+rock|\s+track|\s*,|$)/i);
+        if (targetSurfaceMatch) {
+            const targetTrackNum = targetSurfaceMatch[1].replace(/\s+/g, '');
+
+            // Find the controlled asset by callsign
+            const friendlyAirAssets = assets.filter(a => a.identity === 'friendly' && a.domain === 'air');
+            const controlledAsset = findAssetByCallsign(text, friendlyAirAssets);
+
+            if (controlledAsset) {
+                // Check if asset has AGM-65 Maverick — check both saved platform data and current platforms.json
+                const platformName = controlledAsset.platform?.name || '';
+                const allPlatforms = [...(platforms.air || []), ...(platforms.surface || []), ...(platforms.subSurface || [])];
+                const currentPlatformDef = allPlatforms.find(p => p.name === platformName);
+                const weaponsList = currentPlatformDef?.weapons || controlledAsset.platform?.weapons || [];
+                const hasMaverick = weaponsList.some(w => w.includes('AGM-65') || w.includes('Maverick'));
+                if (!hasMaverick) {
+                    const noWeaponMsg = `${controlledAsset.name}, negative, no Maverick onboard`;
+                    speakResponse(noWeaponMsg);
+                    addToRadioLog(controlledAsset.name, noWeaponMsg, 'incoming');
+                    return;
+                }
+
+                // Find the surface track
+                const surfaceTrack = studentTracks.find(t =>
+                    t.trackNumber !== null && t.trackNumber.toString() === targetTrackNum
+                );
+                let targetAssetId = null;
+                let tgtLat, tgtLon;
+                if (surfaceTrack && surfaceTrack.assetId) {
+                    const tgtAsset = assets.find(a => a.id === surfaceTrack.assetId);
+                    if (tgtAsset) {
+                        targetAssetId = tgtAsset.id;
+                        tgtLat = tgtAsset.lat;
+                        tgtLon = tgtAsset.lon;
+                    }
+                }
+
+                if (targetAssetId && tgtLat !== undefined) {
+                    // Clear any existing MAC investigation for this asset
+                    setMacInvestigations(prev => {
+                        const next = { ...prev };
+                        delete next[controlledAsset.id];
+                        return next;
+                    });
+
+                    // Set MAC targeting state
+                    setMacTargeting(prev => ({
+                        ...prev,
+                        [controlledAsset.id]: {
+                            trackNum: targetTrackNum,
+                            targetAssetId,
+                            phase: 'inbound',
+                            generation: (prev[controlledAsset.id]?.generation || 0) + 1
+                        }
+                    }));
+
+                    // Navigate asset directly toward the target (no standoff orbit)
+                    // Use addOrbitPoint — asset will head toward target, physics loop intercepts at weapon range
+                    addOrbitPoint(controlledAsset.id, tgtLat, tgtLon);
+
+                    // Asset readback
+                    const assetName = controlledAsset.name;
+                    const readback = `${assetName}, roger, target track ${targetTrackNum}`;
+                    speakResponse(readback);
+                    addToRadioLog(assetName, readback, 'incoming');
+                    addToRadioLog('MAC', `target surface track ${targetTrackNum}`, 'outgoing');
+                } else {
+                    const notFoundMsg = `Unable to locate surface track ${targetTrackNum}`;
+                    speakResponse(notFoundMsg);
+                    addToRadioLog('MAC', notFoundMsg, 'system');
+                }
+                return;
+            }
+        }
 
         // Check if this is a BROADCAST call (AIC uses their own callsign, not asset callsign)
         // Broadcast format: "Closeout, [N groups,] group ROCK 234/23, twenty-five thousand, track east hostile"
@@ -6702,6 +6878,7 @@ function AICSimulator() {
             // MAC: Check if orbiting asset has reached investigation standoff
             if ((updated.isOrbiting || asset.isOrbiting) && macInvestigationsRef.current[asset.id]) {
                 const macState = macInvestigationsRef.current[asset.id];
+                const macGeneration = macState.generation || 0;
                 if (!macState.idPassed) {
                     // Asset has arrived at standoff — pass the ID
                     const trackNum = macState.tracks[macState.currentIndex];
@@ -6718,12 +6895,22 @@ function AICSimulator() {
                     const spd = targetAsset ? Math.round(targetAsset.speed) : 0;
                     const assetName = updated.name || `Asset ${updated.id}`;
 
+                    // Check if target is a military vessel (has weapons)
+                    const isMilitaryVessel = targetAsset?.platform?.weapons && targetAsset.platform.weapons.length > 0;
+
                     // SSC report: "Closeout, Chippy 11, surface track 6001 is a [platform], course XXX at X knots"
-                    const idReport = `Closeout, ${assetName}, surface track ${trackNum} is a ${platformName}, course ${course} at ${spd} knots`;
+                    // If military vessel, append "Say intentions" — asset holds position and awaits orders
+                    let idReport = `Closeout, ${assetName}, surface track ${trackNum} is a ${platformName}, course ${course} at ${spd} knots`;
+                    if (isMilitaryVessel) {
+                        idReport += `, say intentions`;
+                    }
                     const reportMsg = idReport;
                     const name = assetName;
                     const assetId = asset.id;
                     setTimeout(() => {
+                        // Check generation — skip if asset was reassigned to a new investigation
+                        const currentMac = macInvestigationsRef.current[assetId];
+                        if (!currentMac || (currentMac.generation || 0) !== macGeneration) return;
                         speakResponse(reportMsg);
                         addToRadioLog(name, reportMsg, 'incoming');
                     }, 2000);
@@ -6731,13 +6918,29 @@ function AICSimulator() {
                     // Mark ID as passed via ref (immediate) and schedule state update
                     macState.idPassed = true;
 
-                    // Check for follow-on tracks
-                    if (macState.currentIndex < macState.tracks.length - 1) {
+                    if (isMilitaryVessel) {
+                        // Military vessel — cancel follow-on tracks, orbit in place, await instructions
+                        setTimeout(() => {
+                            const currentMac = macInvestigationsRef.current[assetId];
+                            if (!currentMac || (currentMac.generation || 0) !== macGeneration) return;
+                            setMacInvestigations(prev => {
+                                const next = { ...prev };
+                                delete next[assetId];
+                                return next;
+                            });
+                        }, 3000);
+                        // Asset continues orbiting at current standoff position (no waypoint change needed)
+                    } else if (macState.currentIndex < macState.tracks.length - 1) {
+                        // Civilian vessel with follow-on tracks — proceed to next track
                         const nextIndex = macState.currentIndex + 1;
                         const nextTrackNum = macState.tracks[nextIndex];
                         const standoff = macState.standoffNM;
 
                         setTimeout(() => {
+                            // Check generation — skip if asset was reassigned to a new investigation
+                            const currentMac = macInvestigationsRef.current[assetId];
+                            if (!currentMac || (currentMac.generation || 0) !== macGeneration) return;
+
                             const nextTrack = studentTracksRef.current.find(t =>
                                 t.trackNumber !== null && t.trackNumber.toString() === nextTrackNum
                             );
@@ -6778,12 +6981,78 @@ function AICSimulator() {
                     } else {
                         // All tracks investigated — clear MAC state after delay
                         setTimeout(() => {
+                            const currentMac = macInvestigationsRef.current[assetId];
+                            if (!currentMac || (currentMac.generation || 0) !== macGeneration) return;
                             setMacInvestigations(prev => {
                                 const next = { ...prev };
                                 delete next[assetId];
                                 return next;
                             });
                         }, 5000);
+                    }
+                }
+            }
+
+            // MAC TARGETING: Check if inbound asset is within AGM-65 range to fire
+            if (macTargetingRef.current[asset.id]) {
+                const targeting = macTargetingRef.current[asset.id];
+                const targetingGen = targeting.generation || 0;
+
+                if (targeting.phase === 'inbound') {
+                    // Find the target asset to get current position and check range
+                    const tgtAsset = prevAssets.find(a => a.id === targeting.targetAssetId);
+                    if (tgtAsset) {
+                        const rangeToTarget = calculateDistance(
+                            updated.lat !== undefined ? updated.lat : asset.lat,
+                            updated.lon !== undefined ? updated.lon : asset.lon,
+                            tgtAsset.lat, tgtAsset.lon
+                        );
+
+                        // Update waypoint to track moving target
+                        if (asset.waypoints && asset.waypoints.length > 0 && !asset.waypoints[0].reached) {
+                            updated.waypoints = asset.waypoints.map(wp => ({
+                                ...wp, lat: tgtAsset.lat, lon: tgtAsset.lon
+                            }));
+                            updated.targetHeading = calculateBearing(
+                                updated.lat !== undefined ? updated.lat : asset.lat,
+                                updated.lon !== undefined ? updated.lon : asset.lon,
+                                tgtAsset.lat, tgtAsset.lon
+                            );
+                        }
+
+                        // AGM-65 Maverick max range is 15nm — fire when within range
+                        const maverickRange = 14; // Fire at 14nm to ensure within 15nm max range
+                        if (rangeToTarget <= maverickRange) {
+                            // Transition to 'rifle' phase
+                            targeting.phase = 'rifle';
+                            const assetName = updated.name || asset.name;
+                            const trackNum = targeting.trackNum;
+                            const assetId = asset.id;
+                            const targetId = targeting.targetAssetId;
+
+                            // "Rifle" call
+                            setTimeout(() => {
+                                const cur = macTargetingRef.current[assetId];
+                                if (!cur || (cur.generation || 0) !== targetingGen) return;
+                                const rifleCall = `${assetName}, Rifle, track ${trackNum}`;
+                                speakResponse(rifleCall);
+                                addToRadioLog(assetName, rifleCall, 'incoming');
+
+                                // Fire the AGM-65 Maverick
+                                fireWeapon(assetId, targetId, 'AGM');
+                            }, 500);
+
+                            // Stop the asset (orbit at current position after firing)
+                            const assetLat = updated.lat !== undefined ? updated.lat : asset.lat;
+                            const assetLon = updated.lon !== undefined ? updated.lon : asset.lon;
+                            const nextWpId = (asset.nextWaypointId || 0) + 1;
+                            updated.waypoints = [{
+                                id: nextWpId, lat: assetLat, lon: assetLon,
+                                reached: true, isOrbitPoint: true
+                            }];
+                            updated.nextWaypointId = nextWpId;
+                            updated.isOrbiting = true;
+                        }
                     }
                 }
             }
@@ -7199,6 +7468,35 @@ function AICSimulator() {
                                 trackNumber: coverage.trackNumber,
                             }]);
                             setBirdsCoverage(prev => prev.filter(c => c.id !== coverage.id));
+                        }
+                    });
+
+                    // Check for MAC targeting impacts — "good hit, track XXXX is on fire and sinking"
+                    impactedWeapons.forEach(weapon => {
+                        // Find the MAC targeting state for the firing asset
+                        const macTgt = macTargetingRef.current[weapon.firingAssetId];
+                        if (macTgt && macTgt.targetAssetId === weapon.impactTargetId) {
+                            const firingAsset = updatedAssets.find(a => a.id === weapon.firingAssetId);
+                            const assetName = firingAsset?.name || 'Unknown';
+                            const trackNum = macTgt.trackNum;
+                            const tgtGen = macTgt.generation || 0;
+                            const firingId = weapon.firingAssetId;
+
+                            // BDA report after short delay
+                            setTimeout(() => {
+                                const cur = macTargetingRef.current[firingId];
+                                if (!cur || (cur.generation || 0) !== tgtGen) return;
+                                const bdaReport = `Closeout, ${assetName}, good hit, track ${trackNum} is on fire and sinking`;
+                                speakResponse(bdaReport);
+                                addToRadioLog(assetName, bdaReport, 'incoming');
+
+                                // Clear MAC targeting state
+                                setMacTargeting(prev => {
+                                    const next = { ...prev };
+                                    delete next[firingId];
+                                    return next;
+                                });
+                            }, 2000);
                         }
                     });
 
@@ -8733,8 +9031,12 @@ function AICSimulator() {
         console.log('Available weaponConfigs:', Object.keys(weaponConfigs));
 
         // For both ownship and non-ownship: Select FIRST weapon variant from platform that matches type
-        if (firingAsset.platform?.weapons) {
-            selectedWeaponName = firingAsset.platform.weapons.find(weaponName => {
+        // Check current platforms.json definition first (handles saved files from before weapon additions)
+        const allPlats = [...(platforms.air || []), ...(platforms.surface || []), ...(platforms.subSurface || [])];
+        const currentPlatDef = allPlats.find(p => p.name === firingAsset.platform?.name);
+        const platformWeapons = currentPlatDef?.weapons || firingAsset.platform?.weapons || [];
+        if (platformWeapons.length > 0) {
+            selectedWeaponName = platformWeapons.find(weaponName => {
                 const config = weaponConfigs[weaponName];
                 console.log(`Checking weapon ${weaponName}: config exists=${!!config}, type=${config?.type}, matches=${config?.type === weaponType}`);
                 return config && config.type === weaponType;
@@ -8807,7 +9109,7 @@ function AICSimulator() {
                 [weaponType]: Math.max(0, prev[weaponType] - 1)
             }));
         }
-    }, [assets, weaponConfigs, nextWeaponId, missionTime, simulatorMode, studentTracks]);
+    }, [assets, weaponConfigs, nextWeaponId, missionTime, simulatorMode, studentTracks, platforms]);
 
     // Fire weapon at an operator track (torpedo with proximity guidance to real submarines)
     const fireWeaponAtOperatorTrack = useCallback((operatorTrackId, weaponType) => {
@@ -10288,6 +10590,7 @@ function AICSimulator() {
                 setChatMessages([]);
                 setHasUnreadMessages(false);
                 setMacInvestigations({});
+                setMacTargeting({});
 
                 // Reset sensor detections
                 setRadarDetectionCounts({});
@@ -14200,6 +14503,8 @@ function AICSimulator() {
                     setOwnshipTacticalCallsign={setOwnshipTacticalCallsign}
                     ownshipAirDefenseCallsign={ownshipAirDefenseCallsign}
                     setOwnshipAirDefenseCallsign={setOwnshipAirDefenseCallsign}
+                    macSideNumber={macSideNumber}
+                    setMacSideNumber={setMacSideNumber}
                     skateFlowEnabled={skateFlowEnabled}
                     setSkateFlowEnabled={setSkateFlowEnabled}
                     interceptPhase={interceptState.phase}
@@ -21027,6 +21332,7 @@ function ScenarioSettings({
     warningWeaponStatus, setWarningWeaponStatus,
     ownshipTacticalCallsign, setOwnshipTacticalCallsign,
     ownshipAirDefenseCallsign, setOwnshipAirDefenseCallsign,
+    macSideNumber, setMacSideNumber,
     skateFlowEnabled, setSkateFlowEnabled, interceptPhase,
     onClose
 }) {
@@ -21098,6 +21404,21 @@ function ScenarioSettings({
                     React.createElement('option', { value: 'Tango' }, 'Tango'),
                     React.createElement('option', { value: 'Uniform' }, 'Uniform'),
                     React.createElement('option', { value: 'Victor' }, 'Victor')
+                )
+            ),
+
+            // MAC Side Number Section (for AZ coordination)
+            React.createElement('div', { className: 'settings-section' },
+                React.createElement('h3', null, 'MAC Side Number'),
+                React.createElement('select', {
+                    value: macSideNumber,
+                    onChange: (e) => setMacSideNumber(e.target.value)
+                },
+                    React.createElement('option', { value: '600' }, '600'),
+                    React.createElement('option', { value: '601' }, '601'),
+                    React.createElement('option', { value: '602' }, '602'),
+                    React.createElement('option', { value: '603' }, '603'),
+                    React.createElement('option', { value: '604' }, '604')
                 )
             ),
 
