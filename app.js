@@ -108,6 +108,23 @@ function decimalToDMM(decimal, isLatitude) {
     return `${direction}${degreesPadded} ${minutesPadded}`;
 }
 
+// Deduplicate items by ID - reassigns new IDs to duplicates
+function deduplicateById(items, nextIdStart) {
+    const seenIds = new Set();
+    let nextId = nextIdStart;
+    return items.map(item => {
+        if (seenIds.has(item.id)) {
+            // Duplicate found - assign new ID
+            console.warn(`Duplicate ID ${item.id} found, reassigning to ${nextId}`, item);
+            const newItem = { ...item, id: nextId++ };
+            seenIds.add(newItem.id);
+            return newItem;
+        }
+        seenIds.add(item.id);
+        return item;
+    });
+}
+
 // Format lat/lon for voice pinpoint calls
 // Example: 38.797, 56.732 → "north 3847 decimal 8 east 05643 decimal 9"
 function formatLatLonForVoice(lat, lon) {
@@ -9368,7 +9385,11 @@ function AICSimulator() {
             datalinkJU: asset.datalinkJU || ''
         };
 
-        setStudentTracks(prev => [...prev, newTrack]);
+        setStudentTracks(prev => {
+            // Prevent duplicate tracks for the same asset (race condition guard)
+            if (prev.find(t => t.assetId === asset.id)) return prev;
+            return [...prev, newTrack];
+        });
         setNextStudentTrackId(prev => prev + 1);
         setTrackAgingTimers(prev => ({ ...prev, [newTrack.id]: 0 }));
     }, [nextStudentTrackId, missionTime]);
@@ -9435,21 +9456,24 @@ function AICSimulator() {
     }, [studentTracks]);
 
     const deleteStudentTrack = useCallback((trackId) => {
-        setStudentTracks(prev => prev.filter(t => t.id !== trackId));
+        setStudentTracks(prev => {
+            const trackToDelete = prev.find(t => t.id === trackId);
+            const remaining = prev.filter(t => t.id !== trackId);
+            // Only clear detection counts if no other track references this asset
+            if (trackToDelete && !remaining.find(t => t.assetId === trackToDelete.assetId)) {
+                setRadarDetectionCounts(counts => {
+                    const { [trackToDelete.assetId]: _, ...rest } = counts;
+                    return rest;
+                });
+            }
+            return remaining;
+        });
         setTrackAgingTimers(prev => {
             const { [trackId]: _, ...rest } = prev;
             return rest;
         });
-        setRadarDetectionCounts(prev => {
-            const track = studentTracks.find(t => t.id === trackId);
-            if (track) {
-                const { [track.assetId]: _, ...rest } = prev;
-                return rest;
-            }
-            return prev;
-        });
         if (selectedTrackId === trackId) setSelectedTrackId(null);
-    }, [selectedTrackId, studentTracks]);
+    }, [selectedTrackId]);
 
     const reportStudentTrack = useCallback((trackId) => {
         const track = studentTracks.find(t => t.id === trackId);
@@ -10779,7 +10803,6 @@ function AICSimulator() {
                 }
             });
 
-            setAssets(loadedAssets);
             setScale(saveData.scale || INITIAL_SCALE);
             setMapCenter(saveData.mapCenter || loadedBullseye);
             setTempMark(saveData.tempMark || null);
@@ -10810,11 +10833,10 @@ function AICSimulator() {
 
             // Load student/instructor mode state (with backward compatibility)
             setSimulatorMode(saveData.simulatorMode || 'instructor');
-            setStudentTracks(saveData.studentTracks || []);
+            // studentTracks and nextStudentTrackId set below after deduplication
             setRadarDetectionCounts(saveData.radarDetectionCounts || {});
             setDetectionThresholds(saveData.detectionThresholds || {});
             setTrackAgingTimers(saveData.trackAgingTimers || {});
-            setNextStudentTrackId(saveData.nextStudentTrackId || 1);
             setSelectedTrackId(null);
             setSkateFlowEnabled(saveData.skateFlowEnabled || false);
 
@@ -10829,18 +10851,28 @@ function AICSimulator() {
             setDatalinkTrackBlockEnd('');
             setNextDatalinkTrackNumber(null);
 
-            // Find max asset ID
-            const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
-            setNextAssetId(maxId + 1);
+            // Deduplicate assets and tracks by ID to fix corrupt save files
+            const assetMaxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
+            const dedupedAssets = deduplicateById(loadedAssets, assetMaxId + 1);
+            const newAssetMaxId = dedupedAssets.reduce((max, a) => Math.max(max, a.id), 0);
+            setAssets(dedupedAssets);
+            setNextAssetId(newAssetMaxId + 1);
+
+            const loadedTracks = saveData.studentTracks || [];
+            const trackMaxId = loadedTracks.reduce((max, t) => Math.max(max, t.id), 0);
+            const dedupedTracks = deduplicateById(loadedTracks, trackMaxId + 1);
+            const newTrackMaxId = dedupedTracks.reduce((max, t) => Math.max(max, t.id), 0);
+            setStudentTracks(dedupedTracks);
+            setNextStudentTrackId(Math.max(saveData.nextStudentTrackId || 1, newTrackMaxId + 1));
 
             // Save as initial scenario for restart
             setInitialScenario({
-                assets: JSON.parse(JSON.stringify(loadedAssets)),
+                assets: JSON.parse(JSON.stringify(dedupedAssets)),
                 scale: saveData.scale || INITIAL_SCALE,
                 mapCenter: saveData.mapCenter || loadedBullseye,
                 tempMark: saveData.tempMark || null,
                 nextTrackNumber: saveData.nextTrackNumber || 6000,
-                nextAssetId: maxId + 1,
+                nextAssetId: newAssetMaxId + 1,
                 geoPoints: JSON.parse(JSON.stringify(saveData.geoPoints || [])),
                 nextGeoPointId: saveData.nextGeoPointId || 1,
                 shapes: JSON.parse(JSON.stringify(saveData.shapes || [])),
@@ -10848,8 +10880,8 @@ function AICSimulator() {
                 sonobuoys: JSON.parse(JSON.stringify(saveData.sonobuoys || [])),
                 sonobuoyCount: saveData.sonobuoyCount !== undefined ? saveData.sonobuoyCount : 30,
                 nextSonobuoyId: saveData.nextSonobuoyId || 1,
-                studentTracks: JSON.parse(JSON.stringify(saveData.studentTracks || [])),
-                nextStudentTrackId: saveData.nextStudentTrackId || 1
+                studentTracks: JSON.parse(JSON.stringify(dedupedTracks)),
+                nextStudentTrackId: Math.max(saveData.nextStudentTrackId || 1, newTrackMaxId + 1)
             });
             }
             setCurrentScenarioName(name);
@@ -10956,7 +10988,6 @@ function AICSimulator() {
                         }
                     });
 
-                    setAssets(loadedAssets);
                     setScale(saveData.scale || INITIAL_SCALE);
                     setMapCenter(saveData.mapCenter || loadedBullseye);
                     setTempMark(saveData.tempMark || null);
@@ -10987,11 +11018,10 @@ function AICSimulator() {
 
                     // Load student/instructor mode state (with backward compatibility)
                     setSimulatorMode(saveData.simulatorMode || 'instructor');
-                    setStudentTracks(saveData.studentTracks || []);
+                    // studentTracks and nextStudentTrackId set below after deduplication
                     setRadarDetectionCounts(saveData.radarDetectionCounts || {});
                     setDetectionThresholds(saveData.detectionThresholds || {});
                     setTrackAgingTimers(saveData.trackAgingTimers || {});
-                    setNextStudentTrackId(saveData.nextStudentTrackId || 1);
                     setSelectedTrackId(null);
                     setSkateFlowEnabled(saveData.skateFlowEnabled || false);
 
@@ -11006,17 +11036,28 @@ function AICSimulator() {
                     setDatalinkTrackBlockEnd('');
                     setNextDatalinkTrackNumber(null);
 
-                    const maxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
-                    setNextAssetId(maxId + 1);
+                    // Deduplicate assets and tracks by ID to fix corrupt save files
+                    const assetMaxId = loadedAssets.reduce((max, a) => Math.max(max, a.id), 0);
+                    const dedupedAssets = deduplicateById(loadedAssets, assetMaxId + 1);
+                    const newAssetMaxId = dedupedAssets.reduce((max, a) => Math.max(max, a.id), 0);
+                    setAssets(dedupedAssets);
+                    setNextAssetId(newAssetMaxId + 1);
+
+                    const loadedTracks = saveData.studentTracks || [];
+                    const trackMaxId = loadedTracks.reduce((max, t) => Math.max(max, t.id), 0);
+                    const dedupedTracks = deduplicateById(loadedTracks, trackMaxId + 1);
+                    const newTrackMaxId = dedupedTracks.reduce((max, t) => Math.max(max, t.id), 0);
+                    setStudentTracks(dedupedTracks);
+                    setNextStudentTrackId(Math.max(saveData.nextStudentTrackId || 1, newTrackMaxId + 1));
 
                     // Save as initial scenario for restart
                     setInitialScenario({
-                        assets: JSON.parse(JSON.stringify(loadedAssets)),
+                        assets: JSON.parse(JSON.stringify(dedupedAssets)),
                         scale: saveData.scale || INITIAL_SCALE,
                         mapCenter: saveData.mapCenter || loadedBullseye,
                         tempMark: saveData.tempMark || null,
                         nextTrackNumber: saveData.nextTrackNumber || 6000,
-                        nextAssetId: maxId + 1,
+                        nextAssetId: newAssetMaxId + 1,
                         geoPoints: JSON.parse(JSON.stringify(saveData.geoPoints || [])),
                         nextGeoPointId: saveData.nextGeoPointId || 1,
                         shapes: JSON.parse(JSON.stringify(saveData.shapes || [])),
@@ -11024,8 +11065,8 @@ function AICSimulator() {
                         sonobuoys: JSON.parse(JSON.stringify(saveData.sonobuoys || [])),
                         sonobuoyCount: saveData.sonobuoyCount !== undefined ? saveData.sonobuoyCount : 30,
                         nextSonobuoyId: saveData.nextSonobuoyId || 1,
-                        studentTracks: JSON.parse(JSON.stringify(saveData.studentTracks || [])),
-                        nextStudentTrackId: saveData.nextStudentTrackId || 1
+                        studentTracks: JSON.parse(JSON.stringify(dedupedTracks)),
+                        nextStudentTrackId: Math.max(saveData.nextStudentTrackId || 1, newTrackMaxId + 1)
                     });
 
                     // Extract scenario name from filename (strip .json and date suffix)
