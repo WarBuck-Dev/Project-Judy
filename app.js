@@ -12134,10 +12134,10 @@ function AICSimulator() {
 
     const memoizedCompass = useMemo(() => (
         <g>
-            <text x={svgWidth/2} y={20} fill="#00FF00" fontSize="12" textAnchor="middle" fontWeight="700">N</text>
-            <text x={svgWidth-20} y={svgHeight/2} fill="#00FF00" fontSize="12" textAnchor="middle" fontWeight="700">E</text>
-            <text x={svgWidth/2} y={svgHeight-10} fill="#00FF00" fontSize="12" textAnchor="middle" fontWeight="700">S</text>
-            <text x={20} y={svgHeight/2} fill="#00FF00" fontSize="12" textAnchor="middle" fontWeight="700">W</text>
+            <text x={svgWidth/2} y={20} fill="#00FF00" fontSize="12" fontFamily="Arial" textAnchor="middle" fontWeight="700">N</text>
+            <text x={svgWidth-20} y={svgHeight/2} fill="#00FF00" fontSize="12" fontFamily="Arial" textAnchor="middle" fontWeight="700">E</text>
+            <text x={svgWidth/2} y={svgHeight-10} fill="#00FF00" fontSize="12" fontFamily="Arial" textAnchor="middle" fontWeight="700">S</text>
+            <text x={20} y={svgHeight/2} fill="#00FF00" fontSize="12" fontFamily="Arial" textAnchor="middle" fontWeight="700">W</text>
         </g>
     ), [svgWidth, svgHeight]);
 
@@ -12207,7 +12207,8 @@ function AICSimulator() {
                             x={pos.x + 6}
                             y={pos.y - 6}
                             fill="#FFFF00"
-                            fontSize="8"
+                            fontSize="12"
+                            fontFamily="Arial"
                             fontWeight="600"
                             opacity="0.6"
                         >
@@ -12244,7 +12245,7 @@ function AICSimulator() {
                 <line x1={pos.x} y1={pos.y-8} x2={pos.x} y2={pos.y-26} stroke="#00FF00" strokeWidth="2" />
                 {/* Flag pennant */}
                 <path d={`M ${pos.x} ${pos.y-26} L ${pos.x+12} ${pos.y-21} L ${pos.x} ${pos.y-16} Z`} fill="none" stroke="#00FF00" strokeWidth="2" />
-                <text x={pos.x} y={pos.y+20} fill="#00FF00" fontSize="10" textAnchor="middle" fontWeight="700">{displayName}</text>
+                <text x={pos.x} y={pos.y+20} fill="#00FF00" fontSize="12" fontFamily="Arial" textAnchor="middle" fontWeight="700">{displayName}</text>
             </g>
         );
     };
@@ -12675,7 +12676,8 @@ function AICSimulator() {
                                 <text
                                     x={labelX}
                                     y={labelY + 4}
-                                    fontSize="11"
+                                    fontSize="12"
+                                    fontFamily="Arial"
                                     fill={textColor}
                                     textAnchor="middle"
                                     fontWeight="bold"
@@ -12831,7 +12833,8 @@ function AICSimulator() {
                                 <text
                                     x={labelX}
                                     y={labelY + 4}
-                                    fontSize="11"
+                                    fontSize="12"
+                                    fontFamily="Arial"
                                     fill={textColor}
                                     textAnchor="middle"
                                     fontWeight="bold"
@@ -13056,7 +13059,7 @@ function AICSimulator() {
                 ) : null}
 
                 {/* Name label above */}
-                <text x={pos.x} y={pos.y-size-5} fill={assetColor} fontSize="10"
+                <text x={pos.x} y={pos.y-size-5} fill={assetColor} fontSize="12" fontFamily="Arial"
                       textAnchor="middle" fontWeight="400">
                     {asset.name}
                 </text>
@@ -13080,7 +13083,7 @@ function AICSimulator() {
                                 // If no group found via interceptState, use the tracked group name
                                 if (!group) {
                                     return (
-                                        <text x={pos.x} y={pos.y-size-17} fill="#FFFF00" fontSize="11"
+                                        <text x={pos.x} y={pos.y-size-17} fill="#FFFF00" fontSize="12" fontFamily="Arial"
                                               textAnchor="middle" fontWeight="bold"
                                               style={{ textShadow: '1px 1px 2px black' }}>
                                             [{trackedGroup.groupName.toUpperCase()} - {contactLabel.toUpperCase()}]
@@ -13097,7 +13100,7 @@ function AICSimulator() {
                             ? `${group.name.toUpperCase()} - ${contactLabel.toUpperCase()}`
                             : group.name.toUpperCase();
                         return (
-                            <text x={pos.x} y={pos.y-size-17} fill="#FFFF00" fontSize="11"
+                            <text x={pos.x} y={pos.y-size-17} fill="#FFFF00" fontSize="12" fontFamily="Arial"
                                   textAnchor="middle" fontWeight="bold"
                                   style={{ textShadow: '1px 1px 2px black' }}>
                                 [{labelText}]
@@ -13116,7 +13119,7 @@ function AICSimulator() {
                     // Track number
                     if (asset.trackNumber) {
                         labels.push(
-                            <text key="tn" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
+                            <text key="tn" x={pos.x} y={currentY} fill={assetColor} fontSize="12" fontFamily="Arial"
                                   textAnchor="middle" fontWeight="400">
                                 TN#{asset.trackNumber}
                             </text>
@@ -13128,7 +13131,7 @@ function AICSimulator() {
                     if (asset.iffSquawking) {
                         if (asset.iffModeI) {
                             labels.push(
-                                <text key="m1" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
+                                <text key="m1" x={pos.x} y={currentY} fill={assetColor} fontSize="12" fontFamily="Arial"
                                       textAnchor="middle" fontWeight="400">
                                     M1: {asset.iffModeI}
                                 </text>
@@ -13137,7 +13140,7 @@ function AICSimulator() {
                         }
                         if (asset.iffModeII) {
                             labels.push(
-                                <text key="m2" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
+                                <text key="m2" x={pos.x} y={currentY} fill={assetColor} fontSize="12" fontFamily="Arial"
                                       textAnchor="middle" fontWeight="400">
                                     M2: {asset.iffModeII}
                                 </text>
@@ -13146,7 +13149,7 @@ function AICSimulator() {
                         }
                         if (asset.iffModeIII) {
                             labels.push(
-                                <text key="m3" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
+                                <text key="m3" x={pos.x} y={currentY} fill={assetColor} fontSize="12" fontFamily="Arial"
                                       textAnchor="middle" fontWeight="400">
                                     M3: {asset.iffModeIII}
                                 </text>
@@ -13158,14 +13161,14 @@ function AICSimulator() {
                     // Altitude / Depth - always shown
                     if (asset.domain === 'air') {
                         labels.push(
-                            <text key="alt" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
+                            <text key="alt" x={pos.x} y={currentY} fill={assetColor} fontSize="12" fontFamily="Arial"
                                   textAnchor="middle" fontWeight="400">
                                 ALT: FL{Math.round(asset.altitude/100)}
                             </text>
                         );
                     } else if (asset.domain === 'subSurface' && asset.depth !== null) {
                         labels.push(
-                            <text key="depth" x={pos.x} y={currentY} fill={assetColor} fontSize="10"
+                            <text key="depth" x={pos.x} y={currentY} fill={assetColor} fontSize="12" fontFamily="Arial"
                                   textAnchor="middle" fontWeight="400">
                                 DEPTH: {Math.round(asset.depth)}ft
                             </text>
@@ -13223,7 +13226,7 @@ function AICSimulator() {
                                     </g>
                                 )}
                                 {/* Waypoint label - ORBIT for orbit points, WP# for regular */}
-                                <text x={wpPos.x} y={wpPos.y-10} fill={assetColor} fontSize="8"
+                                <text x={wpPos.x} y={wpPos.y-10} fill={assetColor} fontSize="12" fontFamily="Arial"
                                       textAnchor="middle" fontWeight="700">
                                     {wp.isOrbitPoint ? 'ORBIT' : `WP${wp.id}`}
                                 </text>
@@ -13412,7 +13415,7 @@ function AICSimulator() {
 
                 {/* Student label above - only show if label exists */}
                 {track.label && (
-                    <text x={pos.x} y={pos.y-size-5} fill={config.color} fontSize="10"
+                    <text x={pos.x} y={pos.y-size-5} fill={config.color} fontSize="12" fontFamily="Arial"
                           textAnchor="middle" fontWeight="400">
                         {track.label}
                     </text>
@@ -13427,7 +13430,7 @@ function AICSimulator() {
                     // Track number - only if assigned via Report Track
                     if (track.trackNumber) {
                         labels.push(
-                            <text key="tn" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                            <text key="tn" x={pos.x} y={currentY} fill={config.color} fontSize="12" fontFamily="Arial"
                                   textAnchor="middle" fontWeight="400">
                                 TN#{track.trackNumber}
                             </text>
@@ -13438,7 +13441,7 @@ function AICSimulator() {
                     // IFF Codes - from track data (read-only)
                     if (track.iffModeI) {
                         labels.push(
-                            <text key="m1" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                            <text key="m1" x={pos.x} y={currentY} fill={config.color} fontSize="12" fontFamily="Arial"
                                   textAnchor="middle" fontWeight="400">
                                 M1: {track.iffModeI}
                             </text>
@@ -13447,7 +13450,7 @@ function AICSimulator() {
                     }
                     if (track.iffModeII) {
                         labels.push(
-                            <text key="m2" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                            <text key="m2" x={pos.x} y={currentY} fill={config.color} fontSize="12" fontFamily="Arial"
                                   textAnchor="middle" fontWeight="400">
                                 M2: {track.iffModeII}
                             </text>
@@ -13456,7 +13459,7 @@ function AICSimulator() {
                     }
                     if (track.iffModeIII) {
                         labels.push(
-                            <text key="m3" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                            <text key="m3" x={pos.x} y={currentY} fill={config.color} fontSize="12" fontFamily="Arial"
                                   textAnchor="middle" fontWeight="400">
                                 M3: {track.iffModeIII}
                             </text>
@@ -13467,14 +13470,14 @@ function AICSimulator() {
                     // Altitude / Depth - from underlying asset if available
                     if (asset && track.domain === 'air') {
                         labels.push(
-                            <text key="alt" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                            <text key="alt" x={pos.x} y={currentY} fill={config.color} fontSize="12" fontFamily="Arial"
                                   textAnchor="middle" fontWeight="400">
                                 ALT: FL{Math.round(asset.altitude/100)}
                             </text>
                         );
                     } else if (asset && track.domain === 'subSurface' && asset.depth !== null) {
                         labels.push(
-                            <text key="depth" x={pos.x} y={currentY} fill={config.color} fontSize="10"
+                            <text key="depth" x={pos.x} y={currentY} fill={config.color} fontSize="12" fontFamily="Arial"
                                   textAnchor="middle" fontWeight="400">
                                 DEPTH: {Math.round(asset.depth)}ft
                             </text>
@@ -13532,7 +13535,7 @@ function AICSimulator() {
                                     </g>
                                 )}
                                 {/* Waypoint label - ORBIT for orbit points, WP# for regular */}
-                                <text x={wpPos.x} y={wpPos.y-10} fill={config.color} fontSize="8"
+                                <text x={wpPos.x} y={wpPos.y-10} fill={config.color} fontSize="12" fontFamily="Arial"
                                       textAnchor="middle" fontWeight="700">
                                     {wp.isOrbitPoint ? 'ORBIT' : `WP${wp.id}`}
                                 </text>
@@ -13590,7 +13593,8 @@ function AICSimulator() {
                                 x={pos.x}
                                 y={pos.y - circleRadius - lineHeight - 4}
                                 fill={sonoColor}
-                                fontSize="8"
+                                fontSize="12"
+                                fontFamily="Arial"
                                 textAnchor="middle"
                                 fontWeight="bold"
                             >
@@ -13927,6 +13931,7 @@ function AICSimulator() {
                         y={pos.y + 5}
                         fill={identityColor}
                         fontSize="16"
+                        fontFamily="Arial"
                         textAnchor="middle"
                         fontWeight="700"
                     >
@@ -13940,7 +13945,8 @@ function AICSimulator() {
                         x={pos.x}
                         y={pos.y - 16}
                         fill={identityColor}
-                        fontSize="10"
+                        fontSize="12"
+                        fontFamily="Arial"
                         textAnchor="middle"
                         fontWeight="700"
                     >
@@ -13953,7 +13959,8 @@ function AICSimulator() {
                     x={pos.x}
                     y={pos.y + 25}
                     fill={identityColor}
-                    fontSize="10"
+                    fontSize="12"
+                    fontFamily="Arial"
                     textAnchor="middle"
                     fontWeight="400"
                 >
@@ -14007,7 +14014,7 @@ function AICSimulator() {
                             y={centerPos.y - radiusInPixels - 12}
                             fill={identityColor}
                             fontSize="12"
-                            fontFamily="Orbitron, monospace"
+                            fontFamily="Arial"
                             textAnchor="middle"
                             opacity="0.9"
                             style={{ textShadow: `0 0 4px ${identityColor}` }}
@@ -14059,8 +14066,8 @@ function AICSimulator() {
                                     x={p.x}
                                     y={p.y - 12}
                                     fill={identityColor}
-                                    fontSize="10"
-                                    fontFamily="Orbitron, monospace"
+                                    fontSize="12"
+                                    fontFamily="Arial"
                                     textAnchor="middle"
                                     opacity="0.9"
                                     style={{ textShadow: `0 0 4px ${identityColor}` }}
