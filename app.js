@@ -826,7 +826,7 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                 currentBehavior.triggerType === 'distanceFromAsset' && React.createElement('div', {},
                     'Target: ' + (assets.find(a => a.id === currentBehavior.triggerConfig.targetAssetId)?.name || 'Unknown'),
                     React.createElement('br'),
-                    'Distance: ' + currentBehavior.triggerConfig.distance + ' NM'
+                    'Distance: ' + ((c) => c === 'gt' ? '> ' : c === 'eq' ? '≈ ' : '≤ ')(currentBehavior.triggerConfig.comparison || 'lte') + currentBehavior.triggerConfig.distance + ' NM'
                 ),
                 currentBehavior.triggerType === 'atWaypoint' && React.createElement('div', {}, 'Waypoint: #' + (currentBehavior.triggerConfig.waypointIndex + 1)),
                 currentBehavior.triggerType === 'distanceFromGeoPoint' && React.createElement('div', {},
@@ -850,7 +850,7 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                         return 'Unknown';
                     })(),
                     React.createElement('br'),
-                    'Distance: ' + currentBehavior.triggerConfig.distance + ' NM'
+                    'Distance: ' + ((c) => c === 'gt' ? '> ' : c === 'eq' ? '≈ ' : '≤ ')(currentBehavior.triggerConfig.comparison || 'lte') + currentBehavior.triggerConfig.distance + ' NM'
                 ),
                 React.createElement('div', { style: { marginTop: '5px', color: currentBehavior.fired ? '#FFFF00' : '#00FF00' } },
                     'Status: ' + (currentBehavior.fired ? 'FIRED' : 'ACTIVE')
@@ -867,6 +867,10 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                         actionText = `${idx + 1}. Make Visible (uncheck HIDDEN)`;
                     } else if (action.type === 'makeInvisible') {
                         actionText = `${idx + 1}. Make Invisible (check HIDDEN)`;
+                    } else if (action.type === 'turnOnTrackFile') {
+                        actionText = `${idx + 1}. Turn On Track File (enable TRACK FILE)`;
+                    } else if (action.type === 'turnOffTrackFile') {
+                        actionText = `${idx + 1}. Turn Off Track File (disable TRACK FILE)`;
                     } else if (action.value !== undefined) {
                         actionText = `${idx + 1}. ${action.type}: ${action.value}`;
                     }
@@ -946,6 +950,8 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                         let newConfig = {};
                         if (newType === 'missionTime') newConfig = { missionTimeDisplay: '00:00:00' };
                         else if (newType === 'randomTime') newConfig = { minTimeDisplay: '00:00:00', maxTimeDisplay: '00:00:00' };
+                        else if (newType === 'distanceFromAsset') newConfig = { comparison: 'lte' };
+                        else if (newType === 'distanceFromGeoPoint') newConfig = { comparison: 'lte' };
                         setFormData(prev => ({ ...prev, triggerType: newType, triggerConfig: newConfig }));
                     },
                     style: {
@@ -1127,7 +1133,27 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                             border: '1px solid #00FF00',
                             fontSize: '12px'
                         }
-                    })
+                    }),
+                    React.createElement('label', { style: { display: 'block', marginBottom: '5px', marginTop: '10px', fontSize: '12px' } }, 'COMPARISON:'),
+                    React.createElement('select', {
+                        value: formData.triggerConfig.comparison || 'lte',
+                        onChange: (e) => setFormData(prev => ({
+                            ...prev,
+                            triggerConfig: { ...prev.triggerConfig, comparison: e.target.value }
+                        })),
+                        style: {
+                            width: '100%',
+                            padding: '8px',
+                            backgroundColor: '#000',
+                            color: '#00FF00',
+                            border: '1px solid #00FF00',
+                            fontSize: '12px'
+                        }
+                    },
+                        React.createElement('option', { value: 'lte' }, 'Less Than or Equal (≤)'),
+                        React.createElement('option', { value: 'gt' }, 'Greater Than (>)'),
+                        React.createElement('option', { value: 'eq' }, 'Equal To (≈ ±0.5 NM)')
+                    )
                 ),
 
                 formData.triggerType === 'atWaypoint' && React.createElement('div', {},
@@ -1223,7 +1249,27 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                         border: '1px solid #00FF00',
                         fontSize: '12px'
                     }
-                })
+                }),
+                React.createElement('label', { style: { display: 'block', marginBottom: '5px', marginTop: '10px', fontSize: '12px' } }, 'COMPARISON:'),
+                React.createElement('select', {
+                    value: formData.triggerConfig.comparison || 'lte',
+                    onChange: (e) => setFormData(prev => ({
+                        ...prev,
+                        triggerConfig: { ...prev.triggerConfig, comparison: e.target.value }
+                    })),
+                    style: {
+                        width: '100%',
+                        padding: '8px',
+                        backgroundColor: '#000',
+                        color: '#00FF00',
+                        border: '1px solid #00FF00',
+                        fontSize: '12px'
+                    }
+                },
+                    React.createElement('option', { value: 'lte' }, 'Less Than or Equal (≤)'),
+                    React.createElement('option', { value: 'gt' }, 'Greater Than (>)'),
+                    React.createElement('option', { value: 'eq' }, 'Equal To (≈ ±0.5 NM)')
+                )
             ),
 
             // Actions Section - Will add in continuation
@@ -1286,6 +1332,8 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                             React.createElement('option', { value: 'turnEmitterOff' }, 'Turn Emitter Off'),
                             React.createElement('option', { value: 'makeVisible' }, 'Make Visible'),
                             React.createElement('option', { value: 'makeInvisible' }, 'Make Invisible'),
+                            React.createElement('option', { value: 'turnOnTrackFile' }, 'Turn On Track File'),
+                            React.createElement('option', { value: 'turnOffTrackFile' }, 'Turn Off Track File'),
                             React.createElement('option', { value: 'transmitOnRadio' }, 'Transmit on Radio'),
                             React.createElement('option', { value: 'sendMessage' }, 'Send Message')
                         ),
@@ -1383,6 +1431,14 @@ const BehaviorsTab = ({ asset, assets, onAddBehavior, onUpdateBehavior, onDelete
                         action.type === 'makeInvisible' && React.createElement('div', {
                             style: { color: '#FFAA00', fontSize: '11px', padding: '8px', backgroundColor: 'rgba(255, 170, 0, 0.1)', borderRadius: '3px' }
                         }, 'Checks the HIDDEN box, making this asset invisible to the student.'),
+
+                        action.type === 'turnOnTrackFile' && React.createElement('div', {
+                            style: { color: '#00FF00', fontSize: '11px', padding: '8px', backgroundColor: 'rgba(0, 255, 0, 0.1)', borderRadius: '3px' }
+                        }, 'Enables TRACK FILE for this asset, making it appear on the student display.'),
+
+                        action.type === 'turnOffTrackFile' && React.createElement('div', {
+                            style: { color: '#FFAA00', fontSize: '11px', padding: '8px', backgroundColor: 'rgba(255, 170, 0, 0.1)', borderRadius: '3px' }
+                        }, 'Disables TRACK FILE for this asset, hiding it from the student display.'),
 
                         action.type === 'transmitOnRadio' && React.createElement('div', {},
                             React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '11px' } }, 'MESSAGE:'),
@@ -7598,7 +7654,12 @@ function AICSimulator() {
                                     updated.lat, updated.lon,
                                     targetAsset.lat, targetAsset.lon
                                 );
-                                if (distance <= behavior.triggerConfig.distance) {
+                                const comp = behavior.triggerConfig.comparison || 'lte';
+                                if (comp === 'lte' && distance <= behavior.triggerConfig.distance) {
+                                    shouldFire = true;
+                                } else if (comp === 'gt' && distance > behavior.triggerConfig.distance) {
+                                    shouldFire = true;
+                                } else if (comp === 'eq' && Math.abs(distance - behavior.triggerConfig.distance) <= 0.5) {
                                     shouldFire = true;
                                 }
                             }
@@ -7648,7 +7709,12 @@ function AICSimulator() {
                             if (targetLat !== undefined && targetLon !== undefined) {
                                 const dist = calculateDistance(updated.lat, updated.lon, targetLat, targetLon);
                                 const effectiveDist = Math.max(0, dist - circleRadius);
-                                if (effectiveDist <= behavior.triggerConfig.distance) {
+                                const comp = behavior.triggerConfig.comparison || 'lte';
+                                if (comp === 'lte' && effectiveDist <= behavior.triggerConfig.distance) {
+                                    shouldFire = true;
+                                } else if (comp === 'gt' && effectiveDist > behavior.triggerConfig.distance) {
+                                    shouldFire = true;
+                                } else if (comp === 'eq' && Math.abs(effectiveDist - behavior.triggerConfig.distance) <= 0.5) {
                                     shouldFire = true;
                                 }
                             }
@@ -7690,6 +7756,12 @@ function AICSimulator() {
                                     break;
                                 case 'makeInvisible':
                                     updated.hidden = true;
+                                    break;
+                                case 'turnOnTrackFile':
+                                    updated.trackFileEnabled = true;
+                                    break;
+                                case 'turnOffTrackFile':
+                                    updated.trackFileEnabled = false;
                                     break;
                                 case 'transmitOnRadio':
                                     if (action.value) {
