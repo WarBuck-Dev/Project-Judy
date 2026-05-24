@@ -38,6 +38,30 @@ const SHAPE_TYPES = {
     circle: { label: 'Circle' }
 };
 
+const CALIBRATION_CATEGORIES = {
+    nato: {
+        label: 'NATO Phonetics',
+        phrases: ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot',
+                  'golf', 'hotel', 'india', 'juliet', 'kilo', 'lima',
+                  'mike', 'november', 'oscar', 'papa', 'quebec', 'romeo',
+                  'sierra', 'tango', 'uniform', 'victor', 'whiskey',
+                  'x-ray', 'yankee', 'zulu']
+    },
+    tactical: {
+        label: 'Tactical Terms',
+        phrases: ['hostile', 'bogey', 'bandit', 'bullseye', 'azimuth',
+                  'investigate', 'smack', 'pinpoint', 'spades', 'vanished',
+                  'faded', 'skunk', 'chippy', 'rifle', 'bruiser']
+    },
+    compound: {
+        label: 'Compound Terms',
+        phrases: ['alpha whiskey', 'alpha zulu', 'check print',
+                  'cover with birds', 'surface track', 'attack axis',
+                  'lead group', 'trail group', 'single group',
+                  'ip dp', 'grand slam', 'picture clean']
+    }
+};
+
 // Domain configurations
 const DOMAIN_TYPES = {
     air: {
@@ -2052,6 +2076,15 @@ function AICSimulator() {
     const [showScenarioSettings, setShowScenarioSettings] = useState(false);
     const [skateFlowEnabled, setSkateFlowEnabled] = useState(false);
 
+    // Voice calibration
+    const [showVoiceCalibration, setShowVoiceCalibration] = useState(false);
+    const [voiceCalibrationMap, setVoiceCalibrationMap] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('voiceCalibrationMap')) || {}; }
+        catch { return {}; }
+    });
+    const voiceCalibrationMapRef = useRef(voiceCalibrationMap);
+    useEffect(() => { voiceCalibrationMapRef.current = voiceCalibrationMap; }, [voiceCalibrationMap]);
+
     // FPS counter (uses ref + direct DOM update to avoid re-renders)
     const fpsRef = useRef(null);
     const fpsFrameCount = useRef(0);
@@ -2103,6 +2136,10 @@ function AICSimulator() {
     useEffect(() => {
         localStorage.setItem('radioEffectIntensity', radioEffectIntensity.toString());
     }, [radioEffectIntensity]);
+
+    useEffect(() => {
+        localStorage.setItem('voiceCalibrationMap', JSON.stringify(voiceCalibrationMap));
+    }, [voiceCalibrationMap]);
 
     // ========================================================================
     // LOAD PLATFORM CONFIGURATIONS
@@ -2190,6 +2227,16 @@ function AICSimulator() {
     // Normalize transcript to handle common speech recognition errors
     const normalizeTranscript = (transcript) => {
         let normalized = transcript.toLowerCase();
+
+        // Layer 0: Personal voice calibration corrections
+        const personalCorrections = voiceCalibrationMapRef.current;
+        if (personalCorrections && Object.keys(personalCorrections).length > 0) {
+            const sortedKeys = Object.keys(personalCorrections).sort((a, b) => b.length - a.length);
+            sortedKeys.forEach(heard => {
+                const intended = personalCorrections[heard];
+                normalized = normalized.replace(new RegExp(heard.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), intended);
+            });
+        }
 
         // Common compound callsigns that get split into separate words
         const callsignCorrections = {
@@ -12043,8 +12090,8 @@ function AICSimulator() {
                 setIsRunning(false);
             }
 
-            // Push-to-talk: Spacebar (student mode only)
-            if (e.code === 'Space' && simulatorMode === 'student' && radioEnabled && !e.repeat) {
+            // Push-to-talk: Spacebar (student mode only, not during voice calibration)
+            if (e.code === 'Space' && simulatorMode === 'student' && radioEnabled && !e.repeat && !showVoiceCalibration) {
                 // Prevent default only if not typing in an input field
                 if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
                     e.preventDefault();
@@ -12069,7 +12116,7 @@ function AICSimulator() {
 
         const handleKeyUp = (e) => {
             // Release PTT (student mode only)
-            if (e.code === 'Space' && simulatorMode === 'student' && radioEnabled) {
+            if (e.code === 'Space' && simulatorMode === 'student' && radioEnabled && !showVoiceCalibration) {
                 // Always prevent default in student mode to avoid button clicks
                 if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
                     e.preventDefault();
@@ -12103,7 +12150,7 @@ function AICSimulator() {
             window.removeEventListener('keydown', handleKeyDown, true);
             window.removeEventListener('keyup', handleKeyUp, true);
         };
-    }, [simulatorMode, radioEnabled, isTransmitting]);
+    }, [simulatorMode, radioEnabled, isTransmitting, showVoiceCalibration]);
 
     // ========================================================================
     // RENDER FUNCTIONS
@@ -15158,6 +15205,10 @@ function AICSimulator() {
                         setShowPauseMenu(false);
                         setShowScenarioSettings(true);
                     }}
+                    onVoiceCalibration={() => {
+                        setShowPauseMenu(false);
+                        setShowVoiceCalibration(true);
+                    }}
                 />
             )}
 
@@ -15176,6 +15227,15 @@ function AICSimulator() {
                     setSkateFlowEnabled={setSkateFlowEnabled}
                     interceptPhase={interceptState.phase}
                     onClose={() => setShowScenarioSettings(false)}
+                />
+            )}
+
+            {/* Voice Calibration Dialog */}
+            {showVoiceCalibration && (
+                <VoiceCalibrationDialog
+                    onClose={() => setShowVoiceCalibration(false)}
+                    voiceCalibrationMap={voiceCalibrationMap}
+                    setVoiceCalibrationMap={setVoiceCalibrationMap}
                 />
             )}
 
@@ -21981,7 +22041,341 @@ function ThreatResult({ missedEvents }) {
     );
 }
 
-function PauseMenu({ onResume, onSave, onSaveAs, canSave, onLoad, onControls, onSound, onMissionProducts, onDebrief, onScenario }) {
+function VoiceCalibrationDialog({ onClose, voiceCalibrationMap, setVoiceCalibrationMap }) {
+    const [phase, setPhase] = React.useState('menu');
+    const [selectedCategory, setSelectedCategory] = React.useState(null);
+    const [currentIndex, setCurrentIndex] = React.useState(0);
+    const [isListening, setIsListening] = React.useState(false);
+    const [heardText, setHeardText] = React.useState('');
+    const [result, setResult] = React.useState(null);
+    const [pendingCorrections, setPendingCorrections] = React.useState({});
+    const calibrationRecRef = React.useRef(null);
+    const calibrationTranscriptRef = React.useRef('');
+
+    const phrases = React.useMemo(() => {
+        if (!selectedCategory) return [];
+        if (selectedCategory === 'all') {
+            return Object.values(CALIBRATION_CATEGORIES).flatMap(c => c.phrases);
+        }
+        return CALIBRATION_CATEGORIES[selectedCategory]?.phrases || [];
+    }, [selectedCategory]);
+
+    React.useEffect(() => {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SR) return;
+        const rec = new SR();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = 'en-US';
+        rec.onresult = (event) => {
+            const transcript = Array.from(event.results).map(r => r[0].transcript).join('');
+            calibrationTranscriptRef.current = transcript;
+            setHeardText(transcript);
+        };
+        rec.onerror = (event) => {
+            if (event.error !== 'aborted') console.error('Calibration recognition error:', event.error);
+            setIsListening(false);
+        };
+        rec.onend = () => { setIsListening(false); };
+        calibrationRecRef.current = rec;
+        return () => { if (calibrationRecRef.current) calibrationRecRef.current.abort(); };
+    }, []);
+
+    React.useEffect(() => {
+        if (phase !== 'calibrating') return;
+        const handleKeyDown = (e) => {
+            if (e.code === 'Space' && !e.repeat) {
+                if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                if (document.activeElement.tagName === 'BUTTON') document.activeElement.blur();
+                if (!calibrationRecRef.current) return;
+                setIsListening(true);
+                setHeardText('');
+                setResult(null);
+                calibrationTranscriptRef.current = '';
+                try { calibrationRecRef.current.start(); }
+                catch (err) { console.error('Cal start error:', err); setIsListening(false); }
+            }
+        };
+        const handleKeyUp = (e) => {
+            if (e.code === 'Space') {
+                if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                if (!calibrationRecRef.current) return;
+                try { calibrationRecRef.current.stop(); } catch (err) {}
+                const heard = calibrationTranscriptRef.current.toLowerCase().trim();
+                const target = phrases[currentIndex].toLowerCase();
+                if (!heard) {
+                    setResult({ match: false, empty: true });
+                } else if (heard === target) {
+                    setResult({ match: true });
+                } else {
+                    setPendingCorrections(prev => ({ ...prev, [heard]: target }));
+                    setResult({ match: false, heard, target });
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown, true);
+        window.addEventListener('keyup', handleKeyUp, true);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown, true);
+            window.removeEventListener('keyup', handleKeyUp, true);
+        };
+    }, [phase, currentIndex, phrases]);
+
+    const goNext = () => {
+        if (currentIndex < phrases.length - 1) {
+            setCurrentIndex(prev => prev + 1);
+            setHeardText('');
+            setResult(null);
+        } else {
+            setPhase('review');
+        }
+    };
+
+    const goBack = () => {
+        if (currentIndex > 0) {
+            setCurrentIndex(prev => prev - 1);
+            setHeardText('');
+            setResult(null);
+        }
+    };
+
+    const saveAndClose = () => {
+        setVoiceCalibrationMap(prev => ({ ...prev, ...pendingCorrections }));
+        onClose();
+    };
+
+    const totalCorrections = Object.keys(voiceCalibrationMap).length + Object.keys(pendingCorrections).length;
+    const allCorrections = { ...voiceCalibrationMap, ...pendingCorrections };
+
+    const modalStyle = {
+        backgroundColor: '#111', border: '2px solid #00FF00', borderRadius: '8px',
+        padding: '30px', maxWidth: '600px', width: '90%', maxHeight: '80vh',
+        overflowY: 'auto', color: '#00FF00', fontFamily: 'Arial, sans-serif'
+    };
+    const btnStyle = {
+        padding: '10px 20px', backgroundColor: '#000', color: '#00FF00',
+        border: '1px solid #00FF00', cursor: 'pointer', fontWeight: 'bold',
+        fontSize: '14px', borderRadius: '4px'
+    };
+    const btnDangerStyle = { ...btnStyle, color: '#FF4444', borderColor: '#FF4444' };
+    const btnPrimaryStyle = { ...btnStyle, backgroundColor: '#00FF00', color: '#000' };
+
+    if (phase === 'menu') {
+        return (
+            <div className="modal-overlay">
+                <div style={modalStyle}>
+                    <h2 style={{ textAlign: 'center', marginBottom: '10px' }}>VOICE CALIBRATION</h2>
+                    <p style={{ fontSize: '13px', color: '#aaa', textAlign: 'center', marginBottom: '20px' }}>
+                        Speak each phrase so the system can learn how your voice is recognized.
+                        Personal corrections are applied automatically during voice commands.
+                    </p>
+                    <div style={{ marginBottom: '20px' }}>
+                        <div style={{ fontSize: '12px', marginBottom: '10px', color: '#FFFF00' }}>
+                            Active corrections: {Object.keys(voiceCalibrationMap).length}
+                        </div>
+                        <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '15px' }}>SELECT CATEGORY:</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {Object.entries(CALIBRATION_CATEGORIES).map(([key, cat]) => (
+                                <button key={key} style={btnStyle} onClick={() => {
+                                    setSelectedCategory(key);
+                                    setCurrentIndex(0);
+                                    setHeardText('');
+                                    setResult(null);
+                                    setPendingCorrections({});
+                                    setPhase('calibrating');
+                                }}>
+                                    {cat.label} ({cat.phrases.length} phrases)
+                                </button>
+                            ))}
+                            <button style={btnStyle} onClick={() => {
+                                setSelectedCategory('all');
+                                setCurrentIndex(0);
+                                setHeardText('');
+                                setResult(null);
+                                setPendingCorrections({});
+                                setPhase('calibrating');
+                            }}>
+                                ALL PHRASES ({Object.values(CALIBRATION_CATEGORIES).reduce((sum, c) => sum + c.phrases.length, 0)} phrases)
+                            </button>
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between' }}>
+                        {Object.keys(voiceCalibrationMap).length > 0 && (
+                            <button style={btnStyle} onClick={() => setPhase('review')}>
+                                VIEW CORRECTIONS
+                            </button>
+                        )}
+                        {Object.keys(voiceCalibrationMap).length > 0 && (
+                            <button style={btnDangerStyle} onClick={() => {
+                                if (confirm('Clear all voice calibration corrections?')) {
+                                    setVoiceCalibrationMap({});
+                                }
+                            }}>
+                                CLEAR ALL
+                            </button>
+                        )}
+                        <button style={btnPrimaryStyle} onClick={onClose}>CLOSE</button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (phase === 'calibrating') {
+        const progress = ((currentIndex + 1) / phrases.length) * 100;
+        return (
+            <div className="modal-overlay">
+                <div style={modalStyle}>
+                    <h2 style={{ textAlign: 'center', marginBottom: '5px' }}>VOICE CALIBRATION</h2>
+                    <div style={{ fontSize: '12px', textAlign: 'center', color: '#aaa', marginBottom: '15px' }}>
+                        Phrase {currentIndex + 1} of {phrases.length}
+                    </div>
+                    {/* Progress bar */}
+                    <div style={{ width: '100%', height: '4px', backgroundColor: '#333', borderRadius: '2px', marginBottom: '25px' }}>
+                        <div style={{ width: `${progress}%`, height: '100%', backgroundColor: '#00FF00', borderRadius: '2px', transition: 'width 0.3s' }} />
+                    </div>
+                    {/* Target phrase */}
+                    <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                        <div style={{ fontSize: '14px', color: '#aaa', marginBottom: '8px' }}>SAY:</div>
+                        <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#00FF00',
+                                     textShadow: '0 0 10px rgba(0,255,0,0.5)', letterSpacing: '2px' }}>
+                            {phrases[currentIndex].toUpperCase()}
+                        </div>
+                    </div>
+                    {/* PTT instruction */}
+                    <div style={{ textAlign: 'center', marginBottom: '20px', fontSize: '13px',
+                                 color: isListening ? '#FF4444' : '#888' }}>
+                        {isListening ? '● LISTENING...' : 'Hold SPACEBAR and speak the phrase'}
+                    </div>
+                    {/* Heard text */}
+                    {heardText && (
+                        <div style={{ textAlign: 'center', marginBottom: '15px', fontSize: '16px',
+                                     color: '#FFFF00', fontStyle: 'italic' }}>
+                            Heard: "{heardText}"
+                        </div>
+                    )}
+                    {/* Result */}
+                    {result && (
+                        <div style={{ textAlign: 'center', marginBottom: '20px', padding: '10px',
+                                     borderRadius: '4px',
+                                     backgroundColor: result.empty ? 'rgba(255,255,0,0.1)' :
+                                                      result.match ? 'rgba(0,255,0,0.1)' : 'rgba(255,170,0,0.1)',
+                                     border: `1px solid ${result.empty ? '#FFFF00' : result.match ? '#00FF00' : '#FFAA00'}` }}>
+                            {result.empty ? (
+                                <span style={{ color: '#FFFF00' }}>No speech detected — try again</span>
+                            ) : result.match ? (
+                                <span style={{ color: '#00FF00' }}>Recognized correctly — no correction needed</span>
+                            ) : (
+                                <span style={{ color: '#FFAA00' }}>
+                                    Correction saved: "{result.heard}" → "{result.target}"
+                                </span>
+                            )}
+                        </div>
+                    )}
+                    {/* Navigation buttons */}
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                        <button style={{ ...btnStyle, opacity: currentIndex === 0 ? 0.3 : 1 }}
+                                disabled={currentIndex === 0} onClick={goBack}>
+                            BACK
+                        </button>
+                        <button style={btnStyle} onClick={goNext}>
+                            {currentIndex === phrases.length - 1 ? 'FINISH' : 'NEXT'}
+                        </button>
+                        <button style={btnStyle} onClick={() => {
+                            setHeardText('');
+                            setResult(null);
+                            goNext();
+                        }}>
+                            SKIP
+                        </button>
+                        <button style={btnDangerStyle} onClick={() => setPhase('review')}>
+                            DONE
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (phase === 'review') {
+        return (
+            <div className="modal-overlay">
+                <div style={modalStyle}>
+                    <h2 style={{ textAlign: 'center', marginBottom: '15px' }}>REVIEW CORRECTIONS</h2>
+                    {Object.keys(allCorrections).length === 0 ? (
+                        <div style={{ textAlign: 'center', color: '#888', padding: '20px' }}>
+                            No corrections saved. The system recognized all phrases correctly.
+                        </div>
+                    ) : (
+                        <div style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '15px' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead>
+                                    <tr style={{ borderBottom: '1px solid #00FF00' }}>
+                                        <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px' }}>HEARD</th>
+                                        <th style={{ textAlign: 'center', padding: '8px', fontSize: '12px' }}>→</th>
+                                        <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px' }}>CORRECTED TO</th>
+                                        <th style={{ textAlign: 'center', padding: '8px', fontSize: '12px' }}></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {Object.entries(allCorrections).map(([heard, intended]) => (
+                                        <tr key={heard} style={{ borderBottom: '1px solid #333' }}>
+                                            <td style={{ padding: '8px', color: '#FFAA00', fontSize: '13px' }}>"{heard}"</td>
+                                            <td style={{ textAlign: 'center', padding: '8px' }}>→</td>
+                                            <td style={{ padding: '8px', color: '#00FF00', fontSize: '13px' }}>"{intended}"</td>
+                                            <td style={{ textAlign: 'center', padding: '8px' }}>
+                                                <button style={{ ...btnDangerStyle, padding: '3px 8px', fontSize: '11px' }}
+                                                        onClick={() => {
+                                                    const inPending = heard in pendingCorrections;
+                                                    if (inPending) {
+                                                        setPendingCorrections(prev => {
+                                                            const next = { ...prev };
+                                                            delete next[heard];
+                                                            return next;
+                                                        });
+                                                    } else {
+                                                        setVoiceCalibrationMap(prev => {
+                                                            const next = { ...prev };
+                                                            delete next[heard];
+                                                            return next;
+                                                        });
+                                                    }
+                                                }}>
+                                                    DELETE
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                        <button style={btnStyle} onClick={() => {
+                            setPhase('menu');
+                            setPendingCorrections({});
+                        }}>
+                            CANCEL
+                        </button>
+                        <button style={btnPrimaryStyle} onClick={saveAndClose}>
+                            SAVE & CLOSE
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return null;
+}
+
+function PauseMenu({ onResume, onSave, onSaveAs, canSave, onLoad, onControls, onSound, onMissionProducts, onDebrief, onScenario, onVoiceCalibration }) {
     return (
         <div className="modal-overlay">
             <div className="pause-menu">
@@ -22003,6 +22397,7 @@ function PauseMenu({ onResume, onSave, onSaveAs, canSave, onLoad, onControls, on
                     <button className="control-btn" onClick={onDebrief}>AIC DEBRIEF</button>
                     <button className="control-btn" onClick={onSound}>SOUND</button>
                     <button className="control-btn" onClick={onControls}>CONTROLS</button>
+                    <button className="control-btn" onClick={onVoiceCalibration}>VOICE CALIBRATION</button>
                     <button className="control-btn danger" onClick={() => {
                         if (confirm('Quit simulator?')) window.close();
                     }}>
