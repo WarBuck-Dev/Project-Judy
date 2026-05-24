@@ -1,0 +1,430 @@
+{
+  "version": "1.2",
+  "timestamp": "2026-05-23T19:44:15.566Z",
+  "assets": [
+    {
+      "id": 0,
+      "name": "OWNSHIP",
+      "type": "ownship",
+      "domain": "air",
+      "platform": {
+        "name": "Ownship",
+        "domain": "air",
+        "weapons": [
+          "AGM-84 Harpoon",
+          "Mk 46 Torpedo"
+        ],
+        "emitters": [
+          "APY-10",
+          "APS-145"
+        ],
+        "numberOfAAM": 0,
+        "numberOfAGM": 0,
+        "numberOfASM": 4,
+        "numberOfSAM": 0,
+        "numberOfTorpedo": 4,
+        "maxSpeed": 490,
+        "maxAltitude": 41000,
+        "maxClimb": 2500,
+        "maxTurn": 10,
+        "image": "ownship.png",
+        "threatLevel": 2,
+        "hasDatalink": true
+      },
+      "lat": 25.866006205927338,
+      "lon": 55.99576286855345,
+      "heading": 0,
+      "speed": 0,
+      "altitude": 15000,
+      "depth": null,
+      "targetHeading": null,
+      "targetSpeed": null,
+      "targetAltitude": null,
+      "targetDepth": null,
+      "waypoints": [],
+      "trackNumber": null,
+      "behaviors": [],
+      "targetingState": null,
+      "targetedAssetId": null,
+      "targetDeclaration": null,
+      "vidCalled20nm": false,
+      "vidCalled2nm": false,
+      "declareCalled28nm": false,
+      "fox3Called25nm": false,
+      "hidden": false,
+      "trackFileEnabled": true,
+      "studentLabel": ""
+    },
+    {
+      "id": 1,
+      "name": "Showtime 11",
+      "type": "unknown",
+      "identity": "friendly",
+      "domain": "air",
+      "platform": {
+        "name": "F-18F",
+        "domain": "air",
+        "weapons": [
+          "AIM-120 AMRAAM",
+          "AIM-9 Sidewinder",
+          "AGM-84 Harpoon"
+        ],
+        "emitters": [
+          "APG-79"
+        ],
+        "numberOfAAM": 8,
+        "numberOfAGM": 2,
+        "numberOfASM": 4,
+        "numberOfSAM": 0,
+        "numberOfTorpedo": 0,
+        "maxSpeed": 1190,
+        "maxAltitude": 50000,
+        "maxClimb": 44000,
+        "maxTurn": 15,
+        "image": "f-18f.png",
+        "threatLevel": 2,
+        "hasDatalink": true
+      },
+      "lat": 26.183669435817148,
+      "lon": 53.316600585610715,
+      "heading": 90,
+      "speed": 350,
+      "altitude": 25000,
+      "depth": null,
+      "targetHeading": null,
+      "targetSpeed": null,
+      "targetAltitude": null,
+      "targetDepth": null,
+      "waypoints": [],
+      "trackNumber": null,
+      "emitterStates": {
+        "APG-79": false
+      },
+      "iffModeI": "",
+      "iffModeII": "",
+      "iffModeIII": "",
+      "iffSquawking": false,
+      "datalinkNet": "",
+      "datalinkJU": "",
+      "datalinkTrackBlockStart": "",
+      "datalinkTrackBlockEnd": "",
+      "datalinkActive": false,
+      "datalinkAssignedTrack": null,
+      "behaviors": [],
+      "hidden": false,
+      "trackFileEnabled": true,
+      "studentLabel": "",
+      "targetingState": null,
+      "targetedAssetId": null,
+      "targetDeclaration": null,
+      "vidCalled20nm": false,
+      "vidCalled2nm": false,
+      "declareCalled28nm": false,
+      "fox3Called25nm": false
+    },
+    {
+      "id": 2,
+      "name": "Asset 2",
+      "type": "unknown",
+      "identity": "hostile",
+      "domain": "air",
+      "platform": {
+        "name": "MiG-29",
+        "domain": "air",
+        "weapons": [
+          "R-27 (AA-10)",
+          "R-73 (AA-11)"
+        ],
+        "emitters": [
+          "SLOTBACK"
+        ],
+        "numberOfAAM": 6,
+        "numberOfAGM": 0,
+        "numberOfASM": 0,
+        "numberOfSAM": 0,
+        "numberOfTorpedo": 0,
+        "maxSpeed": 1520,
+        "maxAltitude": 59000,
+        "maxClimb": 65000,
+        "maxTurn": 17,
+        "image": "mig-29.png",
+        "threatLevel": 1,
+        "hasDatalink": false,
+        "natoReportingName": "FULCRUM"
+      },
+      "lat": 26.174571208681307,
+      "lon": 54.34683534544817,
+      "heading": 270,
+      "speed": 350,
+      "altitude": 25000,
+      "depth": null,
+      "targetHeading": null,
+      "targetSpeed": null,
+      "targetAltitude": null,
+      "targetDepth": null,
+      "waypoints": [],
+      "trackNumber": null,
+      "emitterStates": {
+        "SLOTBACK": false
+      },
+      "iffModeI": "",
+      "iffModeII": "",
+      "iffModeIII": "",
+      "iffSquawking": false,
+      "datalinkNet": "",
+      "datalinkJU": "",
+      "datalinkTrackBlockStart": "",
+      "datalinkTrackBlockEnd": "",
+      "datalinkActive": false,
+      "datalinkAssignedTrack": null,
+      "behaviors": [
+        {
+          "triggerType": "distanceFromAsset",
+          "triggerConfig": {
+            "comparison": "lte",
+            "targetAssetId": 1,
+            "distance": 35
+          },
+          "actions": [
+            {
+              "type": "changeHeading",
+              "value": 360
+            }
+          ],
+          "id": "bhv-1779564198833-pbff9y3jn",
+          "assetId": 2,
+          "fired": false,
+          "enabled": true
+        },
+        {
+          "triggerType": "distanceFromAsset",
+          "triggerConfig": {
+            "comparison": "gt",
+            "targetAssetId": 3,
+            "distance": 4
+          },
+          "actions": [
+            {
+              "type": "changeHeading",
+              "value": 270
+            }
+          ],
+          "id": "bhv-1779564228823-0wxjowg1h",
+          "assetId": 2,
+          "fired": false,
+          "enabled": true
+        }
+      ],
+      "hidden": false,
+      "trackFileEnabled": true,
+      "studentLabel": "",
+      "targetingState": null,
+      "targetedAssetId": null,
+      "targetDeclaration": null,
+      "vidCalled20nm": false,
+      "vidCalled2nm": false,
+      "declareCalled28nm": false,
+      "fox3Called25nm": false
+    },
+    {
+      "id": 3,
+      "name": "Asset 3",
+      "type": "unknown",
+      "identity": "hostile",
+      "domain": "air",
+      "platform": {
+        "name": "MiG-29",
+        "domain": "air",
+        "weapons": [
+          "R-27 (AA-10)",
+          "R-73 (AA-11)"
+        ],
+        "emitters": [
+          "SLOTBACK"
+        ],
+        "numberOfAAM": 6,
+        "numberOfAGM": 0,
+        "numberOfASM": 0,
+        "numberOfSAM": 0,
+        "numberOfTorpedo": 0,
+        "maxSpeed": 1520,
+        "maxAltitude": 59000,
+        "maxClimb": 65000,
+        "maxTurn": 17,
+        "image": "mig-29.png",
+        "threatLevel": 1,
+        "hasDatalink": false,
+        "natoReportingName": "FULCRUM"
+      },
+      "lat": 26.16952172360961,
+      "lon": 54.34820794123079,
+      "heading": 270,
+      "speed": 350,
+      "altitude": 25000,
+      "depth": null,
+      "targetHeading": null,
+      "targetSpeed": null,
+      "targetAltitude": null,
+      "targetDepth": null,
+      "waypoints": [],
+      "trackNumber": null,
+      "emitterStates": {
+        "SLOTBACK": false
+      },
+      "iffModeI": "",
+      "iffModeII": "",
+      "iffModeIII": "",
+      "iffSquawking": false,
+      "datalinkNet": "",
+      "datalinkJU": "",
+      "datalinkTrackBlockStart": "",
+      "datalinkTrackBlockEnd": "",
+      "datalinkActive": false,
+      "datalinkAssignedTrack": null,
+      "behaviors": [
+        {
+          "triggerType": "distanceFromAsset",
+          "triggerConfig": {
+            "comparison": "lte",
+            "targetAssetId": 1,
+            "distance": 35
+          },
+          "actions": [
+            {
+              "type": "changeHeading",
+              "value": 180
+            }
+          ],
+          "id": "bhv-1779563732462-d3aoi00lf",
+          "assetId": 3,
+          "fired": false,
+          "enabled": true
+        },
+        {
+          "triggerType": "distanceFromAsset",
+          "triggerConfig": {
+            "comparison": "gt",
+            "targetAssetId": 2,
+            "distance": 4
+          },
+          "actions": [
+            {
+              "type": "changeHeading",
+              "value": 270
+            },
+            {
+              "type": "turnOnTrackFile",
+              "value": 0
+            }
+          ],
+          "id": "bhv-1779563797059-v9upv7gc5",
+          "assetId": 3,
+          "fired": false,
+          "enabled": true
+        }
+      ],
+      "hidden": false,
+      "trackFileEnabled": false,
+      "studentLabel": "",
+      "targetingState": null,
+      "targetedAssetId": null,
+      "targetDeclaration": null,
+      "vidCalled20nm": false,
+      "vidCalled2nm": false,
+      "declareCalled28nm": false,
+      "fox3Called25nm": false
+    }
+  ],
+  "bullseye": {
+    "lat": 26.141646858672612,
+    "lon": 54.16496029133269
+  },
+  "bullseyeName": "ROCK",
+  "scale": 62,
+  "mapCenter": {
+    "lat": 26.22217429538414,
+    "lon": 54.03415509244598
+  },
+  "tempMark": null,
+  "nextTrackNumber": 6000,
+  "missionTime": 0,
+  "geoPoints": [
+    {
+      "id": 1,
+      "name": "TAMPA",
+      "type": "capStation",
+      "lat": 26.17206761425684,
+      "lon": 53.53990235986376,
+      "identity": "friendly"
+    }
+  ],
+  "nextGeoPointId": 2,
+  "shapes": [],
+  "nextShapeId": 1,
+  "sonobuoys": [],
+  "sonobuoyCount": 30,
+  "nextSonobuoyId": 1,
+  "weapons": [],
+  "weaponInventory": {
+    "AAM": 0,
+    "AGM": 0,
+    "ASM": 4,
+    "SAM": 0,
+    "Torpedo": 4
+  },
+  "nextWeaponId": 1,
+  "weaponEnabled": false,
+  "weaponArmed": false,
+  "selectedWeaponType": null,
+  "simulatorMode": "instructor",
+  "studentTracks": [
+    {
+      "id": 1,
+      "assetId": 2,
+      "lat": 26.174571208681307,
+      "lon": 54.34683534544817,
+      "domain": "air",
+      "identity": "hostile",
+      "label": "",
+      "trackNumber": null,
+      "isAged": false,
+      "lastDetectionTime": 78,
+      "creationTime": 12,
+      "estimatedHeading": 270,
+      "estimatedSpeed": 350,
+      "lastKnownLat": 26.174571208681307,
+      "lastKnownLon": 54.34683534544817,
+      "iffModeI": "",
+      "iffModeII": "",
+      "iffModeIII": "",
+      "datalinkJU": ""
+    },
+    {
+      "id": 3,
+      "assetId": 1,
+      "lat": 26.183669435817148,
+      "lon": 53.316600585610715,
+      "domain": "air",
+      "identity": "friendly",
+      "label": "Showtime 11",
+      "trackNumber": null,
+      "isAged": false,
+      "lastDetectionTime": 88,
+      "creationTime": 34,
+      "estimatedHeading": 90,
+      "estimatedSpeed": 350,
+      "lastKnownLat": 26.183669435817148,
+      "lastKnownLon": 53.316600585610715,
+      "iffModeI": "",
+      "iffModeII": "",
+      "iffModeIII": "",
+      "datalinkJU": ""
+    }
+  ],
+  "radarDetectionCounts": {},
+  "detectionThresholds": {},
+  "trackAgingTimers": {},
+  "nextStudentTrackId": 4,
+  "skateFlowEnabled": false,
+  "missionProducts": []
+}
